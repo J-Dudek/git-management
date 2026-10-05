@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 export interface MenuItem {
@@ -6,6 +6,8 @@ export interface MenuItem {
   action: () => void;
   danger?: boolean;
   disabled?: boolean;
+  /** Texte secondaire affiché sous le libellé. */
+  hint?: string;
 }
 
 export type MenuEntry = MenuItem | "separator";
@@ -23,6 +25,18 @@ interface Props {
 
 export function ContextMenu({ menu, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: menu.y, left: menu.x });
+
+  // Garde le menu dans la fenêtre lorsqu'il est ouvert près d'un bord.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setPos({
+      top: Math.max(4, Math.min(menu.y, window.innerHeight - height - 4)),
+      left: Math.max(4, Math.min(menu.x, window.innerWidth - width - 4)),
+    });
+  }, [menu]);
 
   useEffect(() => {
     function onMouseDown(e: MouseEvent) {
@@ -41,8 +55,8 @@ export function ContextMenu({ menu, onClose }: Props) {
 
   const style: React.CSSProperties = {
     position: "fixed",
-    top: menu.y,
-    left: menu.x,
+    top: pos.top,
+    left: pos.left,
     zIndex: 9999,
   };
 
@@ -50,7 +64,7 @@ export function ContextMenu({ menu, onClose }: Props) {
     <div
       ref={ref}
       style={style}
-      className="min-w-44 bg-[#1e2030] border border-white/10 rounded shadow-xl py-1 select-none"
+      className="min-w-44 max-w-96 max-h-[80vh] overflow-y-auto bg-[#1e2030] border border-white/10 rounded shadow-xl py-1 select-none"
     >
       {menu.items.map((entry, i) =>
         entry === "separator" ? (
@@ -69,7 +83,10 @@ export function ContextMenu({ menu, onClose }: Props) {
               onClose();
             }}
           >
-            {entry.label}
+            <span className="block truncate">{entry.label}</span>
+            {entry.hint && (
+              <span className="block truncate text-[10px] text-[var(--color-muted)] font-mono">{entry.hint}</span>
+            )}
           </button>
         )
       )}

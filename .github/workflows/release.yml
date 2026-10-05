@@ -1,57 +1,84 @@
 name: Release
 
+# À chaque merge sur main :
+#   1. tests (workflow CI) ;
+#   2. calcul de la version d'après les commits depuis le dernier tag (Conventional Commits),
+#      mise à jour des fichiers applicatifs, commit sur main et tag vX.Y.Z ;
+#   3. génération des paquets Linux / Windows dans une release GitHub ;
+#   4. publication de la release, une fois tous les paquets générés.
+# Si les commits ne justifient pas de release (docs, ci, test, chore, style), on s'arrête après les tests.
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+  workflow_dispatch:
+
+# Une seule release à la fois, sans annuler celle en cours.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    name: Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  tests:
+    # Le commit de version poussé par ce workflow ne relance pas de release.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    name: Version et tag
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.next.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
         with:
-          workspaces: git-client/src-tauri
-
-      - name: Install Linux deps
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config libssl-dev libgit2-dev \
-            libwebkit2gtk-4.1-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev
-
-      - name: Rust tests
-        working-directory: git-client/src-tauri
-        run: cargo test
+          fetch-depth: 0 # historique et tags complets pour calculer la version
+          # main est protégée (ruleset) : le push du commit de version passe par un token
+          # autorisé à la contourner (secret RELEASE_TOKEN). À défaut, GITHUB_TOKEN.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
-      - name: Frontend tests
+      - name: Prochaine version
+        id: next
         working-directory: git-client
         run: |
-          npm ci
-          npm run test -- --run
+          VERSION="$(node scripts/version.mjs next)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ -n "$VERSION" ]; then
+            echo "Nouvelle version : $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Aucun changement applicatif depuis la dernière release : pas de nouvelle version." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Mise à jour des fichiers, commit et tag
+        if: steps.next.outputs.version != ''
         env:
-          CI: true
+          VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          node git-client/scripts/version.mjs apply "$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add git-client/package.json git-client/package-lock.json \
+            git-client/src-tauri/Cargo.toml git-client/src-tauri/Cargo.lock \
+            git-client/src-tauri/tauri.conf.json
+          git commit -m "chore(release): v$VERSION [skip ci]"
+          git tag -a "v$VERSION" -m "J6N v$VERSION"
+          # Commit et tag poussés ensemble : soit les deux, soit aucun.
+          git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "v$VERSION"
 
   build:
-    name: Build ${{ matrix.platform }}
-    needs: test
+    name: Paquets ${{ matrix.platform }}
+    needs: version
+    if: needs.version.outputs.version != ''
     permissions:
       contents: write
     strategy:
@@ -66,13 +93,17 @@ jobs:
             targets: nsis,msi
 
     runs-on: ${{ matrix.os }}
+    env:
+      TAG: v${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.version }} # le commit de version, avec les fichiers à jour
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -87,7 +118,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            pkg-config libssl-dev libgit2-dev \
+            pkg-config libssl-dev libgit2-dev libdbus-1-dev \
             libwebkit2gtk-4.1-dev libgtk-3-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
@@ -101,16 +132,35 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Identifiants client OAuth intégrés au binaire (publics : variables ou secrets du dépôt)
+          GIT_CLIENT_GITHUB_CLIENT_ID: ${{ vars.GIT_CLIENT_GITHUB_CLIENT_ID || secrets.GIT_CLIENT_GITHUB_CLIENT_ID }}
+          GIT_CLIENT_GITLAB_CLIENT_ID: ${{ vars.GIT_CLIENT_GITLAB_CLIENT_ID || secrets.GIT_CLIENT_GITLAB_CLIENT_ID }}
         with:
           projectPath: git-client
-          tagName: ${{ github.ref_name }}
-          releaseName: "git-client ${{ github.ref_name }}"
+          tagName: ${{ env.TAG }}
+          releaseName: "J6N ${{ env.TAG }}"
           releaseBody: |
-            ## git-client ${{ github.ref_name }}
+            ## J6N — Git Repository Manager ${{ env.TAG }}
 
             ### Téléchargements
             - **Linux** : `.deb` (Debian/Ubuntu) · `.AppImage` (universel)
             - **Windows** : `.msi` (installateur) · `.exe` (NSIS)
+          # Brouillon pendant la génération : publié par le job suivant quand tous les paquets sont prêts.
           releaseDraft: true
           prerelease: false
           args: --bundles ${{ matrix.targets }}
+
+  publish:
+    name: Publication de la release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publier la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "Release $TAG publiée : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

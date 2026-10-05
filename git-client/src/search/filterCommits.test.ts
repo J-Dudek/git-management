@@ -59,7 +59,7 @@ describe("filterCommits", () => {
   });
 
   it("filters by ref name", () => {
-    const commits = [c({ refs: ["main", "HEAD"] }), c({ refs: ["feature/login"] })];
+    const commits = [c({ refs: [{ name: "main", kind: "head" }] }), c({ refs: [{ name: "feature/login", kind: "local" }] })];
     expect(filterCommits(commits, "feature")).toHaveLength(1);
   });
 

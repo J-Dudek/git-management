@@ -7,12 +7,8 @@
   --color-accent: #e94560;
   --color-text: #e2e8f0;
   --color-muted: #718096;
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+  /* Contrôles natifs (select, scrollbars…) en thème sombre */
+  color-scheme: dark;
 }
 
 body {

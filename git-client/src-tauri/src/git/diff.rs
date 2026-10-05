@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use git2::{DiffOptions, Repository};
+use git2::{Diff, DiffOptions, Repository};
 use serde::Serialize;
 use super::error::GitError;
 
@@ -35,8 +35,15 @@ pub struct FileDiff {
 }
 
 pub fn get_diff(repo: &Repository, file_path: &str, staged: bool) -> Result<FileDiff, GitError> {
+    let diff = workdir_file_diff(repo, file_path, staged)?;
+    collect_file_diff(&diff, file_path)
+}
+
+/// Diff d'un fichier de la copie de travail : HEAD → index si `staged`, sinon index → copie de travail.
+/// Utilisé à la fois pour l'affichage et pour l'indexation partielle : les index de lignes coïncident.
+pub(crate) fn workdir_file_diff<'r>(repo: &'r Repository, file_path: &str, staged: bool) -> Result<Diff<'r>, GitError> {
     let mut opts = DiffOptions::new();
-    opts.pathspec(file_path);
+    opts.pathspec(file_path).disable_pathspec_match(true);
 
     let diff = if staged {
         let head_tree = repo
@@ -45,9 +52,29 @@ pub fn get_diff(repo: &Repository, file_path: &str, staged: bool) -> Result<File
             .and_then(|r| r.peel_to_tree().ok());
         repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))?
     } else {
+        // Sans ces options, un fichier non suivi n'a aucun contenu dans le diff.
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .show_untracked_content(true);
         repo.diff_index_to_workdir(None, Some(&mut opts))?
     };
+    Ok(diff)
+}
 
+/// Diff d'un fichier introduit par un commit (par rapport à son premier parent).
+pub fn get_commit_file_diff(repo: &Repository, hash: &str, file_path: &str) -> Result<FileDiff, GitError> {
+    let commit = repo.revparse_single(hash)?.peel_to_commit()?;
+    let tree = commit.tree()?;
+    let parent_tree = commit.parent(0).ok().map(|p| p.tree()).transpose()?;
+
+    let mut opts = DiffOptions::new();
+    opts.pathspec(file_path);
+    let diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), Some(&mut opts))?;
+
+    collect_file_diff(&diff, file_path)
+}
+
+fn collect_file_diff(diff: &Diff, file_path: &str) -> Result<FileDiff, GitError> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
     let is_binary: RefCell<bool> = RefCell::new(false);
 
@@ -71,7 +98,9 @@ pub fn get_diff(repo: &Repository, file_path: &str, staged: bool) -> Result<File
             let kind = match line.origin() {
                 '+' => DiffLineKind::Added,
                 '-' => DiffLineKind::Removed,
-                _ => DiffLineKind::Context,
+                ' ' => DiffLineKind::Context,
+                // Marqueurs "\\ No newline at end of file" et en-têtes : ignorés.
+                _ => return true,
             };
             let content = std::str::from_utf8(line.content()).unwrap_or("").trim_end().to_string();
             if let Some(hunk) = hunks.borrow_mut().last_mut() {
@@ -171,5 +200,31 @@ mod tests {
         let diff = get_diff(&repo, "file.txt", false).unwrap();
         let added = diff.hunks[0].lines.iter().find(|l| l.kind == DiffLineKind::Added).unwrap();
         assert!(added.new_lineno.is_some());
+    }
+
+    #[test]
+    fn diff_untracked_file_shows_content() {
+        let (dir, repo) = make_repo_with_commit("hello\n");
+        fs::write(dir.path().join("new.txt"), "brand new\n").unwrap();
+        let diff = get_diff(&repo, "new.txt", false).unwrap();
+        assert_eq!(diff.hunks[0].lines[0].content, "brand new");
+    }
+
+    #[test]
+    fn commit_file_diff_against_parent() {
+        let (dir, repo) = make_repo_with_commit("hello\n");
+        fs::write(dir.path().join("file.txt"), "hello\nagain\n").unwrap();
+        let sig = Signature::now("Test", "test@test.com").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("file.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let parent = repo.head().unwrap().peel_to_commit().unwrap();
+        let oid = repo.commit(Some("HEAD"), &sig, &sig, "second", &tree, &[&parent]).unwrap();
+
+        let diff = get_commit_file_diff(&repo, &oid.to_string(), "file.txt").unwrap();
+        let added: Vec<_> = diff.hunks[0].lines.iter().filter(|l| l.kind == DiffLineKind::Added).collect();
+        assert_eq!(added.len(), 1);
+        assert_eq!(added[0].content, "again");
     }
 }

@@ -1,33 +1,41 @@
-import type { ForgePR, ForgeIssue } from "../types/forge";
+import type { ForgePR, ForgeIssue, ForgeRepo } from "../types/forge";
+
+/** GET sur l'API du compte (chemin relatif). La requête et le token sont gérés côté Rust. */
+export type ApiGet = <T>(path: string) => Promise<T>;
+
+const seg = (value: string) => encodeURIComponent(value);
 
 export class GitHubClient {
-  constructor(private token: string) {}
+  constructor(private get: ApiGet) {}
 
-  private async request<T>(url: string): Promise<T> {
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`GitHub API ${res.status}: ${await res.text()}`);
-    }
-    return res.json();
+  /** Valide le token et renvoie le login associé. */
+  async getCurrentUser(): Promise<string> {
+    const user = await this.get<any>("/user");
+    return user.login;
+  }
+
+  async listRepos(): Promise<ForgeRepo[]> {
+    const data = await this.get<any[]>(
+      "/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member"
+    );
+    return data.map((r) => ({
+      name: r.name,
+      fullName: r.full_name,
+      cloneUrl: r.clone_url,
+      sshUrl: r.ssh_url,
+      private: r.private,
+      description: r.description ?? "",
+      updatedAt: r.updated_at,
+    }));
   }
 
   async getPullRequests(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<ForgePR[]> {
-    const data = await this.request<any[]>(
-      `https://api.github.com/repos/${owner}/${repo}/pulls?state=${state}&per_page=50`
-    );
+    const data = await this.get<any[]>(`/repos/${seg(owner)}/${seg(repo)}/pulls?state=${state}&per_page=50`);
     return data.map(parsePR);
   }
 
   async getIssues(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<ForgeIssue[]> {
-    const data = await this.request<any[]>(
-      `https://api.github.com/repos/${owner}/${repo}/issues?state=${state}&per_page=50`
-    );
+    const data = await this.get<any[]>(`/repos/${seg(owner)}/${seg(repo)}/issues?state=${state}&per_page=50`);
     return data.filter((i) => !i.pull_request).map(parseIssue);
   }
 }

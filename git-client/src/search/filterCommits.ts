@@ -11,6 +11,6 @@ export function filterCommits(commits: CommitInfo[], query: string): CommitInfo[
       c.message.toLowerCase().includes(q) ||
       c.author.toLowerCase().includes(q) ||
       c.email.toLowerCase().includes(q) ||
-      c.refs.some((r) => r.toLowerCase().includes(q))
+      c.refs.some((r) => r.name.toLowerCase().includes(q))
   );
 }

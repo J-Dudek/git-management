@@ -1,24 +1,8 @@
-import type { ForgePR, ForgeIssue } from "../types/forge";
+import type { ForgePR, ForgeIssue, ForgeRepo } from "../types/forge";
+import type { ApiGet } from "./github";
 
 export class GitLabClient {
-  private apiBase: string;
-
-  constructor(private token: string, baseUrl = "https://gitlab.com") {
-    this.apiBase = `${baseUrl.replace(/\/$/, "")}/api/v4`;
-  }
-
-  private async request<T>(path: string): Promise<T> {
-    const res = await fetch(`${this.apiBase}${path}`, {
-      headers: {
-        Authorization: `Bearer ${this.token}`,
-        "Content-Type": "application/json",
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`GitLab API ${res.status}: ${await res.text()}`);
-    }
-    return res.json();
-  }
+  constructor(private get: ApiGet) {}
 
   private encodeProject(project: string): string {
     // Numeric ID passé tel quel, sinon encode le chemin
@@ -26,9 +10,30 @@ export class GitLabClient {
     return encodeURIComponent(project);
   }
 
+  /** Valide le token et renvoie le nom d'utilisateur associé. */
+  async getCurrentUser(): Promise<string> {
+    const user = await this.get<any>("/user");
+    return user.username;
+  }
+
+  async listRepos(): Promise<ForgeRepo[]> {
+    const data = await this.get<any[]>(
+      "/projects?membership=true&per_page=100&order_by=last_activity_at&simple=true"
+    );
+    return data.map((p) => ({
+      name: p.name,
+      fullName: p.path_with_namespace,
+      cloneUrl: p.http_url_to_repo,
+      sshUrl: p.ssh_url_to_repo,
+      private: p.visibility !== "public",
+      description: p.description ?? "",
+      updatedAt: p.last_activity_at,
+    }));
+  }
+
   async getMergeRequests(project: string, state: "opened" | "closed" | "merged" | "all" = "opened"): Promise<ForgePR[]> {
     const id = this.encodeProject(project);
-    const data = await this.request<any[]>(
+    const data = await this.get<any[]>(
       `/projects/${id}/merge_requests?state=${state}&per_page=50`
     );
     return data.map(parseMR);
@@ -36,7 +41,7 @@ export class GitLabClient {
 
   async getIssues(project: string, state: "opened" | "closed" | "all" = "opened"): Promise<ForgeIssue[]> {
     const id = this.encodeProject(project);
-    const data = await this.request<any[]>(
+    const data = await this.get<any[]>(
       `/projects/${id}/issues?state=${state}&per_page=50`
     );
     return data.map(parseIssue);

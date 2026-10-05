@@ -1,7 +1,3 @@
-# Tauri + React + Typescript
+# J6N — Git Repository Manager (code de l'application)
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Voir le [README à la racine du dépôt](../README.md) pour la présentation du projet, les prérequis et les instructions pour le lancer en local.

@@ -1,150 +1,9 @@
+mod accounts;
+mod commands;
+mod forge;
+mod oauth;
 mod git;
 mod window;
-
-use git::{
-    open_repo, get_commits, get_branches, get_status, get_diff, init_repo, clone_repo, fetch,
-    merge_branch, get_conflict_content, resolve_conflict,
-    checkout_branch, create_branch, delete_branch, rebase_onto,
-    CommitInfo, BranchInfo, FileStatus, FileDiff, MergeResult, GitError,
-};
-
-#[tauri::command]
-fn open_repository(path: String) -> Result<serde_json::Value, GitError> {
-    let repo = open_repo(&path)?;
-    let head = repo.head().ok().and_then(|r| r.shorthand().map(|s| s.to_string()));
-    Ok(serde_json::json!({ "head_branch": head }))
-}
-
-#[tauri::command]
-fn get_commits_cmd(path: String, limit: usize) -> Result<Vec<CommitInfo>, GitError> {
-    let repo = open_repo(&path)?;
-    get_commits(&repo, limit)
-}
-
-#[tauri::command]
-fn get_branches_cmd(path: String) -> Result<Vec<BranchInfo>, GitError> {
-    let repo = open_repo(&path)?;
-    get_branches(&repo)
-}
-
-#[tauri::command]
-fn get_status_cmd(path: String) -> Result<Vec<FileStatus>, GitError> {
-    let repo = open_repo(&path)?;
-    get_status(&repo)
-}
-
-#[tauri::command]
-fn get_diff_cmd(path: String, file_path: String, staged: bool) -> Result<FileDiff, GitError> {
-    let repo = open_repo(&path)?;
-    get_diff(&repo, &file_path, staged)
-}
-
-#[tauri::command]
-fn init_repository(path: String) -> Result<(), GitError> {
-    init_repo(&path)
-}
-
-#[tauri::command]
-fn clone_repository(url: String, path: String) -> Result<(), GitError> {
-    clone_repo(&url, &path)
-}
-
-#[tauri::command]
-fn fetch_remote(path: String, remote: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    fetch(&repo, &remote)
-}
-
-#[tauri::command]
-fn checkout_branch_cmd(path: String, name: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    checkout_branch(&repo, &name)
-}
-
-#[tauri::command]
-fn create_branch_cmd(path: String, name: String, from_ref: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    create_branch(&repo, &name, &from_ref)
-}
-
-#[tauri::command]
-fn delete_branch_cmd(path: String, name: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    delete_branch(&repo, &name)
-}
-
-#[tauri::command]
-fn rebase_onto_cmd(path: String, onto: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    rebase_onto(&repo, &onto)
-}
-
-#[tauri::command]
-fn open_new_window(app: tauri::AppHandle) -> Result<(), String> {
-    window::open_new_window(&app)
-}
-
-#[tauri::command]
-fn merge_branch_cmd(path: String, branch: String) -> Result<MergeResult, GitError> {
-    let repo = open_repo(&path)?;
-    merge_branch(&repo, &branch)
-}
-
-#[tauri::command]
-fn get_conflict_content_cmd(path: String, file_path: String) -> Result<String, GitError> {
-    let repo = open_repo(&path)?;
-    get_conflict_content(&repo, &file_path)
-}
-
-#[tauri::command]
-fn resolve_conflict_cmd(path: String, file_path: String, content: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    resolve_conflict(&repo, &file_path, &content)
-}
-
-#[tauri::command]
-fn stage_file(path: String, file_path: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    let mut index = repo.index()?;
-    index.add_path(std::path::Path::new(&file_path))?;
-    index.write()?;
-    Ok(())
-}
-
-#[tauri::command]
-fn unstage_file(path: String, file_path: String) -> Result<(), GitError> {
-    let repo = open_repo(&path)?;
-    let head = repo.head().ok().and_then(|r| r.peel_to_commit().ok());
-    if let Some(commit) = head {
-        repo.reset_default(Some(commit.as_object()), [&file_path])?;
-    } else {
-        let mut index = repo.index()?;
-        index.remove_path(std::path::Path::new(&file_path))?;
-        index.write()?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn create_commit(path: String, message: String) -> Result<String, GitError> {
-    let repo = open_repo(&path)?;
-    let sig = repo.signature()?;
-    let mut index = repo.index()?;
-    let tree_id = index.write_tree()?;
-    let tree = repo.find_tree(tree_id)?;
-
-    let parent_commits: Vec<git2::Commit> = repo
-        .head()
-        .ok()
-        .and_then(|r| r.peel_to_commit().ok())
-        .map(|c| vec![c])
-        .unwrap_or_default();
-
-    let parent_refs: Vec<&git2::Commit> = parent_commits.iter().collect();
-
-    let oid = repo.commit(Some("HEAD"), &sig, &sig, &message, &tree, &parent_refs)?;
-    Ok(oid.to_string())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -152,25 +11,78 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
-            open_new_window,
-            open_repository,
-            checkout_branch_cmd,
-            create_branch_cmd,
-            delete_branch_cmd,
-            rebase_onto_cmd,
-            get_commits_cmd,
-            get_branches_cmd,
-            get_status_cmd,
-            get_diff_cmd,
-            init_repository,
-            clone_repository,
-            fetch_remote,
-            merge_branch_cmd,
-            get_conflict_content_cmd,
-            resolve_conflict_cmd,
-            stage_file,
-            unstage_file,
-            create_commit,
+            commands::open_new_window,
+            commands::open_repository,
+            commands::get_repo_info,
+            commands::init_repository,
+            commands::get_identity,
+            commands::set_identity,
+            commands::get_commits,
+            commands::get_branches,
+            commands::get_tags,
+            commands::get_commit_details,
+            commands::get_commit_file_diff,
+            commands::get_status,
+            commands::get_diff,
+            commands::stage_files,
+            commands::stage_all,
+            commands::unstage_files,
+            commands::unstage_all,
+            commands::discard_files,
+            commands::apply_lines,
+            commands::create_commit,
+            commands::get_conflict_content,
+            commands::resolve_conflict,
+            commands::list_stashes,
+            commands::stash_save,
+            commands::stash_apply,
+            commands::stash_drop,
+            commands::checkout_branch,
+            commands::checkout_remote_branch,
+            commands::checkout_commit,
+            commands::create_branch,
+            commands::delete_branch,
+            commands::rename_branch,
+            commands::set_upstream,
+            commands::merge_branch,
+            commands::abort_merge,
+            commands::rebase_onto,
+            commands::continue_rebase,
+            commands::abort_rebase,
+            commands::rebase_todo,
+            commands::interactive_rebase,
+            commands::continue_interactive_rebase,
+            commands::abort_interactive_rebase,
+            commands::reset_to,
+            commands::cherry_pick,
+            commands::revert_commit,
+            commands::create_tag,
+            commands::delete_tag,
+            commands::list_remotes,
+            commands::add_remote,
+            commands::remove_remote,
+            commands::clone_repository,
+            commands::list_submodules,
+            commands::update_submodules,
+            commands::lfs_status,
+            commands::lfs_pull,
+            commands::lfs_track,
+            commands::fetch_remote,
+            commands::pull,
+            commands::push,
+            commands::delete_remote_branch,
+            commands::push_tag,
+            commands::delete_remote_tag,
+            commands::list_accounts,
+            commands::add_pat_account,
+            commands::update_account_token,
+            commands::rename_account,
+            commands::remove_account,
+            commands::forge_api,
+            commands::oauth_defaults,
+            commands::oauth_start,
+            commands::oauth_complete,
+            commands::oauth_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

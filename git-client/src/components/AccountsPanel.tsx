@@ -1,249 +1,582 @@
-import { useState } from "react";
-import { useAccountsStore } from "../store/useAccountsStore";
-import { GitHubClient } from "../api/github";
-import { GitLabClient } from "../api/gitlab";
-import type { ForgeAccount } from "../types/forge";
-import type { ForgePR, ForgeIssue } from "../types/forge";
+import { useEffect, useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { useAccountsStore, defaultBaseUrl } from "../store/useAccountsStore";
+import { useRepoStore } from "../store/useRepoStore";
+import { useUiStore, confirmAction } from "../store/useUiStore";
+import {
+  checkoutRemoteBranch, fetchRemote, getIdentity, oauthCancel, oauthComplete, oauthDefaults, oauthStart, setIdentity,
+} from "../ipc/commands";
+import { errorMessage, runGit } from "../lib/actions";
+import { hostOf, remoteForAccount } from "../lib/remoteUrl";
+import { ContextMenu, useContextMenu } from "./ContextMenu";
+import { inputClass } from "./Modal";
+import type { DeviceCode, ForgeAccount, ForgeIssue, ForgePR, Provider } from "../types/forge";
+
+type Kind = "github" | "gitlab" | "gitlab-self";
 
 export function AccountsPanel() {
-  const { accounts, data, activeId, addAccount, removeAccount, setData, setActive } = useAccountsStore();
-  const [showForm, setShowForm] = useState(false);
+  const accounts = useAccountsStore((s) => s.accounts);
+  const [adding, setAdding] = useState(false);
 
-  const activeAccount = accounts.find((a) => a.id === activeId) ?? null;
-  const activeData = activeId ? data[activeId] : null;
+  return (
+    <div className="flex flex-col h-full overflow-y-auto bg-[var(--color-bg-secondary)]">
+      <IdentitySection />
 
-  async function refresh(account: ForgeAccount) {
-    setData(account.id, { loading: true, error: null });
+      <Section
+        title="Comptes"
+        action={!adding && (
+          <button className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-text)]" onClick={() => setAdding(true)}>
+            + Ajouter
+          </button>
+        )}
+      >
+        {adding && <AddAccountForm onDone={() => setAdding(false)} />}
+        {accounts.map((a) => <AccountRow key={a.id} account={a} />)}
+        {accounts.length === 0 && !adding && (
+          <p className="px-3 pb-2 text-[11px] text-[var(--color-muted)]">
+            Ajoute un compte pour que fetch, pull, push et clone s'authentifient automatiquement en HTTPS.
+          </p>
+        )}
+      </Section>
+
+      <RepoForgeSection />
+    </div>
+  );
+}
+
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="border-b border-white/10 pb-1">
+      <div className="flex items-center px-3 pt-2 pb-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">{title}</span>
+        <div className="ml-auto">{action}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- Identité
+
+function IdentitySection() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  const notify = useUiStore((s) => s.notify);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [repoOnly, setRepoOnly] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [current, setCurrent] = useState<{ name: string | null; email: string | null } | null>(null);
+
+  useEffect(() => {
+    getIdentity(repoPath)
+      .then((id) => {
+        setCurrent(id);
+        setName(id.name ?? "");
+        setEmail(id.email ?? "");
+        if (!id.name || !id.email) setEditing(true);
+      })
+      .catch(() => setCurrent({ name: null, email: null }));
+  }, [repoPath]);
+
+  async function save() {
     try {
-      let prs: ForgePR[];
-      let issues: ForgeIssue[];
-
-      if (account.provider === "github") {
-        const client = new GitHubClient(account.token);
-        [prs, issues] = await Promise.all([
-          client.getPullRequests(account.owner!, account.repo!),
-          client.getIssues(account.owner!, account.repo!),
-        ]);
-      } else {
-        const client = new GitLabClient(account.token, account.baseUrl);
-        [prs, issues] = await Promise.all([
-          client.getMergeRequests(account.project!),
-          client.getIssues(account.project!),
-        ]);
-      }
-
-      setData(account.id, { prs, issues, loading: false, error: null });
+      await setIdentity(repoOnly && repoPath ? repoPath : null, name.trim(), email.trim());
+      setCurrent({ name: name.trim(), email: email.trim() });
+      setEditing(false);
+      notify("success", repoOnly ? "Identité enregistrée pour ce dépôt" : "Identité Git globale enregistrée");
     } catch (e) {
-      setData(account.id, { loading: false, error: String(e) });
+      notify("error", errorMessage(e));
     }
   }
 
-  async function handleAdd(account: ForgeAccount) {
-    addAccount(account);
-    setShowForm(false);
-    await refresh(account);
-  }
-
   return (
-    <div className="flex flex-col h-full">
-      {/* Account switcher */}
-      <div className="flex items-center gap-1 p-1.5 border-b border-white/10 flex-wrap">
-        {accounts.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => setActive(a.id)}
-            className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 transition-colors ${
-              a.id === activeId ? "bg-white/15 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:bg-white/10"
-            }`}
-          >
-            <ProviderIcon provider={a.provider} />
-            {a.label}
-          </button>
-        ))}
-        <button
-          onClick={() => setShowForm(true)}
-          className="text-[10px] px-2 py-0.5 rounded text-[var(--color-muted)] hover:bg-white/10 ml-auto"
-          title="Ajouter un compte"
-        >
-          + Compte
+    <Section
+      title="Identité Git"
+      action={!editing && (
+        <button className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-text)]" onClick={() => setEditing(true)}>
+          Modifier
         </button>
-      </div>
-
-      {/* Add account form */}
-      {showForm && (
-        <AddAccountForm
-          onAdd={handleAdd}
-          onCancel={() => setShowForm(false)}
-        />
       )}
-
-      {/* Active account content */}
-      {!showForm && activeAccount && activeData && (
-        <AccountContent
-          account={activeAccount}
-          data={activeData}
-          onRefresh={() => refresh(activeAccount)}
-          onRemove={() => removeAccount(activeAccount.id)}
-        />
+    >
+      {!editing && current && (
+        <p className="px-3 pb-2 text-xs text-[var(--color-text)] truncate" title={`${current.name} <${current.email}>`}>
+          {current.name} <span className="text-[var(--color-muted)]">&lt;{current.email}&gt;</span>
+        </p>
       )}
-
-      {!showForm && accounts.length === 0 && (
-        <div className="flex flex-col items-center justify-center flex-1 gap-2 p-4 text-center">
-          <p className="text-xs text-[var(--color-muted)]">Aucun compte configuré</p>
-          <button
-            onClick={() => setShowForm(true)}
-            className="text-xs px-3 py-1 rounded bg-white/10 hover:bg-white/15 text-[var(--color-text)]"
-          >
-            + Ajouter un compte
-          </button>
+      {editing && (
+        <div className="px-3 pb-2 flex flex-col gap-1.5">
+          {!current?.name && <p className="text-[11px] text-amber-300">Requis pour commiter.</p>}
+          <input className={inputClass} placeholder="Nom" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className={inputClass} placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          {repoPath && (
+            <label className="flex items-center gap-2 text-[11px] text-[var(--color-muted)]">
+              <input type="checkbox" checked={repoOnly} onChange={(e) => setRepoOnly(e.target.checked)} />
+              Uniquement pour ce dépôt
+            </label>
+          )}
+          <div className="flex gap-2">
+            <SmallButton primary disabled={!name.trim() || !email.trim()} onClick={save}>Enregistrer</SmallButton>
+            {current?.name && <SmallButton onClick={() => setEditing(false)}>Annuler</SmallButton>}
+          </div>
         </div>
       )}
-    </div>
+    </Section>
   );
 }
 
-function AccountContent({ account, data, onRefresh, onRemove }: {
-  account: ForgeAccount;
-  data: ReturnType<typeof useAccountsStore.getState>["data"][string];
-  onRefresh: () => void;
-  onRemove: () => void;
-}) {
-  const [tab, setTab] = useState<"pr" | "issues">("pr");
+// ---------------------------------------------------------------- Comptes
 
-  const prLabel = account.provider === "gitlab" ? "MRs" : "PRs";
-  const prCount = data.prs.length;
-  const issueCount = data.issues.length;
-
-  return (
-    <>
-      <div className="flex items-center gap-1 px-2 py-1 border-b border-white/10">
-        <TabBtn active={tab === "pr"} onClick={() => setTab("pr")}>{prLabel} ({prCount})</TabBtn>
-        <TabBtn active={tab === "issues"} onClick={() => setTab("issues")}>Issues ({issueCount})</TabBtn>
-        <div className="ml-auto flex gap-1">
-          <IconBtn onClick={onRefresh} title="Rafraîchir" disabled={data.loading}>↻</IconBtn>
-          <IconBtn onClick={onRemove} title="Supprimer ce compte">✕</IconBtn>
-        </div>
-      </div>
-
-      {data.loading && <p className="p-3 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
-      {data.error && <p className="p-3 text-xs text-red-400 break-words">{data.error}</p>}
-
-      {!data.loading && !data.error && (
-        <div className="flex-1 overflow-y-auto">
-          {tab === "pr" && (
-            <>
-              {data.prs.map((pr) => <PRRow key={pr.number} pr={pr} provider={account.provider} />)}
-              {data.prs.length === 0 && <Empty text={`Aucun ${prLabel} ouvert`} />}
-            </>
-          )}
-          {tab === "issues" && (
-            <>
-              {data.issues.map((issue) => <IssueRow key={issue.number} issue={issue} />)}
-              {data.issues.length === 0 && <Empty text="Aucune issue ouverte" />}
-            </>
-          )}
-        </div>
-      )}
-    </>
-  );
+function tokenHelpUrl(kind: Kind, baseUrl: string): string {
+  if (kind === "github") {
+    return "https://github.com/settings/tokens/new?scopes=repo,read:user,workflow&description=J6N";
+  }
+  const base = (kind === "gitlab" ? defaultBaseUrl("gitlab") : baseUrl).replace(/\/+$/, "");
+  return `${base}/-/user_settings/personal_access_tokens?name=J6N&scopes=api,read_user,write_repository`;
 }
 
-function AddAccountForm({ onAdd, onCancel }: { onAdd: (a: ForgeAccount) => void; onCancel: () => void }) {
-  const [provider, setProvider] = useState<"github" | "gitlab">("github");
-  const [label, setLabel] = useState("");
+const CLIENT_ID_KEY = "git-client.oauth-client-ids";
+
+function savedClientIds(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(CLIENT_ID_KEY) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function rememberClientId(host: string, clientId: string) {
+  try {
+    localStorage.setItem(CLIENT_ID_KEY, JSON.stringify({ ...savedClientIds(), [host]: clientId }));
+  } catch {
+    // stockage indisponible : il faudra ressaisir l'identifiant
+  }
+}
+
+/** Page d'enregistrement d'une application OAuth sur la forge. */
+function oauthAppHelpUrl(kind: Kind, baseUrl: string): string {
+  if (kind === "github") return "https://github.com/settings/applications/new";
+  const base = (kind === "gitlab" ? defaultBaseUrl("gitlab") : baseUrl).replace(/\/+$/, "");
+  return `${base}/-/user_settings/applications`;
+}
+
+function AddAccountForm({ onDone }: { onDone: () => void }) {
+  const add = useAccountsStore((s) => s.add);
+  const addConnected = useAccountsStore((s) => s.addConnected);
+  const notify = useUiStore((s) => s.notify);
+  const [kind, setKind] = useState<Kind>("github");
+  const [mode, setMode] = useState<"oauth" | "pat">("oauth");
+  const [baseUrl, setBaseUrl] = useState("https://");
   const [token, setToken] = useState("");
-  const [owner, setOwner] = useState("");
-  const [repo, setRepo] = useState("");
-  const [baseUrl, setBaseUrl] = useState("https://gitlab.com");
-  const [project, setProject] = useState("");
+  const [clientId, setClientId] = useState("");
+  const [defaults, setDefaults] = useState<{ github: string | null; gitlab: string | null } | null>(null);
+  const [advanced, setAdvanced] = useState(false);
+  const [label, setLabel] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [device, setDevice] = useState<DeviceCode | null>(null);
 
-  function handleSubmit() {
-    const isValid = provider === "github"
-      ? token && owner && repo
-      : token && project;
-    if (!isValid) return;
+  const provider: Provider = kind === "github" ? "github" : "gitlab";
+  const url = kind === "gitlab-self" ? baseUrl : defaultBaseUrl(provider);
+  const host = hostOf(url);
 
-    const account: ForgeAccount = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      provider,
-      label: label || (provider === "github" ? `${owner}/${repo}` : project),
-      token,
-      ...(provider === "github" ? { owner, repo } : { baseUrl, project }),
-    };
-    onAdd(account);
+  useEffect(() => {
+    oauthDefaults().then(setDefaults).catch(() => {});
+  }, []);
+
+  // Identifiant intégré à l'application (GitHub, GitLab.com) : l'utilisateur n'a rien à saisir.
+  const builtIn = host === "github.com" ? defaults?.github : host === "gitlab.com" ? defaults?.gitlab : null;
+  const showClientId = !builtIn || advanced;
+  const effectiveClientId = showClientId ? clientId : builtIn;
+
+  // Champ visible : dernier identifiant saisi pour cet hôte, sinon celui intégré.
+  useEffect(() => {
+    if (!host) return;
+    setClientId(savedClientIds()[host] ?? builtIn ?? "");
+  }, [host, builtIn]);
+
+  // Mode par défaut : navigateur si un identifiant est intégré, sinon token personnel.
+  useEffect(() => {
+    if (!defaults) return;
+    setMode(builtIn ? "oauth" : "pat");
+    setAdvanced(false);
+  }, [kind, builtIn, defaults]);
+
+  const valid = (kind !== "gitlab-self" || !!host) && (mode === "pat" ? !!token.trim() : !!effectiveClientId?.trim());
+
+  async function submitToken() {
+    const account = await add({ provider, baseUrl: url, token: token.trim(), label });
+    notify("success", `Compte ${account.username} connecté`);
+    onDone();
+  }
+
+  async function submitOAuth() {
+    const id = effectiveClientId!.trim();
+    const code = await oauthStart(provider, url.replace(/\/+$/, ""), id);
+    // On ne mémorise que ce que l'utilisateur a saisi lui-même.
+    if (showClientId) rememberClientId(host!, id);
+    setDevice(code);
+    openUrl(code.verification_uri_complete ?? code.verification_uri).catch(() => {});
+    try {
+      const saved = await oauthComplete(provider, url.replace(/\/+$/, ""), id, code, label || null);
+      addConnected(saved);
+      notify("success", `Compte ${saved.account.username} connecté`);
+      onDone();
+    } finally {
+      setDevice(null);
+    }
+  }
+
+  async function submit() {
+    if (!valid) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await (mode === "pat" ? submitToken() : submitOAuth());
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function cancel() {
+    if (device) oauthCancel(device.device_code);
+    onDone();
+  }
+
+  if (device) {
+    return (
+      <div className="mx-2 mb-2 p-3 flex flex-col gap-2 rounded border border-white/10 bg-black/20 text-center">
+        <p className="text-[11px] text-[var(--color-muted)]">Saisis ce code sur la page qui vient de s'ouvrir :</p>
+        <button
+          className="font-mono text-lg tracking-widest text-[var(--color-text)] bg-white/10 rounded py-1 hover:bg-white/15"
+          title="Copier le code"
+          onClick={() => navigator.clipboard.writeText(device.user_code)}
+        >
+          {device.user_code}
+        </button>
+        <button
+          className="text-[10px] text-sky-400 hover:underline"
+          onClick={() => openUrl(device.verification_uri_complete ?? device.verification_uri)}
+        >
+          {device.verification_uri} ↗
+        </button>
+        <p className="text-[11px] text-[var(--color-muted)] animate-pulse">En attente de la validation…</p>
+        <SmallButton onClick={cancel}>Annuler</SmallButton>
+      </div>
+    );
   }
 
   return (
-    <div className="p-3 flex flex-col gap-2 border-b border-white/10 bg-black/20">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">Nouveau compte</p>
-
-      <div className="flex gap-1">
-        {(["github", "gitlab"] as const).map((p) => (
+    <form
+      className="mx-2 mb-2 p-2 flex flex-col gap-1.5 rounded border border-white/10 bg-black/20"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+    >
+      <div className="grid grid-cols-3 gap-1">
+        {([
+          ["github", "GitHub"],
+          ["gitlab", "GitLab.com"],
+          ["gitlab-self", "GitLab privé"],
+        ] as const).map(([k, l]) => (
           <button
-            key={p}
-            onClick={() => setProvider(p)}
-            className={`flex-1 text-[10px] py-1 rounded flex items-center justify-center gap-1 transition-colors ${
-              provider === p ? "bg-white/15 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:bg-white/10"
-            }`}
+            key={k}
+            type="button"
+            onClick={() => setKind(k)}
+            className={`text-[10px] py-1 rounded ${kind === k ? "bg-white/15 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:bg-white/10"}`}
           >
-            <ProviderIcon provider={p} />
-            {p === "github" ? "GitHub" : "GitLab"}
+            {l}
+          </button>
+        ))}
+      </div>
+      {kind === "gitlab-self" && (
+        <input className={inputClass} placeholder="https://gitlab.mon-entreprise.fr" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+      )}
+
+      <div className="grid grid-cols-2 gap-1">
+        {([
+          ["oauth", "Navigateur (OAuth)"],
+          ["pat", "Token personnel"],
+        ] as const).map(([m, l]) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`text-[10px] py-1 rounded border ${mode === m ? "border-[var(--color-accent)]/60 text-[var(--color-text)]" : "border-white/10 text-[var(--color-muted)] hover:bg-white/10"}`}
+          >
+            {l}
           </button>
         ))}
       </div>
 
-      <input className={inp} placeholder="Nom (optionnel)" value={label} onChange={(e) => setLabel(e.target.value)} />
-      <input className={inp} type="password" placeholder="Personal Access Token" value={token} onChange={(e) => setToken(e.target.value)} />
-
-      {provider === "github" ? (
+      {mode === "pat" ? (
         <>
-          <input className={inp} placeholder="owner" value={owner} onChange={(e) => setOwner(e.target.value)} />
-          <input className={inp} placeholder="repo" value={repo} onChange={(e) => setRepo(e.target.value)} />
+          <input
+            className={inputClass}
+            type="password"
+            autoComplete="off"
+            placeholder="Token d'accès personnel"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+          <button
+            type="button"
+            className="text-left text-[10px] text-sky-400 hover:underline disabled:opacity-40"
+            disabled={!host}
+            onClick={() => openUrl(tokenHelpUrl(kind, baseUrl))}
+          >
+            Créer un token ({kind === "github" ? "scopes repo, read:user, workflow" : "scopes api, read_user, write_repository"}) ↗
+          </button>
         </>
       ) : (
-        <>
-          <input className={inp} placeholder="URL GitLab (ex: https://gitlab.myco.com)" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          <input className={inp} placeholder="namespace/projet ou ID numérique" value={project} onChange={(e) => setProject(e.target.value)} />
-        </>
+        showClientId ? (
+          <>
+            <input
+              className={inputClass}
+              placeholder="Identifiant client de l'application OAuth"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+            />
+            <p className="text-[10px] text-[var(--color-muted)]">
+              {kind === "github"
+                ? "Application OAuth GitHub avec « Enable Device Flow » coché."
+                : "Application GitLab non confidentielle, scopes api, read_user, write_repository (GitLab 17.2+)."}{" "}
+              <button
+                type="button"
+                className="text-sky-400 hover:underline disabled:opacity-40"
+                disabled={!host}
+                onClick={() => openUrl(oauthAppHelpUrl(kind, baseUrl))}
+              >
+                Enregistrer une application ↗
+              </button>
+              {builtIn && (
+                <>
+                  {" · "}
+                  <button type="button" className="text-sky-400 hover:underline" onClick={() => setAdvanced(false)}>
+                    Utiliser l'application par défaut
+                  </button>
+                </>
+              )}
+            </p>
+          </>
+        ) : (
+          <p className="text-[10px] text-[var(--color-muted)]">
+            Un code s'affichera : saisis-le sur la page {kind === "github" ? "GitHub" : "GitLab"} qui s'ouvrira dans ton navigateur.{" "}
+            <button type="button" className="text-sky-400 hover:underline" onClick={() => setAdvanced(true)}>
+              Paramètres avancés
+            </button>
+          </p>
+        )
       )}
 
+      <input className={inputClass} placeholder="Nom affiché (optionnel)" value={label} onChange={(e) => setLabel(e.target.value)} />
+      {error && <p className="text-[11px] text-red-400 break-words">{error}</p>}
       <div className="flex gap-2">
-        <button
-          className="flex-1 bg-[var(--color-accent)] hover:opacity-90 disabled:opacity-40 text-white text-xs font-semibold py-1.5 rounded"
-          onClick={handleSubmit}
-          disabled={provider === "github" ? !token || !owner || !repo : !token || !project}
-        >
-          Connecter
-        </button>
-        <button className="text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/15 text-[var(--color-muted)]" onClick={onCancel}>
-          Annuler
-        </button>
+        <SmallButton primary type="submit" disabled={!valid || saving}>
+          {saving ? "Connexion…" : mode === "oauth" ? "Se connecter" : "Connecter"}
+        </SmallButton>
+        <SmallButton onClick={onDone}>Annuler</SmallButton>
       </div>
+      <p className="text-[10px] text-[var(--color-muted)]">Les identifiants sont stockés dans le trousseau du système.</p>
+    </form>
+  );
+}
+
+function AccountRow({ account }: { account: ForgeAccount }) {
+  const updateToken = useAccountsStore((s) => s.updateToken);
+  const renameAccount = useAccountsStore((s) => s.rename);
+  const remove = useAccountsStore((s) => s.remove);
+  const ask = useUiStore((s) => s.ask);
+  const notify = useUiStore((s) => s.notify);
+  const { menu, open, close } = useContextMenu();
+  const host = hostOf(account.base_url);
+
+  async function changeToken() {
+    const result = await ask({
+      title: `Nouveau token pour ${account.label}`,
+      input: { placeholder: "Token d'accès personnel", secret: true },
+      confirmLabel: "Enregistrer",
+    });
+    const token = result?.value.trim();
+    if (!token) return;
+    try {
+      await updateToken(account, token);
+      notify("success", "Token mis à jour");
+    } catch (e) {
+      notify("error", errorMessage(e));
+    }
+  }
+
+  async function rename() {
+    const result = await ask({ title: "Renommer le compte", input: { initial: account.label }, confirmLabel: "Renommer" });
+    const label = result?.value.trim();
+    if (label) await renameAccount(account, label).catch((e) => notify("error", errorMessage(e)));
+  }
+
+  async function handleRemove() {
+    if (!(await confirmAction(`Supprimer le compte ${account.label} ?`, "Le token sera retiré du trousseau.", true))) return;
+    await remove(account.id).catch((e) => notify("error", errorMessage(e)));
+  }
+
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-1.5 hover:bg-white/5 group"
+      onContextMenu={(e) => open(e, [
+        ...(account.auth === "pat" ? [{ label: "Changer le token…", action: changeToken }] : []),
+        { label: "Renommer…", action: rename },
+        { label: "Ouvrir le profil", action: () => openUrl(`${account.base_url}/${account.username}`) },
+        "separator",
+        { label: "Supprimer", danger: true, action: handleRemove },
+      ])}
+    >
+      <ProviderIcon provider={account.provider} />
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-[var(--color-text)] truncate">{account.label}</p>
+        <p className="text-[10px] text-[var(--color-muted)] truncate">
+          {account.username} · {host}
+          {account.auth === "oauth" && <span className="ml-1 px-1 rounded bg-sky-500/20 text-sky-300">OAuth</span>}
+        </p>
+      </div>
+      <button
+        className="text-[var(--color-muted)] hover:text-[var(--color-text)] opacity-0 group-hover:opacity-100 text-xs px-1"
+        title="Options"
+        onClick={(e) => open(e, [
+          ...(account.auth === "pat" ? [{ label: "Changer le token…", action: changeToken }] : []),
+          { label: "Renommer…", action: rename },
+          "separator",
+          { label: "Supprimer", danger: true, action: handleRemove },
+        ])}
+      >
+        ⋯
+      </button>
+      {menu && <ContextMenu menu={menu} onClose={close} />}
     </div>
   );
 }
 
-function PRRow({ pr, provider }: { pr: ForgePR; provider: "github" | "gitlab" }) {
-  const stateColor = pr.state === "open" ? "text-green-400" : pr.state === "merged" ? "text-purple-400" : "text-red-400";
-  const stateIcon = pr.state === "open" ? "●" : pr.state === "merged" ? "⎇" : "✕";
-  const typeLabel = provider === "gitlab" ? "MR" : "PR";
+// ---------------------------------------------------------------- PR / MR / issues du dépôt courant
+
+function RepoForgeSection() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  const remotes = useRepoStore((s) => s.remotes);
+  const branches = useRepoStore((s) => s.branches);
+  const accounts = useAccountsStore((s) => s.accounts);
+  const data = useAccountsStore((s) => s.data);
+  const setData = useAccountsStore((s) => s.setData);
+  const client = useAccountsStore((s) => s.client);
+  const [tab, setTab] = useState<"pr" | "issues">("pr");
+  const { menu, open, close } = useContextMenu();
+
+  const linked = accounts
+    .map((account) => ({ account, match: remoteForAccount(remotes, account) }))
+    .find((l) => l.match !== null);
+
+  const account = linked?.account;
+  const projectPath = linked?.match?.path;
+  const remoteName = linked?.match?.remote.name;
+  const accountData = account ? data[account.id] : undefined;
+
+  async function load() {
+    if (!account || !projectPath) return;
+    setData(account.id, { loading: true, error: null });
+    try {
+      const c = await client(account);
+      const [prs, issues] = await Promise.all([c.getPullRequests(projectPath), c.getIssues(projectPath)]);
+      setData(account.id, { prs, issues, loading: false });
+    } catch (e) {
+      setData(account.id, { loading: false, error: errorMessage(e) });
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, [account?.id, projectPath]);
+
+  if (!repoPath) return null;
+
+  if (!account || !projectPath) {
+    return (
+      <Section title="Pull / merge requests">
+        <p className="px-3 pb-2 text-[11px] text-[var(--color-muted)]">
+          {remotes.length === 0
+            ? "Ce dépôt n'a aucun remote."
+            : "Aucun compte ne correspond aux remotes de ce dépôt (l'hôte du remote doit être celui du compte)."}
+        </p>
+      </Section>
+    );
+  }
+
+  const prLabel = account.provider === "gitlab" ? "MR" : "PR";
+
+  async function checkoutPr(pr: ForgePR) {
+    const remoteBranch = `${remoteName}/${pr.sourceBranch}`;
+    const path = repoPath!;
+    if (!branches.some((b) => b.is_remote && b.name === remoteBranch)) {
+      await runGit(() => fetchRemote(path, remoteName ?? null), { busy: "Fetch…", refresh: false });
+    }
+    await runGit(() => checkoutRemoteBranch(path, remoteBranch), { success: `Checkout de ${pr.sourceBranch}` });
+  }
 
   return (
-    <div className="px-3 py-2 border-b border-white/5 hover:bg-white/5">
+    <Section
+      title={`${projectPath}`}
+      action={
+        <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" onClick={load}>
+          ↻
+        </button>
+      }
+    >
+      <div className="flex gap-1 px-2 pb-1">
+        <TabBtn active={tab === "pr"} onClick={() => setTab("pr")}>{prLabel}s ({accountData?.prs.length ?? 0})</TabBtn>
+        <TabBtn active={tab === "issues"} onClick={() => setTab("issues")}>Issues ({accountData?.issues.length ?? 0})</TabBtn>
+      </div>
+      {accountData?.loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
+      {accountData?.error && <p className="px-3 py-1 text-xs text-red-400 break-words">{accountData.error}</p>}
+      {!accountData?.loading && !accountData?.error && tab === "pr" && (
+        <>
+          {accountData?.prs.map((pr) => (
+            <PRRow
+              key={pr.number}
+              pr={pr}
+              typeLabel={prLabel}
+              onContextMenu={(e) => open(e, [
+                { label: `Checkout ${pr.sourceBranch}`, action: () => checkoutPr(pr) },
+                { label: "Ouvrir dans le navigateur", action: () => openUrl(pr.url) },
+              ])}
+            />
+          ))}
+          {accountData?.prs.length === 0 && <Empty text={`Aucune ${prLabel} ouverte`} />}
+        </>
+      )}
+      {!accountData?.loading && !accountData?.error && tab === "issues" && (
+        <>
+          {accountData?.issues.map((issue) => <IssueRow key={issue.number} issue={issue} />)}
+          {accountData?.issues.length === 0 && <Empty text="Aucune issue ouverte" />}
+        </>
+      )}
+      {menu && <ContextMenu menu={menu} onClose={close} />}
+    </Section>
+  );
+}
+
+function PRRow({ pr, typeLabel, onContextMenu }: { pr: ForgePR; typeLabel: string; onContextMenu: (e: React.MouseEvent) => void }) {
+  const stateColor = pr.state === "open" ? "text-green-400" : pr.state === "merged" ? "text-purple-400" : "text-red-400";
+  return (
+    <div
+      className="px-3 py-1.5 hover:bg-white/5 cursor-pointer"
+      onClick={() => openUrl(pr.url)}
+      onContextMenu={onContextMenu}
+      title="Clic : ouvrir dans le navigateur · Clic droit : checkout"
+    >
       <div className="flex items-start gap-2">
-        <span className={`${stateColor} shrink-0 mt-0.5 text-xs`}>{stateIcon}</span>
+        <span className={`${stateColor} shrink-0 text-xs`}>●</span>
         <div className="flex-1 min-w-0">
           <p className="text-xs text-[var(--color-text)] truncate">{pr.title}</p>
-          <p className="text-[10px] text-[var(--color-muted)] mt-0.5">
+          <p className="text-[10px] text-[var(--color-muted)] truncate">
             {typeLabel}#{pr.number} · {pr.author} · {pr.sourceBranch} → {pr.targetBranch}
           </p>
-          {pr.labels.length > 0 && (
-            <div className="flex gap-1 mt-1 flex-wrap">
-              {pr.labels.map((l) => (
-                <span key={l} className="px-1 text-[9px] rounded bg-white/10 text-[var(--color-muted)]">{l}</span>
-              ))}
-            </div>
-          )}
         </div>
         {pr.draft && <span className="text-[9px] border border-white/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
       </div>
@@ -253,40 +586,59 @@ function PRRow({ pr, provider }: { pr: ForgePR; provider: "github" | "gitlab" })
 
 function IssueRow({ issue }: { issue: ForgeIssue }) {
   return (
-    <div className="px-3 py-2 border-b border-white/5 hover:bg-white/5">
+    <div className="px-3 py-1.5 hover:bg-white/5 cursor-pointer" onClick={() => openUrl(issue.url)}>
       <div className="flex items-start gap-2">
-        <span className={`shrink-0 mt-0.5 text-xs ${issue.state === "open" ? "text-green-400" : "text-red-400"}`}>●</span>
+        <span className={`shrink-0 text-xs ${issue.state === "open" ? "text-green-400" : "text-red-400"}`}>●</span>
         <div className="min-w-0">
           <p className="text-xs text-[var(--color-text)] truncate">{issue.title}</p>
-          <p className="text-[10px] text-[var(--color-muted)] mt-0.5">#{issue.number} · {issue.author}</p>
+          <p className="text-[10px] text-[var(--color-muted)]">#{issue.number} · {issue.author}</p>
         </div>
       </div>
     </div>
   );
 }
 
-function ProviderIcon({ provider }: { provider: "github" | "gitlab" }) {
-  return <span className="text-[10px]">{provider === "github" ? "⌥" : "◈"}</span>;
+function ProviderIcon({ provider }: { provider: Provider }) {
+  return (
+    <span
+      className={`w-5 h-5 shrink-0 rounded flex items-center justify-center text-[10px] font-bold ${
+        provider === "github" ? "bg-white/15 text-white" : "bg-orange-500/30 text-orange-300"
+      }`}
+    >
+      {provider === "github" ? "GH" : "GL"}
+    </span>
+  );
 }
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button onClick={onClick} className={`text-[10px] px-2 py-0.5 rounded transition-colors ${active ? "bg-white/10 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"}`}>
+    <button onClick={onClick} className={`text-[10px] px-2 py-0.5 rounded ${active ? "bg-white/10 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"}`}>
       {children}
     </button>
   );
 }
 
-function IconBtn({ onClick, title, disabled, children }: { onClick: () => void; title?: string; disabled?: boolean; children: React.ReactNode }) {
+function SmallButton({ onClick, disabled, primary, type = "button", children }: {
+  onClick?: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  type?: "button" | "submit";
+  children: React.ReactNode;
+}) {
   return (
-    <button onClick={onClick} title={title} disabled={disabled} className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-40 px-1">
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      className={`text-[11px] px-2.5 py-1 rounded disabled:opacity-40 ${
+        primary ? "bg-[var(--color-accent)] text-white font-semibold hover:opacity-90" : "bg-white/10 text-[var(--color-text)] hover:bg-white/15"
+      }`}
+    >
       {children}
     </button>
   );
 }
 
 function Empty({ text }: { text: string }) {
-  return <p className="p-3 text-xs text-[var(--color-muted)] italic">{text}</p>;
+  return <p className="px-3 py-1 text-xs text-[var(--color-muted)] italic">{text}</p>;
 }
-
-const inp = "bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-[var(--color-muted)] w-full";

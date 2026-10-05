@@ -1,149 +1,212 @@
-import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useRepoStore } from "../store/useRepoStore";
-import { openRepository, getCommits, getBranches, getStatus, initRepository, cloneRepository, fetchRemote, openNewWindow } from "../ipc/commands";
+import { useUiStore } from "../store/useUiStore";
+import {
+  createBranch, fetchRemote, openNewWindow, pull, push, stashApply, stashSave,
+} from "../ipc/commands";
+import { reportMerge, runGit } from "../lib/actions";
+import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "../lib/repoActions";
+import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
+import { SearchBar } from "./SearchBar";
+import logoMark from "../assets/logo-mark.webp";
 
-export function Toolbar() {
-  const setRepoPath = useRepoStore((s) => s.setRepoPath);
-  const setCommits = useRepoStore((s) => s.setCommits);
-  const setBranches = useRepoStore((s) => s.setBranches);
-  const setStatus = useRepoStore((s) => s.setStatus);
-  const setHeadBranch = useRepoStore((s) => s.setHeadBranch);
+export function Toolbar({ onClone }: { onClone: () => void }) {
   const repoPath = useRepoStore((s) => s.repoPath);
-  const [cloneUrl, setCloneUrl] = useState("");
-  const [showClone, setShowClone] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [cloning, setCloning] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const info = useRepoStore((s) => s.info);
+  const branches = useRepoStore((s) => s.branches);
+  const stashes = useRepoStore((s) => s.stashes);
+  const recent = useRepoStore((s) => s.recentRepos);
+  const closeRepo = useRepoStore((s) => s.closeRepo);
+  const busy = useUiStore((s) => s.busy);
+  const ask = useUiStore((s) => s.ask);
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
-  async function loadRepo(path: string) {
-    const { head_branch } = await openRepository(path);
-    setRepoPath(path);
-    setHeadBranch(head_branch);
-    const [commits, branches, status] = await Promise.all([
-      getCommits(path, 500),
-      getBranches(path),
-      getStatus(path),
-    ]);
-    setCommits(commits);
-    setBranches(branches);
-    setStatus(status);
+  const head = branches.find((b) => b.is_head && !b.is_remote);
+  const repoName = repoPath?.split(/[\\/]/).pop();
+
+  function repoMenu(): MenuEntry[] {
+    return [
+      { label: "Ouvrir un dépôt…", action: chooseAndOpenRepo },
+      { label: "Cloner un dépôt…", action: onClone },
+      { label: "Initialiser un dépôt…", action: chooseAndInitRepo },
+      { label: "Nouvelle fenêtre", action: () => openNewWindow() },
+      ...(recent.filter((p) => p !== repoPath).length > 0 ? ["separator" as const] : []),
+      ...recent
+        .filter((p) => p !== repoPath)
+        .map((p) => ({ label: p.split(/[\\/]/).pop() ?? p, hint: p, action: () => openRepoAt(p) })),
+      ...(repoPath ? ["separator" as const, { label: "Fermer le dépôt", action: closeRepo }] : []),
+    ];
   }
 
-  async function handleOpen() {
-    setError(null);
-    const selected = await open({ directory: true, multiple: false });
-    if (!selected || typeof selected !== "string") return;
-    await loadRepo(selected);
-  }
-
-  async function handleInit() {
-    setError(null);
-    const selected = await open({ directory: true, multiple: false });
-    if (!selected || typeof selected !== "string") return;
-    await initRepository(selected);
-    await loadRepo(selected);
-  }
-
-  async function handleClone() {
-    if (!cloneUrl.trim()) return;
-    setError(null);
-    setCloning(true);
-    try {
-      const dest = await open({ directory: true, multiple: false });
-      if (!dest || typeof dest !== "string") return;
-      const repoName = cloneUrl.split("/").pop()?.replace(/\.git$/, "") ?? "repo";
-      const targetPath = `${dest}/${repoName}`;
-      await cloneRepository(cloneUrl.trim(), targetPath);
-      await loadRepo(targetPath);
-      setShowClone(false);
-      setCloneUrl("");
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setCloning(false);
-    }
-  }
-
-  async function handleFetch() {
+  async function doPull(rebase: boolean) {
     if (!repoPath) return;
-    setError(null);
-    setFetching(true);
-    try {
-      await fetchRemote(repoPath);
-      const [commits, branches] = await Promise.all([
-        getCommits(repoPath, 500),
-        getBranches(repoPath),
-      ]);
-      setCommits(commits);
-      setBranches(branches);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setFetching(false);
-    }
+    const result = await runGit(() => pull(repoPath, rebase), { busy: rebase ? "Pull (rebase)…" : "Pull…" });
+    reportMerge(result, "Pull terminé");
   }
+
+  async function doPush(force = false) {
+    if (!repoPath || !info?.head_branch) return;
+    if (force) {
+      const ok = await ask({
+        title: "Push forcé",
+        message: `Écraser la branche distante de « ${info.head_branch} » avec la version locale ?\nLes commits distants absents en local seront perdus.`,
+        danger: true,
+        confirmLabel: "Forcer le push",
+      });
+      if (!ok) return;
+    }
+    await runGit(() => push(repoPath, { force }), {
+      busy: "Push…",
+      success: head?.upstream ? `Push de ${info.head_branch} terminé` : `${info.head_branch} publiée sur le remote`,
+    });
+  }
+
+  async function doFetch() {
+    if (!repoPath) return;
+    await runGit(() => fetchRemote(repoPath), { busy: "Fetch…", success: "Fetch terminé" });
+  }
+
+  async function doBranch() {
+    if (!repoPath) return;
+    const result = await ask({
+      title: "Nouvelle branche",
+      message: `Depuis ${info?.head_branch ?? "HEAD"}`,
+      input: { placeholder: "nom-de-branche" },
+      checkbox: { label: "Basculer sur la nouvelle branche", initial: true },
+      confirmLabel: "Créer",
+    });
+    const name = result?.value.trim();
+    if (!name) return;
+    await runGit(() => createBranch(repoPath, name, "HEAD", result!.checked), { success: `Branche ${name} créée` });
+  }
+
+  async function doStash() {
+    if (!repoPath) return;
+    const result = await ask({
+      title: "Mettre de côté (stash)",
+      input: { placeholder: "Message (optionnel)" },
+      checkbox: { label: "Inclure les fichiers non suivis", initial: true },
+      confirmLabel: "Stash",
+    });
+    if (!result) return;
+    await runGit(() => stashSave(repoPath, result.value.trim() || null, result.checked), { success: "Modifications mises de côté" });
+  }
+
+  async function doPop() {
+    if (!repoPath || stashes.length === 0) return;
+    await runGit(() => stashApply(repoPath, 0, true), { success: "Stash réappliqué" });
+  }
+
+  const disabled = !repoPath || !!busy;
 
   return (
-    <header className="flex flex-col shrink-0 bg-[var(--color-bg-secondary)] border-b border-white/10">
-      <div className="flex items-center gap-2 px-4 h-10">
-        <span className="text-sm font-semibold text-[var(--color-text)] tracking-tight">git-client</span>
-        <div className="w-px h-4 bg-white/10" />
+    <header className="flex items-center gap-1.5 px-3 h-11 shrink-0 bg-[var(--color-bg-secondary)] border-b border-white/10">
+      <button
+        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/10 max-w-60"
+        onClick={(e) => openMenu(e, repoMenu())}
+        title={repoPath ?? undefined}
+      >
+        <img
+          src={logoMark}
+          alt=""
+          width={24}
+          height={24}
+          draggable={false}
+          className="w-6 h-6 rounded-md ring-1 ring-white/10 shrink-0 select-none"
+        />
+        <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "J6N"}</span>
+        <span className="text-[10px] text-[var(--color-muted)]">▾</span>
+      </button>
+      {info && (
+        <span className="text-xs font-mono text-[var(--color-accent)] truncate max-w-48" title="Branche courante">
+          {info.interactive_rebase
+            ? `Rebase interactif ${info.interactive_rebase.step}/${info.interactive_rebase.total}`
+            : info.head_detached
+              ? `HEAD détaché @ ${info.head_hash?.slice(0, 7)}`
+              : `⎇ ${info.head_branch ?? ""}`}
+        </span>
+      )}
 
-        <ToolbarBtn onClick={handleOpen}>Ouvrir</ToolbarBtn>
-        <ToolbarBtn onClick={handleInit}>Init</ToolbarBtn>
-        <ToolbarBtn onClick={() => { setShowClone((v) => !v); setError(null); }}>
-          Cloner
-        </ToolbarBtn>
-        <ToolbarBtn onClick={() => openNewWindow()} title="Ouvrir une nouvelle fenêtre">+ Fenêtre</ToolbarBtn>
+      <div className="w-px h-5 bg-white/10 mx-1" />
 
-        {repoPath && (
-          <>
-            <div className="w-px h-4 bg-white/10" />
-            <ToolbarBtn onClick={handleFetch} disabled={fetching}>
-              {fetching ? "Fetch…" : "Fetch"}
-            </ToolbarBtn>
-            <span className="text-xs text-[var(--color-muted)] font-mono truncate ml-1">{repoPath}</span>
-          </>
-        )}
+      <ToolBtn
+        label="Pull"
+        icon="⇣"
+        badge={head?.behind}
+        disabled={disabled || !head}
+        onClick={() => doPull(false)}
+        onMenu={(e) => openMenu(e, [
+          { label: "Pull (fast-forward si possible, sinon merge)", action: () => doPull(false) },
+          { label: "Pull (rebase)", action: () => doPull(true) },
+        ])}
+      />
+      <ToolBtn
+        label="Push"
+        icon="⇡"
+        badge={head?.ahead}
+        disabled={disabled || !head}
+        onClick={() => doPush(false)}
+        onMenu={(e) => openMenu(e, [
+          { label: "Push", action: () => doPush(false) },
+          { label: "Push forcé…", action: () => doPush(true), danger: true },
+        ])}
+      />
+      <ToolBtn label="Fetch" icon="⟳" disabled={disabled} onClick={doFetch} />
+      <ToolBtn label="Branche" icon="⎇" disabled={disabled || !info?.head_hash} onClick={doBranch} />
+      <ToolBtn label="Stash" icon="⊟" disabled={disabled} onClick={doStash} />
+      <ToolBtn label="Pop" icon="⊞" badge={stashes.length || undefined} disabled={disabled || stashes.length === 0} onClick={doPop} />
 
-        {error && <span className="text-xs text-red-400 ml-auto truncate">{error}</span>}
+      {busy && <span className="text-xs text-[var(--color-muted)] animate-pulse ml-2">{busy}</span>}
+
+      <div className="ml-auto flex items-center gap-2">
+        <SearchBar />
+        <button
+          className="text-xs px-2 py-1 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+          onClick={() => openNewWindow()}
+          title="Ouvrir une nouvelle fenêtre"
+        >
+          ⧉
+        </button>
       </div>
 
-      {showClone && (
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-white/10 bg-black/20">
-          <input
-            autoFocus
-            className="flex-1 bg-black/40 border border-white/10 rounded px-2 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-[var(--color-muted)]"
-            placeholder="URL du dépôt (https://…)"
-            value={cloneUrl}
-            onChange={(e) => setCloneUrl(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleClone()}
-          />
-          <ToolbarBtn onClick={handleClone} disabled={cloning || !cloneUrl.trim()}>
-            {cloning ? "Clonage…" : "Cloner ici"}
-          </ToolbarBtn>
-          <ToolbarBtn onClick={() => { setShowClone(false); setCloneUrl(""); }}>✕</ToolbarBtn>
-        </div>
-      )}
+      {menu && <ContextMenu menu={menu} onClose={closeMenu} />}
     </header>
   );
 }
 
-function ToolbarBtn({ onClick, disabled, title, children }: {
-  onClick: () => void;
+function ToolBtn({ label, icon, badge, disabled, onClick, onMenu }: {
+  label: string;
+  icon: string;
+  badge?: number;
   disabled?: boolean;
-  title?: string;
-  children: React.ReactNode;
+  onClick: () => void;
+  onMenu?: (e: React.MouseEvent) => void;
 }) {
   return (
-    <button
-      className="text-xs px-3 py-1 rounded bg-white/10 hover:bg-white/15 disabled:opacity-40 text-[var(--color-text)] transition-colors"
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-    >
-      {children}
-    </button>
+    <div className="flex items-stretch">
+      <button
+        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-l rounded-r-none hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent text-[var(--color-text)]"
+        style={onMenu ? undefined : { borderRadius: 4 }}
+        onClick={onClick}
+        disabled={disabled}
+        title={label}
+      >
+        <span className="opacity-80">{icon}</span>
+        {label}
+        {!!badge && (
+          <span className="text-[9px] px-1 rounded-full bg-[var(--color-accent)]/80 text-white leading-4">{badge}</span>
+        )}
+      </button>
+      {onMenu && (
+        <button
+          className="text-[9px] px-1 rounded-r hover:bg-white/10 disabled:opacity-40 text-[var(--color-muted)]"
+          disabled={disabled}
+          onClick={onMenu}
+          aria-label={`Options ${label}`}
+        >
+          ▾
+        </button>
+      )}
+    </div>
   );
 }
+

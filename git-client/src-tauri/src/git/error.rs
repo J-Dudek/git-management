@@ -8,6 +8,14 @@ pub enum GitError {
     NotFound(String),
     #[error("Conflict: {0}")]
     Conflict(String),
+    #[error("{0}")]
+    Other(String),
+}
+
+impl From<std::io::Error> for GitError {
+    fn from(e: std::io::Error) -> Self {
+        GitError::Other(e.to_string())
+    }
 }
 
 impl serde::Serialize for GitError {

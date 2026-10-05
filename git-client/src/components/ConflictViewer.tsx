@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { useRepoStore } from "../store/useRepoStore";
-import { getStatus } from "../ipc/commands";
-import type { FileStatus } from "../types/git";
+import { useUiStore } from "../store/useUiStore";
+import { getConflictContent, resolveConflict } from "../ipc/commands";
+import { errorMessage } from "../lib/actions";
 
 interface ConflictSection {
   ours: string[];
@@ -10,7 +10,7 @@ interface ConflictSection {
   before: string[];
 }
 
-function parseConflicts(content: string): ConflictSection[] {
+export function parseConflicts(content: string): ConflictSection[] {
   const sections: ConflictSection[] = [];
   const lines = content.split("\n");
   let state: "normal" | "ours" | "theirs" = "normal";
@@ -40,33 +40,30 @@ function parseConflicts(content: string): ConflictSection[] {
   return sections;
 }
 
-function resolveWith(content: string, choices: ("ours" | "theirs" | "both")[]): string {
-  const lines = content.split("\n");
+export function resolveWith(content: string, choices: ("ours" | "theirs" | "both")[]): string {
   const result: string[] = [];
   let state: "normal" | "ours" | "theirs" = "normal";
   let conflictIdx = 0;
-  let oursLines: string[] = [];
+  let ours: string[] = [];
+  let theirs: string[] = [];
 
-  for (const line of lines) {
-    if (line.startsWith("<<<<<<<")) {
-      oursLines = [];
+  for (const line of content.split("\n")) {
+    if (line.startsWith("<<<<<<<") && state === "normal") {
+      ours = [];
+      theirs = [];
       state = "ours";
     } else if (line.startsWith("=======") && state === "ours") {
       state = "theirs";
     } else if (line.startsWith(">>>>>>>") && state === "theirs") {
       const choice = choices[conflictIdx] ?? "ours";
-      if (choice === "ours" || choice === "both") result.push(...oursLines);
+      if (choice === "ours" || choice === "both") result.push(...ours);
+      if (choice === "theirs" || choice === "both") result.push(...theirs);
       state = "normal";
       conflictIdx++;
     } else if (state === "ours") {
-      oursLines.push(line);
-      if (choices[conflictIdx] === "ours" || choices[conflictIdx] === "both") {
-        // collected above
-      }
+      ours.push(line);
     } else if (state === "theirs") {
-      if (choices[conflictIdx] === "theirs" || choices[conflictIdx] === "both") {
-        result.push(line);
-      }
+      theirs.push(line);
     } else {
       result.push(line);
     }
@@ -75,74 +72,93 @@ function resolveWith(content: string, choices: ("ours" | "theirs" | "both")[]): 
   return result.join("\n");
 }
 
-interface Props {
-  file: FileStatus;
-  onResolved: () => void;
-}
-
-export function ConflictViewer({ file, onResolved }: Props) {
+export function ConflictViewer({ path }: { path: string }) {
   const repoPath = useRepoStore((s) => s.repoPath);
-  const setStatus = useRepoStore((s) => s.setStatus);
+  const refresh = useRepoStore((s) => s.refresh);
+  const setCenter = useRepoStore((s) => s.setCenter);
+  const notify = useUiStore((s) => s.notify);
   const [content, setContent] = useState<string | null>(null);
   const [sections, setSections] = useState<ConflictSection[]>([]);
   const [choices, setChoices] = useState<("ours" | "theirs" | "both")[]>([]);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!repoPath) return;
-    invoke<string>("get_conflict_content_cmd", { path: repoPath, filePath: file.path }).then((c) => {
-      setContent(c);
-      const s = parseConflicts(c);
-      setSections(s);
-      setChoices(s.map(() => "ours"));
-    });
-  }, [repoPath, file.path]);
+    setContent(null);
+    setError(null);
+    getConflictContent(repoPath, path)
+      .then((c) => {
+        setContent(c);
+        const s = parseConflicts(c);
+        setSections(s);
+        setChoices(s.map(() => "ours"));
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, [repoPath, path]);
 
   async function handleResolve() {
-    if (!repoPath || !content) return;
+    if (!repoPath || content === null) return;
     setSaving(true);
     try {
-      const resolved = resolveWith(content, choices);
-      await invoke("resolve_conflict_cmd", { path: repoPath, filePath: file.path, content: resolved });
-      const s = await getStatus(repoPath);
-      setStatus(s);
-      onResolved();
+      await resolveConflict(repoPath, path, resolveWith(content, choices));
+      notify("success", `${path} résolu et indexé`);
+      setCenter({ kind: "graph" });
+      await refresh();
+    } catch (e) {
+      notify("error", errorMessage(e));
     } finally {
       setSaving(false);
     }
   }
 
-  if (!content) {
+  if (error) {
+    return <div className="p-3 text-xs text-red-400 break-words">{error}</div>;
+  }
+  if (content === null) {
     return <div className="p-3 text-xs text-[var(--color-muted)] animate-pulse">Chargement du conflit…</div>;
   }
 
-  const allChosen = choices.length > 0;
-
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-red-400">⚠ Conflit</span>
-        <span className="text-[10px] font-mono text-[var(--color-muted)] truncate flex-1">{file.path}</span>
+      <div className="flex items-center gap-3 px-3 h-9 border-b border-white/10 shrink-0 bg-[var(--color-bg-secondary)]">
         <button
-          className="text-xs px-2 py-0.5 rounded bg-green-700/60 hover:bg-green-700/80 text-white disabled:opacity-40"
-          onClick={handleResolve}
-          disabled={saving || !allChosen}
+          className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+          onClick={() => setCenter({ kind: "graph" })}
         >
-          {saving ? "Résolution…" : "Résoudre"}
+          ← Graphe
+        </button>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-red-400">⚠ Conflit</span>
+        <span className="text-xs font-mono text-[var(--color-text)] truncate flex-1">{path}</span>
+        <span className="text-[11px] text-[var(--color-muted)]">
+          {sections.length} bloc{sections.length > 1 ? "s" : ""} — clique sur la version à garder
+        </span>
+        <button
+          className="text-xs px-3 py-1 rounded bg-green-700/70 hover:bg-green-700 text-white disabled:opacity-40"
+          onClick={handleResolve}
+          disabled={saving}
+        >
+          {saving ? "Résolution…" : sections.length ? "Résoudre et indexer" : "Marquer comme résolu"}
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2 space-y-3">
+      {sections.length === 0 && (
+        <p className="p-3 text-xs text-[var(--color-muted)]">
+          Aucun marqueur de conflit dans ce fichier (déjà édité, ou conflit de suppression). Tu peux le marquer comme résolu.
+        </p>
+      )}
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {sections.map((section, i) => (
           <div key={i} className="border border-white/10 rounded overflow-hidden text-[11px] font-mono">
             {section.before.length > 0 && (
               <div className="px-3 py-1 bg-black/20 text-[var(--color-muted)] opacity-60">
-                {section.before.map((l, j) => <div key={j}>{l}</div>)}
+                {section.before.map((l, j) => <div key={j} className="whitespace-pre">{l || " "}</div>)}
               </div>
             )}
             <div className="grid grid-cols-2 divide-x divide-white/10">
               <SidePanel
-                label="HEAD (le nôtre)"
+                label="Actuel (HEAD)"
                 lines={section.ours}
                 chosen={choices[i]}
                 side="ours"
@@ -151,7 +167,7 @@ export function ConflictViewer({ file, onResolved }: Props) {
                 activeBg="bg-green-900/40"
               />
               <SidePanel
-                label="Entrant (le leur)"
+                label="Entrant"
                 lines={section.theirs}
                 chosen={choices[i]}
                 side="theirs"
@@ -162,7 +178,7 @@ export function ConflictViewer({ file, onResolved }: Props) {
             </div>
             <div className="flex justify-center gap-2 p-1 bg-black/20 border-t border-white/10">
               <ChoiceBtn active={choices[i] === "both"} onClick={() => setChoices((p) => p.map((v, j) => j === i ? "both" : v))}>
-                Les deux
+                Garder les deux
               </ChoiceBtn>
             </div>
           </div>
@@ -187,7 +203,7 @@ function SidePanel({ label, lines, chosen, side, onChoose, bg, activeBg }: {
         {label}
       </div>
       <div className="px-2 py-1">
-        {lines.map((l, i) => <div key={i} className={active ? "text-white" : "text-[var(--color-muted)]"}>{l || " "}</div>)}
+        {lines.map((l, i) => <div key={i} className={`whitespace-pre ${active ? "text-white" : "text-[var(--color-muted)]"}`}>{l || " "}</div>)}
       </div>
     </div>
   );

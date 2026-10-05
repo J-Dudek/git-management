@@ -88,4 +88,37 @@ describe("computeGraphLayout", () => {
     const { laneCount } = computeGraphLayout(commits);
     expect(laneCount).toBeGreaterThanOrEqual(2);
   });
+
+  it("sibling branches rejoin their common parent and free their lane", () => {
+    const commits = [
+      makeCommit("left", ["base"]),
+      makeCommit("right", ["base"]),
+      makeCommit("base", ["root"]),
+      makeCommit("root", []),
+    ];
+    const { nodes, edges } = computeGraphLayout(commits);
+    const lane = (h: string) => nodes.find((n) => n.commit.hash === h)!.lane;
+    expect(lane("left")).toBe(0);
+    expect(lane("right")).toBe(1);
+    expect(lane("base")).toBe(0);
+    expect(lane("root")).toBe(0);
+
+    const rightEdge = edges.find((e) => e.fromRow === 1)!;
+    expect(rightEdge.toLane).toBe(0);
+    expect(rightEdge.curve).toBe("end");
+  });
+
+  it("merge edges curve at the start into the merged branch lane", () => {
+    const commits = [
+      makeCommit("merge", ["main", "feat"]),
+      makeCommit("feat", ["main"]),
+      makeCommit("main", []),
+    ];
+    const { nodes, edges } = computeGraphLayout(commits);
+    const featLane = nodes.find((n) => n.commit.hash === "feat")!.lane;
+    const mergeEdge = edges.find((e) => e.fromRow === 0 && e.toRow === 1)!;
+    expect(mergeEdge.curve).toBe("start");
+    expect(mergeEdge.toLane).toBe(featLane);
+    expect(featLane).toBe(1);
+  });
 });

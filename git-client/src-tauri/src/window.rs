@@ -11,12 +11,19 @@ pub fn unique_label(existing_labels: &[String]) -> String {
     }
 }
 
-pub fn open_new_window(app: &AppHandle) -> Result<(), String> {
+pub fn open_new_window(app: &AppHandle, repo: Option<&str>) -> Result<(), String> {
     let existing: Vec<String> = app.webview_windows().keys().cloned().collect();
     let label = unique_label(&existing);
 
+    // Le dépôt à ouvrir est transmis au frontend avant le chargement de la page.
+    let init = format!(
+        "window.__GIT_CLIENT_OPEN_REPO__ = {};",
+        serde_json::to_string(&repo).map_err(|e| e.to_string())?
+    );
+
     WebviewWindowBuilder::new(app, &label, WebviewUrl::App("/".into()))
-        .title("git-client")
+        .initialization_script(&init)
+        .title("J6N — Git Repository Manager")
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .build()
