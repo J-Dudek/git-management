@@ -1,9 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GraphLayout } from "./layout";
+import { authorInitials } from "../lib/initials";
 
 export const ROW_HEIGHT = 28;
-export const LANE_WIDTH = 16;
-const NODE_RADIUS = 5;
+export const LANE_WIDTH = 24;
+/** Assez grand pour contenir les initiales de l'auteur. */
+const NODE_RADIUS = 9;
+const MERGE_RADIUS = 4;
 export const H_PADDING = 10;
 
 interface Props {
@@ -20,6 +23,11 @@ interface Props {
 export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width, scrollTop, viewportHeight }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const height = Math.max(viewportHeight, 1);
+  // Auteur du point survolé, affiché dans une infobulle près du curseur.
+  const [hover, setHover] = useState<{ author: string; x: number; y: number } | null>(null);
+
+  // Au défilement, le point sous le curseur change : l'infobulle reviendra au prochain mouvement.
+  useEffect(() => setHover(null), [scrollTop]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -33,8 +41,8 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
     ctx.setTransform(dpr, 0, 0, dpr, 0, -scrollTop * dpr);
     ctx.clearRect(0, scrollTop, width, height);
 
-    const x = (lane: number) => H_PADDING + lane * LANE_WIDTH + LANE_WIDTH / 2;
-    const y = (row: number) => row * ROW_HEIGHT + ROW_HEIGHT / 2;
+    const x = laneX;
+    const y = rowY;
     const top = scrollTop - ROW_HEIGHT;
     const bottom = scrollTop + height + ROW_HEIGHT;
 
@@ -75,8 +83,10 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
       const isHead = node.commit.hash === headHash;
       const isMerge = node.commit.parents.length > 1;
 
+      // Les merges restent de petits points ; les autres commits portent les initiales de l'auteur.
+      const radius = isMerge ? (isSelected || isHead ? MERGE_RADIUS + 1.5 : MERGE_RADIUS) : NODE_RADIUS;
       ctx.beginPath();
-      ctx.arc(nx, ny, isSelected || isHead ? NODE_RADIUS + 1.5 : isMerge ? NODE_RADIUS - 1.5 : NODE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(nx, ny, radius, 0, Math.PI * 2);
       ctx.fillStyle = isSelected ? "#ffffff" : isHead ? "#1a1b26" : node.color;
       ctx.fill();
       if (isSelected || isHead) {
@@ -84,8 +94,32 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
         ctx.lineWidth = 2.5;
         ctx.stroke();
       }
+      if (!isMerge) {
+        const initials = authorInitials(node.commit.author);
+        ctx.fillStyle = isSelected || isHead ? node.color : "#ffffff";
+        ctx.font = `600 ${initials.length > 1 ? 8 : 9}px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(initials, nx, ny + 0.5);
+      }
     }
   }, [layout, selectedHash, headHash, width, height, scrollTop]);
+
+  /** Commit dont le point est sous le curseur. */
+  function nodeAt(e: React.MouseEvent<HTMLCanvasElement>) {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top + scrollTop;
+    const node = layout.nodes[Math.floor(py / ROW_HEIGHT)];
+    if (!node) return null;
+    const radius = node.commit.parents.length > 1 ? MERGE_RADIUS : NODE_RADIUS;
+    return Math.hypot(px - laneX(node.lane), py - rowY(node.row)) <= radius + 2 ? node : null;
+  }
+
+  function handleMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    const node = nodeAt(e);
+    setHover(node ? { author: node.commit.author, x: e.clientX, y: e.clientY } : null);
+  }
 
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -96,11 +130,26 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
   }
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{ width, height, position: "sticky", top: 0, left: 0, display: "block" }}
-      onClick={handleClick}
-      className="cursor-pointer"
-    />
+    <>
+      <canvas
+        ref={canvasRef}
+        style={{ width, height, position: "sticky", top: 0, left: 0, display: "block" }}
+        onClick={handleClick}
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHover(null)}
+        className="cursor-pointer"
+      />
+      {hover && (
+        <div
+          className="fixed z-50 pointer-events-none px-1.5 py-0.5 rounded text-[11px] bg-black/85 text-white border border-white/10 whitespace-nowrap"
+          style={{ left: hover.x + 12, top: hover.y + 12 }}
+        >
+          {hover.author}
+        </div>
+      )}
+    </>
   );
 }
+
+const laneX = (lane: number) => H_PADDING + lane * LANE_WIDTH + LANE_WIDTH / 2;
+const rowY = (row: number) => row * ROW_HEIGHT + ROW_HEIGHT / 2;
