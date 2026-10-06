@@ -1,5 +1,6 @@
 import type { RemoteInfo } from "../types/git";
 import type { ForgeAccount } from "../types/forge";
+import { trimEndChars } from "./strings";
 
 export interface ParsedRemote {
   host: string;
@@ -14,7 +15,7 @@ export function parseRemoteUrl(url: string): ParsedRemote | null {
   const scp = withScheme ? null : trimmed.match(/^(?:[^@/]+@)?([^:/]+):(?!\/\/)(.+)$/);
   const match = withScheme ?? scp;
   if (!match) return null;
-  const path = match[2].replace(/\/+$/, "").replace(/\.git$/, "");
+  const path = trimEndChars(match[2]).replace(/\.git$/, "");
   if (!path) return null;
   return { host: match[1].toLowerCase(), path };
 }
@@ -61,7 +62,7 @@ export function remoteForAccount(
 
 /** Page web de création d'une PR (GitHub) / MR (GitLab) pour une branche. */
 export function newPullRequestUrl(account: ForgeAccount, projectPath: string, branch: string): string {
-  const base = account.base_url.replace(/\/+$/, "");
+  const base = trimEndChars(account.base_url);
   const b = encodeURIComponent(branch);
   return account.provider === "github"
     ? `${base}/${projectPath}/compare/${b}?expand=1`

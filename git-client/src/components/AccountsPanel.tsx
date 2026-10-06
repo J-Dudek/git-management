@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAccountsStore, defaultBaseUrl } from "../store/useAccountsStore";
 import { useRepoStore } from "../store/useRepoStore";
@@ -157,6 +157,33 @@ function oauthAppHelpUrl(kind: Kind, url: string): string {
   return `${url}/-/user_settings/applications`;
 }
 
+const KINDS = [
+  ["github", "GitHub"],
+  ["gitlab", "GitLab.com"],
+  ["gitlab-self", "GitLab privé"],
+] as const;
+
+const MODES = [
+  ["oauth", "Navigateur (OAuth)"],
+  ["pat", "Token personnel"],
+] as const;
+
+type OAuthDefaults = { github: string | null; gitlab: string | null };
+
+/** Identifiant OAuth intégré à l'application pour cet hôte (GitHub, GitLab.com), sinon null. */
+function builtInClientId(host: string | null, defaults: OAuthDefaults | null): string | null {
+  if (host === "github.com") return defaults?.github ?? null;
+  if (host === "gitlab.com") return defaults?.gitlab ?? null;
+  return null;
+}
+
+function submitLabel(saving: boolean, mode: "oauth" | "pat"): string {
+  if (saving) return "Connexion…";
+  return mode === "oauth" ? "Se connecter" : "Connecter";
+}
+
+const MISSING_URL = "Renseigne d'abord l'URL de l'instance";
+
 function AddAccountForm({ onDone }: { onDone: () => void }) {
   const add = useAccountsStore((s) => s.add);
   const addConnected = useAccountsStore((s) => s.addConnected);
@@ -166,7 +193,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
   const [baseUrl, setBaseUrl] = useState("https://");
   const [token, setToken] = useState("");
   const [clientId, setClientId] = useState("");
-  const [defaults, setDefaults] = useState<{ github: string | null; gitlab: string | null } | null>(null);
+  const [defaults, setDefaults] = useState<OAuthDefaults | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [label, setLabel] = useState("");
   const [saving, setSaving] = useState(false);
@@ -183,7 +210,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
   }, []);
 
   // Identifiant intégré à l'application (GitHub, GitLab.com) : l'utilisateur n'a rien à saisir.
-  const builtIn = host === "github.com" ? defaults?.github : host === "gitlab.com" ? defaults?.gitlab : null;
+  const builtIn = builtInClientId(host, defaults);
   const showClientId = !builtIn || advanced;
   const effectiveClientId = showClientId ? clientId : builtIn;
 
@@ -200,7 +227,8 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
     setAdvanced(false);
   }, [kind, builtIn, defaults]);
 
-  const valid = (kind !== "gitlab-self" || !!host) && (mode === "pat" ? !!token.trim() : !!effectiveClientId?.trim());
+  const credentialsFilled = mode === "pat" ? !!token.trim() : !!effectiveClientId?.trim();
+  const valid = (kind !== "gitlab-self" || !!host) && credentialsFilled;
 
   async function submitToken() {
     const account = await add({ provider, baseUrl: url!, token: token.trim(), label });
@@ -243,28 +271,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
     onDone();
   }
 
-  if (device) {
-    return (
-      <div className="mx-2 mb-2 p-3 flex flex-col gap-2 rounded border border-white/10 bg-black/20 text-center">
-        <p className="text-[11px] text-[var(--color-muted)]">Saisis ce code sur la page qui vient de s'ouvrir :</p>
-        <button
-          className="font-mono text-lg tracking-widest text-[var(--color-text)] bg-white/10 rounded py-1 hover:bg-white/15"
-          title="Copier le code"
-          onClick={() => navigator.clipboard.writeText(device.user_code)}
-        >
-          {device.user_code}
-        </button>
-        <button
-          className="text-[10px] text-sky-400 hover:underline"
-          onClick={() => openUrl(device.verification_uri_complete ?? device.verification_uri)}
-        >
-          {device.verification_uri} ↗
-        </button>
-        <p className="text-[11px] text-[var(--color-muted)] animate-pulse">En attente de la validation…</p>
-        <SmallButton onClick={cancel}>Annuler</SmallButton>
-      </div>
-    );
-  }
+  if (device) return <DeviceCodePanel device={device} onCancel={cancel} />;
 
   return (
     <form
@@ -275,11 +282,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
       }}
     >
       <div className="grid grid-cols-3 gap-1">
-        {([
-          ["github", "GitHub"],
-          ["gitlab", "GitLab.com"],
-          ["gitlab-self", "GitLab privé"],
-        ] as const).map(([k, l]) => (
+        {KINDS.map(([k, l]) => (
           <button
             key={k}
             type="button"
@@ -295,10 +298,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
       )}
 
       <div className="grid grid-cols-2 gap-1">
-        {([
-          ["oauth", "Navigateur (OAuth)"],
-          ["pat", "Token personnel"],
-        ] as const).map(([m, l]) => (
+        {MODES.map(([m, l]) => (
           <button
             key={m}
             type="button"
@@ -310,78 +310,130 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
         ))}
       </div>
 
-      {mode === "pat" ? (
-        <>
-          <input
-            className={inputClass}
-            type="password"
-            autoComplete="off"
-            placeholder="Token d'accès personnel"
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-          />
-          <button
-            type="button"
-            className="text-left text-[10px] text-sky-400 hover:underline disabled:opacity-40"
-            disabled={!url}
-            title={url ? tokenHelpUrl(kind, url) : "Renseigne d'abord l'URL de l'instance"}
-            onClick={() => url && openUrl(tokenHelpUrl(kind, url))}
-          >
-            Créer un token ({kind === "github" ? "scopes repo, read:user, workflow" : "scopes api, read_user, write_repository"}) ↗
+      {mode === "pat" && <TokenFields kind={kind} url={url} token={token} onToken={setToken} />}
+      {mode === "oauth" && showClientId && (
+        <ClientIdFields
+          kind={kind}
+          url={url}
+          clientId={clientId}
+          onClientId={setClientId}
+          onUseDefault={builtIn ? () => setAdvanced(false) : null}
+        />
+      )}
+      {mode === "oauth" && !showClientId && (
+        <p className="text-[10px] text-[var(--color-muted)]">
+          Un code s'affichera : saisis-le sur la page {kind === "github" ? "GitHub" : "GitLab"} qui s'ouvrira dans ton navigateur.{" "}
+          <button type="button" className="text-sky-400 hover:underline" onClick={() => setAdvanced(true)}>
+            Paramètres avancés
           </button>
-        </>
-      ) : (
-        showClientId ? (
-          <>
-            <input
-              className={inputClass}
-              placeholder="Identifiant client de l'application OAuth"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-            />
-            <p className="text-[10px] text-[var(--color-muted)]">
-              {kind === "github"
-                ? "Application OAuth GitHub avec « Enable Device Flow » coché."
-                : "Application GitLab non confidentielle, scopes api, read_user, write_repository (GitLab 17.2+)."}{" "}
-              <button
-                type="button"
-                className="text-sky-400 hover:underline disabled:opacity-40"
-                disabled={!url}
-                title={url ? oauthAppHelpUrl(kind, url) : "Renseigne d'abord l'URL de l'instance"}
-                onClick={() => url && openUrl(oauthAppHelpUrl(kind, url))}
-              >
-                Enregistrer une application ↗
-              </button>
-              {builtIn && (
-                <>
-                  {" · "}
-                  <button type="button" className="text-sky-400 hover:underline" onClick={() => setAdvanced(false)}>
-                    Utiliser l'application par défaut
-                  </button>
-                </>
-              )}
-            </p>
-          </>
-        ) : (
-          <p className="text-[10px] text-[var(--color-muted)]">
-            Un code s'affichera : saisis-le sur la page {kind === "github" ? "GitHub" : "GitLab"} qui s'ouvrira dans ton navigateur.{" "}
-            <button type="button" className="text-sky-400 hover:underline" onClick={() => setAdvanced(true)}>
-              Paramètres avancés
-            </button>
-          </p>
-        )
+        </p>
       )}
 
       <input className={inputClass} placeholder="Nom affiché (optionnel)" value={label} onChange={(e) => setLabel(e.target.value)} />
       {error && <p className="text-[11px] text-red-400 break-words">{error}</p>}
       <div className="flex gap-2">
         <SmallButton primary type="submit" disabled={!valid || saving}>
-          {saving ? "Connexion…" : mode === "oauth" ? "Se connecter" : "Connecter"}
+          {submitLabel(saving, mode)}
         </SmallButton>
         <SmallButton onClick={onDone}>Annuler</SmallButton>
       </div>
       <p className="text-[10px] text-[var(--color-muted)]">Les identifiants sont stockés dans le trousseau du système.</p>
     </form>
+  );
+}
+
+/** Code à saisir sur la page de la forge pendant la connexion OAuth (device flow). */
+function DeviceCodePanel({ device, onCancel }: { device: DeviceCode; onCancel: () => void }) {
+  return (
+    <div className="mx-2 mb-2 p-3 flex flex-col gap-2 rounded border border-white/10 bg-black/20 text-center">
+      <p className="text-[11px] text-[var(--color-muted)]">Saisis ce code sur la page qui vient de s'ouvrir :</p>
+      <button
+        className="font-mono text-lg tracking-widest text-[var(--color-text)] bg-white/10 rounded py-1 hover:bg-white/15"
+        title="Copier le code"
+        onClick={() => navigator.clipboard.writeText(device.user_code)}
+      >
+        {device.user_code}
+      </button>
+      <button
+        className="text-[10px] text-sky-400 hover:underline"
+        onClick={() => openUrl(device.verification_uri_complete ?? device.verification_uri)}
+      >
+        {device.verification_uri} ↗
+      </button>
+      <p className="text-[11px] text-[var(--color-muted)] animate-pulse">En attente de la validation…</p>
+      <SmallButton onClick={onCancel}>Annuler</SmallButton>
+    </div>
+  );
+}
+
+function TokenFields({ kind, url, token, onToken }: {
+  kind: Kind;
+  url: string | null;
+  token: string;
+  onToken: (token: string) => void;
+}) {
+  return (
+    <>
+      <input
+        className={inputClass}
+        type="password"
+        autoComplete="off"
+        placeholder="Token d'accès personnel"
+        value={token}
+        onChange={(e) => onToken(e.target.value)}
+      />
+      <button
+        type="button"
+        className="text-left text-[10px] text-sky-400 hover:underline disabled:opacity-40"
+        disabled={!url}
+        title={url ? tokenHelpUrl(kind, url) : MISSING_URL}
+        onClick={() => url && openUrl(tokenHelpUrl(kind, url))}
+      >
+        Créer un token ({kind === "github" ? "scopes repo, read:user, workflow" : "scopes api, read_user, write_repository"}) ↗
+      </button>
+    </>
+  );
+}
+
+function ClientIdFields({ kind, url, clientId, onClientId, onUseDefault }: {
+  kind: Kind;
+  url: string | null;
+  clientId: string;
+  onClientId: (clientId: string) => void;
+  /** Revenir à l'application intégrée, si elle existe pour cet hôte. */
+  onUseDefault: (() => void) | null;
+}) {
+  return (
+    <>
+      <input
+        className={inputClass}
+        placeholder="Identifiant client de l'application OAuth"
+        value={clientId}
+        onChange={(e) => onClientId(e.target.value)}
+      />
+      <p className="text-[10px] text-[var(--color-muted)]">
+        {kind === "github"
+          ? "Application OAuth GitHub avec « Enable Device Flow » coché."
+          : "Application GitLab non confidentielle, scopes api, read_user, write_repository (GitLab 17.2+)."}{" "}
+        <button
+          type="button"
+          className="text-sky-400 hover:underline disabled:opacity-40"
+          disabled={!url}
+          title={url ? oauthAppHelpUrl(kind, url) : MISSING_URL}
+          onClick={() => url && openUrl(oauthAppHelpUrl(kind, url))}
+        >
+          Enregistrer une application ↗
+        </button>
+        {onUseDefault && (
+          <>
+            {" · "}
+            <button type="button" className="text-sky-400 hover:underline" onClick={onUseDefault}>
+              Utiliser l'application par défaut
+            </button>
+          </>
+        )}
+      </p>
+    </>
   );
 }
 
@@ -479,7 +531,7 @@ function RepoForgeSection() {
   const remoteName = linked?.match?.remote.name;
   const accountData = account ? data[account.id] : undefined;
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!account || !projectPath) return;
     setData(account.id, { loading: true, error: null });
     try {
@@ -489,11 +541,11 @@ function RepoForgeSection() {
     } catch (e) {
       setData(account.id, { loading: false, error: errorMessage(e) });
     }
-  }
+  }, [account, projectPath, client, setData]);
 
   useEffect(() => {
     load();
-  }, [account?.id, projectPath]);
+  }, [load]);
 
   if (!repoPath) return null;
 
@@ -562,8 +614,14 @@ function RepoForgeSection() {
   );
 }
 
+const PR_STATE_COLORS: Record<ForgePR["state"], string> = {
+  open: "text-green-400",
+  merged: "text-purple-400",
+  closed: "text-red-400",
+};
+
 function PRRow({ pr, typeLabel, onContextMenu }: { pr: ForgePR; typeLabel: string; onContextMenu: (e: React.MouseEvent) => void }) {
-  const stateColor = pr.state === "open" ? "text-green-400" : pr.state === "merged" ? "text-purple-400" : "text-red-400";
+  const stateColor = PR_STATE_COLORS[pr.state];
   return (
     <div
       className="px-3 py-1.5 hover:bg-white/5 cursor-pointer"

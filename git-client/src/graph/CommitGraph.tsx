@@ -12,6 +12,7 @@ import {
 import { reportInteractive, reportMerge, runGit } from "../lib/actions";
 import { localOnlyBranches } from "../lib/branches";
 import { squashPlan } from "../lib/squash";
+import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import type { CommitInfo, RefLabel } from "../types/git";
 
 const INFO_OFFSET = 20;
@@ -28,54 +29,38 @@ export function CommitGraph() {
   const branches = useRepoStore((s) => s.branches);
   const localOnly = useMemo(() => localOnlyBranches(branches), [branches]);
   const visibleCommits = useMemo(() => filterCommits(commits, searchQuery), [commits, searchQuery]);
+  // Le conteneur observé n'existe que s'il y a des commits à afficher.
+  const hasCommits = visibleCommits.length > 0;
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 400, height: 400 });
   const [scrollTop, setScrollTop] = useState(0);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
   // Sélection multiple (Ctrl / Cmd + clic, Maj + clic pour une plage), en plus du commit affiché dans le détail.
-  const [multi, setMulti] = useState<string[]>([]);
-  // Point de départ des plages Maj + clic : dernier commit cliqué sans Maj.
-  const [anchor, setAnchor] = useState<string | null>(null);
+  const [selection, setSelection] = useState<MultiSelection>(EMPTY_SELECTION);
+  const multi = selection.items;
+  const clearMulti = () => setSelection((s) => ({ ...s, items: [] }));
 
   // Les commits réécrits ou disparus après un rafraîchissement sortent de la sélection.
   useEffect(() => {
-    setMulti((prev) => {
-      const next = prev.filter((h) => commits.some((c) => c.hash === h));
-      return next.length === prev.length ? prev : next;
-    });
+    const hashes = new Set(commits.map((c) => c.hash));
+    setSelection((s) => pruneSelection(s, (h) => hashes.has(h)));
   }, [commits]);
 
   // Commit sélectionné ailleurs (ex. clic sur une branche de la barre latérale) : on repart de lui.
   useEffect(() => {
     const hash = selectedCommit?.hash ?? null;
-    if (hash !== anchor && !(hash && multi.includes(hash))) {
-      setMulti([]);
-      setAnchor(hash);
-    }
+    setSelection((s) => (hash === s.anchor || (hash !== null && s.items.includes(hash)) ? s : { anchor: hash, items: [] }));
   }, [selectedCommit]);
 
   function selectOne(commit: CommitInfo | null) {
-    setMulti([]);
-    setAnchor(commit?.hash ?? null);
+    setSelection({ anchor: commit?.hash ?? null, items: [] });
     setSelectedCommit(commit);
   }
 
   function handleRowClick(e: React.MouseEvent, commit: CommitInfo) {
-    const toggle = e.ctrlKey || e.metaKey;
-    // Le premier Ctrl / Maj + clic ajoute aussi le commit déjà sélectionné.
-    const current = multi.length ? multi : selectedCommit ? [selectedCommit.hash] : [];
-    const from = layout.nodes.findIndex((n) => n.commit.hash === (anchor ?? selectedCommit?.hash));
-    if (e.shiftKey && from !== -1) {
-      // Plage dans l'ordre affiché ; avec Ctrl, elle s'ajoute à la sélection existante.
-      const to = layout.nodes.findIndex((n) => n.commit.hash === commit.hash);
-      const range = layout.nodes.slice(Math.min(from, to), Math.max(from, to) + 1).map((n) => n.commit.hash);
-      setMulti(toggle ? [...current, ...range.filter((h) => !current.includes(h))] : range);
-      setSelectedCommit(commit);
-      return;
-    }
-    if (!toggle) return selectOne(commit);
-    setMulti(current.includes(commit.hash) ? current.filter((h) => h !== commit.hash) : [...current, commit.hash]);
-    setAnchor(commit.hash);
+    const order = layout.nodes.map((n) => n.commit.hash);
+    const next = clickSelection(order, selection, commit.hash, clickModifiers(e), { current: selectedCommit?.hash ?? null });
+    setSelection(next.selection);
     setSelectedCommit(commit);
   }
 
@@ -110,7 +95,7 @@ export function CommitGraph() {
     const plan = squashPlan(todo, hashes, result.value);
     if (typeof plan === "string") return;
 
-    setMulti([]);
+    clearMulti();
     const outcome = await runGit(() => interactiveRebase(path, base, plan.steps, plan.mode), { busy: "Squash…" });
     if (outcome && !outcome.stopped) ui.notify("success", `${hashes.length} commits squashés (ancienne position : ORIG_HEAD)`);
     else reportInteractive(outcome);
@@ -120,7 +105,7 @@ export function CommitGraph() {
     return [
       { label: `Squasher les ${hashes.length} commits sélectionnés…`, action: () => squashSelected(hashes) },
       "separator",
-      { label: "Annuler la sélection", action: () => setMulti([]) },
+      { label: "Annuler la sélection", action: clearMulti },
     ];
   }
 
@@ -132,7 +117,7 @@ export function CommitGraph() {
     });
     obs.observe(containerRef.current);
     return () => obs.disconnect();
-  }, [visibleCommits.length > 0]);
+  }, [hasCommits]);
 
   const layout = useMemo(() => computeGraphLayout(visibleCommits), [visibleCommits]);
   const graphWidth = H_PADDING * 2 + layout.laneCount * LANE_WIDTH + INFO_OFFSET;

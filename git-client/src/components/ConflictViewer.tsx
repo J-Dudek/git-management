@@ -4,72 +4,75 @@ import { useUiStore } from "../store/useUiStore";
 import { getConflictContent, resolveConflict } from "../ipc/commands";
 import { errorMessage } from "../lib/actions";
 
-interface ConflictSection {
+export type Resolution = "ours" | "theirs" | "both";
+
+interface ConflictBlock {
   ours: string[];
   theirs: string[];
+}
+
+interface ConflictSection extends ConflictBlock {
+  /** Jusqu'à 3 lignes de contexte avant le bloc. */
   before: string[];
+}
+
+/**
+ * Parcourt un fichier en conflit : `onText` reçoit les lignes hors conflit, `onConflict` chaque
+ * bloc `<<<<<<< … ======= … >>>>>>>` complet. Analyse et résolution partagent ainsi le même découpage.
+ */
+function walkConflicts(content: string, onText: (line: string) => void, onConflict: (block: ConflictBlock) => void) {
+  let state: "normal" | "ours" | "theirs" = "normal";
+  let block: ConflictBlock = { ours: [], theirs: [] };
+
+  for (const line of content.split("\n")) {
+    if (state === "normal" && line.startsWith("<<<<<<<")) {
+      block = { ours: [], theirs: [] };
+      state = "ours";
+    } else if (state === "ours" && line.startsWith("=======")) {
+      state = "theirs";
+    } else if (state === "theirs" && line.startsWith(">>>>>>>")) {
+      onConflict(block);
+      state = "normal";
+    } else if (state === "normal") {
+      onText(line);
+    } else {
+      block[state].push(line);
+    }
+  }
 }
 
 export function parseConflicts(content: string): ConflictSection[] {
   const sections: ConflictSection[] = [];
-  const lines = content.split("\n");
-  let state: "normal" | "ours" | "theirs" = "normal";
-  let current: ConflictSection = { ours: [], theirs: [], before: [] };
   let context: string[] = [];
-
-  for (const line of lines) {
-    if (line.startsWith("<<<<<<<")) {
-      current = { ours: [], theirs: [], before: context.slice(-3) };
+  walkConflicts(
+    content,
+    (line) => context.push(line),
+    (block) => {
+      sections.push({ ...block, before: context.slice(-3) });
       context = [];
-      state = "ours";
-    } else if (line.startsWith("=======") && state === "ours") {
-      state = "theirs";
-    } else if (line.startsWith(">>>>>>>") && state === "theirs") {
-      sections.push(current);
-      current = { ours: [], theirs: [], before: [] };
-      state = "normal";
-    } else if (state === "ours") {
-      current.ours.push(line);
-    } else if (state === "theirs") {
-      current.theirs.push(line);
-    } else {
-      context.push(line);
-    }
-  }
-
+    },
+  );
   return sections;
 }
 
-export function resolveWith(content: string, choices: ("ours" | "theirs" | "both")[]): string {
+export function resolveWith(content: string, choices: Resolution[]): string {
   const result: string[] = [];
-  let state: "normal" | "ours" | "theirs" = "normal";
-  let conflictIdx = 0;
-  let ours: string[] = [];
-  let theirs: string[] = [];
-
-  for (const line of content.split("\n")) {
-    if (line.startsWith("<<<<<<<") && state === "normal") {
-      ours = [];
-      theirs = [];
-      state = "ours";
-    } else if (line.startsWith("=======") && state === "ours") {
-      state = "theirs";
-    } else if (line.startsWith(">>>>>>>") && state === "theirs") {
-      const choice = choices[conflictIdx] ?? "ours";
-      if (choice === "ours" || choice === "both") result.push(...ours);
-      if (choice === "theirs" || choice === "both") result.push(...theirs);
-      state = "normal";
-      conflictIdx++;
-    } else if (state === "ours") {
-      ours.push(line);
-    } else if (state === "theirs") {
-      theirs.push(line);
-    } else {
-      result.push(line);
-    }
-  }
-
+  let index = 0;
+  walkConflicts(
+    content,
+    (line) => result.push(line),
+    ({ ours, theirs }) => {
+      const choice = choices[index++] ?? "ours";
+      if (choice !== "theirs") result.push(...ours);
+      if (choice !== "ours") result.push(...theirs);
+    },
+  );
   return result.join("\n");
+}
+
+function resolveLabel(saving: boolean, hasConflicts: boolean): string {
+  if (saving) return "Résolution…";
+  return hasConflicts ? "Résoudre et indexer" : "Marquer comme résolu";
 }
 
 export function ConflictViewer({ path }: { path: string }) {
@@ -79,7 +82,7 @@ export function ConflictViewer({ path }: { path: string }) {
   const notify = useUiStore((s) => s.notify);
   const [content, setContent] = useState<string | null>(null);
   const [sections, setSections] = useState<ConflictSection[]>([]);
-  const [choices, setChoices] = useState<("ours" | "theirs" | "both")[]>([]);
+  const [choices, setChoices] = useState<Resolution[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -138,7 +141,7 @@ export function ConflictViewer({ path }: { path: string }) {
           onClick={handleResolve}
           disabled={saving}
         >
-          {saving ? "Résolution…" : sections.length ? "Résoudre et indexer" : "Marquer comme résolu"}
+          {resolveLabel(saving, sections.length > 0)}
         </button>
       </div>
 
@@ -190,7 +193,7 @@ export function ConflictViewer({ path }: { path: string }) {
 
 function SidePanel({ label, lines, chosen, side, onChoose, bg, activeBg }: {
   label: string; lines: string[]; chosen: string; side: "ours" | "theirs";
-  onChoose: (c: "ours" | "theirs" | "both") => void; bg: string; activeBg: string;
+  onChoose: (c: Resolution) => void; bg: string; activeBg: string;
 }) {
   const active = chosen === side || chosen === "both";
   return (

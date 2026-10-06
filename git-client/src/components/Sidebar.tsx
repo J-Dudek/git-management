@@ -13,6 +13,7 @@ import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
 import { localOnlyBranches } from "../lib/branches";
+import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo } from "../types/git";
 
 const SUBMODULE_STATES: Record<SubmoduleInfo["state"], { label: string; color: string }> = {
@@ -21,6 +22,22 @@ const SUBMODULE_STATES: Record<SubmoduleInfo["state"], { label: string; color: s
   dirty: { label: "modifié", color: "text-yellow-400" },
   ok: { label: "", color: "" },
 };
+
+function branchTitle(b: BranchInfo, localOnly: boolean): string {
+  if (b.upstream) return `suit ${b.upstream}`;
+  return localOnly ? "uniquement en local : absente des remotes" : "aucune branche distante suivie";
+}
+
+function submoduleTitle(sm: SubmoduleInfo): string {
+  const recorded = sm.recorded_hash ? `commit enregistré : ${sm.recorded_hash.slice(0, 7)}` : null;
+  return [sm.url ?? "", recorded].filter((line) => line !== null).join("\n");
+}
+
+function rowTone(active?: boolean, selected?: boolean): string {
+  if (active) return "text-[var(--color-accent)] bg-white/5 font-semibold";
+  if (selected) return "text-[var(--color-text)] bg-[var(--color-accent)]/20";
+  return "text-[var(--color-text)] hover:bg-white/5";
+}
 
 export function Sidebar() {
   const repoPath = useRepoStore((s) => s.repoPath);
@@ -37,15 +54,14 @@ export function Sidebar() {
   const busy = useUiStore((s) => s.busy);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
   // Branches locales sélectionnées (Ctrl / Cmd + clic, Maj + clic pour une plage) pour les supprimer ensemble.
-  const [picked, setPicked] = useState<string[]>([]);
-  const [anchor, setAnchor] = useState<string | null>(null);
+  const [selection, setSelection] = useState<MultiSelection>(EMPTY_SELECTION);
+  const picked = selection.items;
+  const clearPicked = () => setSelection((s) => ({ ...s, items: [] }));
 
   // Les branches supprimées ou renommées sortent de la sélection.
   useEffect(() => {
-    setPicked((prev) => {
-      const next = prev.filter((n) => branches.some((b) => !b.is_remote && b.name === n));
-      return next.length === prev.length ? prev : next;
-    });
+    const names = new Set(branches.filter((b) => !b.is_remote).map((b) => b.name));
+    setSelection((s) => pruneSelection(s, (n) => names.has(n)));
   }, [branches]);
 
   if (!repoPath) return null;
@@ -86,23 +102,12 @@ export function Sidebar() {
   }
 
   function handleLocalClick(e: React.MouseEvent, b: BranchInfo) {
-    const toggle = e.ctrlKey || e.metaKey;
+    const order = local.map((l) => l.name);
     // La branche courante ne peut pas être supprimée : elle n'entre pas dans la sélection.
     const selectable = (name: string) => name !== info?.head_branch;
-    const from = local.findIndex((l) => l.name === anchor);
-    if (e.shiftKey && from !== -1) {
-      const to = local.findIndex((l) => l.name === b.name);
-      const range = local.slice(Math.min(from, to), Math.max(from, to) + 1).map((l) => l.name).filter(selectable);
-      setPicked(toggle ? [...picked, ...range.filter((n) => !picked.includes(n))] : range);
-      return;
-    }
-    setAnchor(b.name);
-    if (toggle) {
-      if (selectable(b.name)) setPicked(picked.includes(b.name) ? picked.filter((n) => n !== b.name) : [...picked, b.name]);
-      return;
-    }
-    setPicked([]);
-    selectHash(b.target_hash);
+    const next = clickSelection(order, selection, b.name, clickModifiers(e), { selectable });
+    setSelection(next.selection);
+    if (next.plain) selectHash(b.target_hash);
   }
 
   async function deleteBranches(names: string[]) {
@@ -116,7 +121,7 @@ export function Sidebar() {
         await deleteBranch(path, name).catch((e) => failed.push(`${name} : ${errorMessage(e)}`));
       }
     }, { busy: "Suppression des branches…" });
-    setPicked([]);
+    clearPicked();
     if (failed.length === 0) ui.notify("success", `${n} branches supprimées`);
     else ui.notify("error", `${n - failed.length}/${n} branches supprimées. Échec : ${failed.join(" ; ")}`);
   }
@@ -125,7 +130,7 @@ export function Sidebar() {
     return [
       { label: `Supprimer les ${names.length} branches sélectionnées…`, danger: true, action: () => deleteBranches(names) },
       "separator",
-      { label: "Annuler la sélection", action: () => setPicked([]) },
+      { label: "Annuler la sélection", action: clearPicked },
     ];
   }
 
@@ -312,7 +317,7 @@ export function Sidebar() {
             label={b.name}
             active={b.is_head}
             selected={picked.includes(b.name)}
-            title={b.upstream ? `suit ${b.upstream}` : localOnly.has(b.name) ? "uniquement en local : absente des remotes" : "aucune branche distante suivie"}
+            title={branchTitle(b, localOnly.has(b.name))}
             onClick={(e) => handleLocalClick(e, b)}
             onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
             onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
@@ -374,7 +379,7 @@ export function Sidebar() {
                 key={sm.name}
                 icon="▣"
                 label={sm.path}
-                title={`${sm.url ?? ""}${sm.recorded_hash ? `\ncommit enregistré : ${sm.recorded_hash.slice(0, 7)}` : ""}`}
+                title={submoduleTitle(sm)}
                 onDoubleClick={() => sm.state !== "uninitialized" && openNewWindow(`${path}/${sm.path}`)}
                 onContextMenu={(e) => openMenu(e, submoduleMenu(sm))}
                 trailing={state.label && <span className={`text-[10px] shrink-0 ${state.color}`}>{state.label}</span>}
@@ -522,13 +527,7 @@ function Row({ icon, label, active, selected, indent, title, trailing, onClick, 
     <li>
       <div
         title={title}
-        className={`flex items-center gap-2 ${indent ? "pl-9" : "pl-6"} pr-2 py-[3px] cursor-default ${
-          active
-            ? "text-[var(--color-accent)] bg-white/5 font-semibold"
-            : selected
-              ? "text-[var(--color-text)] bg-[var(--color-accent)]/20"
-              : "text-[var(--color-text)] hover:bg-white/5"
-        }`}
+        className={`flex items-center gap-2 ${indent ? "pl-9" : "pl-6"} pr-2 py-[3px] cursor-default ${rowTone(active, selected)}`}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}

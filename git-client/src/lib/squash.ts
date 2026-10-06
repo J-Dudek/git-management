@@ -40,6 +40,10 @@ export function squashPlan(todo: TodoCommit[], selected: string[], message: stri
   }
 
   // Historique linéaire : les commits sélectionnés sont regroupés derrière le plus ancien.
-  const steps = todo.flatMap((c) => (c === target ? [pick(c), ...rest.map(squash)] : wanted.has(c.hash) ? [] : [pick(c)]));
+  const steps: RebaseStep[] = [];
+  for (const c of todo) {
+    if (c === target) steps.push(pick(c), ...rest.map(squash));
+    else if (!wanted.has(c.hash)) steps.push(pick(c));
+  }
   return { mode: "linear", commits, steps };
 }

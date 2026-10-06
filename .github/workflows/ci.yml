@@ -64,6 +64,12 @@ jobs:
         working-directory: git-client
         run: npx tsc --noEmit
 
+      # Règles TypeScript, SonarJS et hooks React (indépendant de l'OS : lancé une seule fois).
+      - name: Lint (ESLint + SonarJS)
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: git-client
+        run: npm run lint
+
       - name: Frontend tests
         working-directory: git-client
         run: npx vitest run

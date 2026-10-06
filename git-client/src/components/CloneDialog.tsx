@@ -7,9 +7,10 @@ import { cloneRepository } from "../ipc/commands";
 import { errorMessage } from "../lib/actions";
 import type { ForgeRepo } from "../types/forge";
 import { Button, Modal, inputClass } from "./Modal";
+import { trimEndChars } from "../lib/strings";
 
 function repoNameFromUrl(url: string): string {
-  return url.trim().replace(/\/+$/, "").split(/[/:]/).pop()?.replace(/\.git$/, "") || "repo";
+  return trimEndChars(url.trim()).split(/[/:]/).pop()?.replace(/\.git$/, "") || "repo";
 }
 
 export function CloneDialog({ onClose }: { onClose: () => void }) {
@@ -62,7 +63,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
   async function handleClone() {
     if (!url.trim() || !parentDir || !name.trim()) return;
     const sep = parentDir.includes("\\") && !parentDir.includes("/") ? "\\" : "/";
-    const target = `${parentDir.replace(/[\\/]+$/, "")}${sep}${name.trim()}`;
+    const target = `${trimEndChars(parentDir, "\\/")}${sep}${name.trim()}`;
     setCloning(true);
     try {
       const warning = await cloneRepository(url.trim(), target);

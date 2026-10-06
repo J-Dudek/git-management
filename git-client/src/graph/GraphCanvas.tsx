@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { GraphLayout } from "./layout";
+import type { CommitNode, GraphEdge, GraphLayout } from "./layout";
 import { authorInitials } from "../lib/initials";
 
 export const ROW_HEIGHT = 28;
@@ -41,67 +41,15 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
     ctx.setTransform(dpr, 0, 0, dpr, 0, -scrollTop * dpr);
     ctx.clearRect(0, scrollTop, width, height);
 
-    const x = laneX;
-    const y = rowY;
     const top = scrollTop - ROW_HEIGHT;
     const bottom = scrollTop + height + ROW_HEIGHT;
-
-    for (const edge of layout.edges) {
-      const y1 = y(edge.fromRow);
-      const y2 = y(edge.toRow);
-      if (y2 < top || y1 > bottom) continue;
-      const x1 = x(edge.fromLane);
-      const x2 = x(edge.toLane);
-
-      ctx.beginPath();
-      ctx.strokeStyle = edge.color;
-      ctx.lineWidth = 1.5;
-      ctx.moveTo(x1, y1);
-      if (x1 === x2) {
-        ctx.lineTo(x2, y2);
-      } else if (edge.curve === "start") {
-        // Quitte l'enfant en courbe vers la colonne du parent, puis descend.
-        const yCurve = Math.min(y1 + ROW_HEIGHT, y2);
-        ctx.bezierCurveTo(x1, (y1 + yCurve) / 2, x2, (y1 + yCurve) / 2, x2, yCurve);
-        ctx.lineTo(x2, y2);
-      } else {
-        // Descend dans la colonne de l'enfant, puis rejoint le parent en courbe.
-        const yCurve = Math.max(y2 - ROW_HEIGHT, y1);
-        ctx.lineTo(x1, yCurve);
-        ctx.bezierCurveTo(x1, (yCurve + y2) / 2, x2, (yCurve + y2) / 2, x2, y2);
-      }
-      ctx.stroke();
-    }
+    for (const edge of layout.edges) drawEdge(ctx, edge, top, bottom);
 
     const firstRow = Math.max(0, Math.floor(top / ROW_HEIGHT));
     const lastRow = Math.min(layout.nodes.length - 1, Math.ceil(bottom / ROW_HEIGHT));
     for (let row = firstRow; row <= lastRow; row++) {
       const node = layout.nodes[row];
-      const nx = x(node.lane);
-      const ny = y(node.row);
-      const isSelected = node.commit.hash === selectedHash;
-      const isHead = node.commit.hash === headHash;
-      const isMerge = node.commit.parents.length > 1;
-
-      // Les merges restent de petits points ; les autres commits portent les initiales de l'auteur.
-      const radius = isMerge ? (isSelected || isHead ? MERGE_RADIUS + 1.5 : MERGE_RADIUS) : NODE_RADIUS;
-      ctx.beginPath();
-      ctx.arc(nx, ny, radius, 0, Math.PI * 2);
-      ctx.fillStyle = isSelected ? "#ffffff" : isHead ? "#1a1b26" : node.color;
-      ctx.fill();
-      if (isSelected || isHead) {
-        ctx.strokeStyle = node.color;
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
-      }
-      if (!isMerge) {
-        const initials = authorInitials(node.commit.author);
-        ctx.fillStyle = isSelected || isHead ? node.color : "#ffffff";
-        ctx.font = `600 ${initials.length > 1 ? 8 : 9}px system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(initials, nx, ny + 0.5);
-      }
+      drawNode(ctx, node, { selected: node.commit.hash === selectedHash, head: node.commit.hash === headHash });
     }
   }, [layout, selectedHash, headHash, width, height, scrollTop]);
 
@@ -153,3 +101,64 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
 
 const laneX = (lane: number) => H_PADDING + lane * LANE_WIDTH + LANE_WIDTH / 2;
 const rowY = (row: number) => row * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+function drawEdge(ctx: CanvasRenderingContext2D, edge: GraphEdge, top: number, bottom: number) {
+  const y1 = rowY(edge.fromRow);
+  const y2 = rowY(edge.toRow);
+  if (y2 < top || y1 > bottom) return;
+  const x1 = laneX(edge.fromLane);
+  const x2 = laneX(edge.toLane);
+
+  ctx.beginPath();
+  ctx.strokeStyle = edge.color;
+  ctx.lineWidth = 1.5;
+  ctx.moveTo(x1, y1);
+  if (x1 === x2) {
+    ctx.lineTo(x2, y2);
+  } else if (edge.curve === "start") {
+    // Quitte l'enfant en courbe vers la colonne du parent, puis descend.
+    const yCurve = Math.min(y1 + ROW_HEIGHT, y2);
+    ctx.bezierCurveTo(x1, (y1 + yCurve) / 2, x2, (y1 + yCurve) / 2, x2, yCurve);
+    ctx.lineTo(x2, y2);
+  } else {
+    // Descend dans la colonne de l'enfant, puis rejoint le parent en courbe.
+    const yCurve = Math.max(y2 - ROW_HEIGHT, y1);
+    ctx.lineTo(x1, yCurve);
+    ctx.bezierCurveTo(x1, (yCurve + y2) / 2, x2, (yCurve + y2) / 2, x2, y2);
+  }
+  ctx.stroke();
+}
+
+/** Remplissage d'un point : blanc s'il est sélectionné, sombre pour HEAD, couleur de la branche sinon. */
+function nodeFill(color: string, { selected, head }: { selected: boolean; head: boolean }): string {
+  if (selected) return "#ffffff";
+  if (head) return "#1a1b26";
+  return color;
+}
+
+function drawNode(ctx: CanvasRenderingContext2D, node: CommitNode, state: { selected: boolean; head: boolean }) {
+  const nx = laneX(node.lane);
+  const ny = rowY(node.row);
+  const highlighted = state.selected || state.head;
+  // Les merges restent de petits points ; les autres commits portent les initiales de l'auteur.
+  const isMerge = node.commit.parents.length > 1;
+  const mergeRadius = highlighted ? MERGE_RADIUS + 1.5 : MERGE_RADIUS;
+
+  ctx.beginPath();
+  ctx.arc(nx, ny, isMerge ? mergeRadius : NODE_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = nodeFill(node.color, state);
+  ctx.fill();
+  if (highlighted) {
+    ctx.strokeStyle = node.color;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  }
+  if (isMerge) return;
+
+  const initials = authorInitials(node.commit.author);
+  ctx.fillStyle = highlighted ? node.color : "#ffffff";
+  ctx.font = `600 ${initials.length > 1 ? 8 : 9}px system-ui, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(initials, nx, ny + 0.5);
+}

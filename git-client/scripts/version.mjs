@@ -98,6 +98,8 @@ export function applyVersion(version) {
 }
 
 function git(...args) {
+  // git est cherché dans le PATH du runner de CI (pas de shell, arguments fixes) : chemin absolu impossible à fixer.
+  // eslint-disable-next-line sonarjs/no-os-command-from-path
   return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 

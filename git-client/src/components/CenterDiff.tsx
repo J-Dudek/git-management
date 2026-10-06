@@ -7,6 +7,11 @@ import type { FileDiff } from "../types/git";
 
 type DiffView = Extract<CenterView, { kind: "diff" }>;
 
+function diffSourceLabel(source: DiffView["source"]): string {
+  if (source.type === "commit") return `commit ${source.hash.slice(0, 7)}`;
+  return source.staged ? "indexé" : "non indexé";
+}
+
 export function CenterDiff({ view }: { view: DiffView }) {
   const repoPath = useRepoStore((s) => s.repoPath);
   const status = useRepoStore((s) => s.status);
@@ -36,10 +41,7 @@ export function CenterDiff({ view }: { view: DiffView }) {
     };
   }, [repoPath, view, statusKey]);
 
-  const sourceLabel =
-    view.source.type === "workdir"
-      ? view.source.staged ? "indexé" : "non indexé"
-      : `commit ${view.source.hash.slice(0, 7)}`;
+  const sourceLabel = diffSourceLabel(view.source);
 
   // Indexation partielle : uniquement pour un fichier modifié de la copie de travail.
   let staging: PartialStaging | undefined;

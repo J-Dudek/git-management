@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useRepoStore } from "../store/useRepoStore";
+import { useRepoStore, type CenterView } from "../store/useRepoStore";
 import { useUiStore, confirmAction } from "../store/useUiStore";
 import {
   abortInteractiveRebase, abortMerge, abortRebase, continueInteractiveRebase, continueRebase, createCommit, discardFiles, getCommitDetails, lfsTrack, stageAll,
@@ -8,6 +8,7 @@ import {
 } from "../ipc/commands";
 import { errorMessage, reportInteractive, reportMerge, runGit } from "../lib/actions";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
+import { plural } from "../lib/strings";
 import type { FileStatus, InteractiveStop, RepoState } from "../types/git";
 
 const STATE_LABELS: Record<Exclude<RepoState, "clean">, string> = {
@@ -18,6 +19,31 @@ const STATE_LABELS: Record<Exclude<RepoState, "clean">, string> = {
   bisect: "Bisect en cours",
   apply: "Application de patch en cours",
 };
+
+/** Le fichier est-il celui affiché au centre (diff ou résolution de conflit) ? */
+function isShown(center: CenterView, f: FileStatus): boolean {
+  if (center.kind === "conflict") return center.path === f.path;
+  return center.kind === "diff" && center.source.type === "workdir" && center.path === f.path && center.source.staged === f.staged;
+}
+
+/** Consigne affichée pendant un merge / rebase / cherry-pick… */
+function operationHint(state: RepoState, conflicts: number): string {
+  if (conflicts > 0) return `${plural(conflicts, "conflit")} à résoudre : clique sur un fichier pour choisir les versions.`;
+  return state === "rebase" ? "Tous les conflits sont résolus : continue le rebase." : "Tous les conflits sont résolus : commite pour terminer.";
+}
+
+function commitLabel(committing: boolean, amend: boolean, state: RepoState, stagedCount: number): string {
+  if (committing) return "Commit…";
+  if (amend) return "Modifier le dernier commit";
+  if (state === "merge") return "Commiter le merge";
+  return `Commiter ${plural(stagedCount, "fichier")}`;
+}
+
+function interactiveHint(stop: InteractiveStop, conflicts: number): string {
+  if (stop.reason === "edit") return "Modifie ce commit (case « amend » ci-dessous) ou ajoute des commits, puis Continuer.";
+  if (conflicts > 0) return `${plural(conflicts, "conflit")} à résoudre (clique sur un fichier), puis Continuer.`;
+  return "Conflits résolus : clique sur Continuer pour créer le commit et poursuivre.";
+}
 
 export function StagingPanel() {
   const repoPath = useRepoStore((s) => s.repoPath);
@@ -38,21 +64,21 @@ export function StagingPanel() {
   const staged = status.filter((f) => f.staged);
   const unstaged = status.filter((f) => !f.staged && f.status !== "conflicted");
   const state = info?.state ?? "clean";
+  const pendingMessage = info?.pending_message ?? null;
+  const interactive = !!info?.interactive_rebase;
 
   // Message préparé par git (merge, cherry-pick, revert) : on pré-remplit le formulaire.
   useEffect(() => {
-    if (!info?.pending_message || state === "clean" || state === "rebase" || info.interactive_rebase) return;
-    const [first, ...rest] = info.pending_message.split("\n");
+    if (!pendingMessage || state === "clean" || state === "rebase" || interactive) return;
+    const [first, ...rest] = pendingMessage.split("\n");
     setSummary(first);
     setDescription(rest.filter((l) => !l.startsWith("#")).join("\n").trim());
-  }, [info?.pending_message, state]);
+  }, [pendingMessage, state, interactive]);
 
   if (!repoPath) return null;
   const path = repoPath;
 
-  const selected = (f: FileStatus) =>
-    (center.kind === "diff" && center.source.type === "workdir" && center.path === f.path && center.source.staged === f.staged) ||
-    (center.kind === "conflict" && center.path === f.path);
+  const selected = (f: FileStatus) => isShown(center, f);
 
   function show(f: FileStatus) {
     if (f.status === "conflicted") setCenter({ kind: "conflict", path: f.path });
@@ -147,11 +173,7 @@ export function StagingPanel() {
         <div className="px-3 py-2 border-b border-amber-400/30 bg-amber-500/10 flex flex-col gap-1.5 shrink-0">
           <p className="text-xs font-semibold text-amber-300">{STATE_LABELS[state]}</p>
           <p className="text-[11px] text-amber-200/80">
-            {conflicted.length > 0
-              ? `${conflicted.length} conflit${conflicted.length > 1 ? "s" : ""} à résoudre : clique sur un fichier pour choisir les versions.`
-              : state === "rebase"
-                ? "Tous les conflits sont résolus : continue le rebase."
-                : "Tous les conflits sont résolus : commite pour terminer."}
+            {operationHint(state, conflicted.length)}
           </p>
           <div className="flex gap-2">
             {state === "rebase" ? (
@@ -282,13 +304,7 @@ export function StagingPanel() {
           disabled={!canCommit}
           title="Ctrl+Entrée"
         >
-          {committing
-            ? "Commit…"
-            : amend
-              ? "Modifier le dernier commit"
-              : state === "merge"
-                ? "Commiter le merge"
-                : `Commiter ${staged.length} fichier${staged.length > 1 ? "s" : ""}`}
+          {commitLabel(committing, amend, state, staged.length)}
         </button>
       </div>
 
@@ -312,11 +328,7 @@ function InteractiveBanner({ stop, conflicts, onContinue, onAbort }: {
         <span className="font-mono">{stop.short_hash}</span> « {stop.summary} »
       </p>
       <p className="text-[11px] text-sky-100/70">
-        {stop.reason === "conflict"
-          ? conflicts > 0
-            ? `${conflicts} conflit${conflicts > 1 ? "s" : ""} à résoudre (clique sur un fichier), puis Continuer.`
-            : "Conflits résolus : clique sur Continuer pour créer le commit et poursuivre."
-          : "Modifie ce commit (case « amend » ci-dessous) ou ajoute des commits, puis Continuer."}
+        {interactiveHint(stop, conflicts)}
       </p>
       <div className="flex gap-2">
         <button

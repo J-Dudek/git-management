@@ -3,6 +3,7 @@ import type { ForgeAccount, AccountData, Provider, SavedAccount } from "../types
 import { addPatAccount, listAccounts, removeAccount, renameAccount, updateAccountToken } from "../ipc/commands";
 import { forgeClient, type ForgeClient } from "../api/forge";
 import { useUiStore } from "./useUiStore";
+import { trimEndChars } from "../lib/strings";
 
 interface AccountsStore {
   accounts: ForgeAccount[];
@@ -59,7 +60,7 @@ export const useAccountsStore = create<AccountsStore>((set) => ({
   },
 
   add: async ({ provider, baseUrl, token, label }) => {
-    const base = (provider === "github" ? defaultBaseUrl("github") : baseUrl.trim()).replace(/\/+$/, "");
+    const base = trimEndChars(provider === "github" ? defaultBaseUrl("github") : baseUrl.trim());
     const saved = await addPatAccount(provider, base, token, label?.trim() || null);
     warnIfInsecure(saved);
     set((s) => ({ accounts: [...s.accounts, saved.account], activeId: saved.account.id }));

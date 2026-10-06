@@ -77,6 +77,27 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [setCenter, refresh, notify]);
 
+  function leftPane() {
+    if (leftTab === "accounts") return <AccountsPanel />;
+    return repoPath ? <Sidebar /> : <p className="p-3 text-xs text-[var(--color-muted)] italic">Aucun dépôt ouvert</p>;
+  }
+
+  function mainPane() {
+    if (!repoPath) {
+      return (
+        <Welcome
+          onOpen={chooseAndOpenRepo}
+          onInit={chooseAndInitRepo}
+          onClone={() => setShowClone(true)}
+          onOpenPath={openRepoAt}
+        />
+      );
+    }
+    if (center.kind === "diff") return <CenterDiff view={center} />;
+    if (center.kind === "conflict") return <ConflictViewer path={center.path} />;
+    return <CommitGraph />;
+  }
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       <Toolbar onClone={() => setShowClone(true)} />
@@ -87,31 +108,10 @@ export default function App() {
             <LeftTabBtn active={leftTab === "repo"} onClick={() => setLeftTab("repo")}>Dépôt</LeftTabBtn>
             <LeftTabBtn active={leftTab === "accounts"} onClick={() => setLeftTab("accounts")}>Comptes</LeftTabBtn>
           </div>
-          <div className="flex-1 overflow-hidden">
-            {leftTab === "repo" ? (
-              repoPath ? <Sidebar /> : <p className="p-3 text-xs text-[var(--color-muted)] italic">Aucun dépôt ouvert</p>
-            ) : (
-              <AccountsPanel />
-            )}
-          </div>
+          <div className="flex-1 overflow-hidden">{leftPane()}</div>
         </div>
 
-        <main className="flex-1 min-w-0 overflow-hidden bg-[var(--color-bg-primary)]">
-          {!repoPath ? (
-            <Welcome
-              onOpen={chooseAndOpenRepo}
-              onInit={chooseAndInitRepo}
-              onClone={() => setShowClone(true)}
-              onOpenPath={openRepoAt}
-            />
-          ) : center.kind === "diff" ? (
-            <CenterDiff view={center} />
-          ) : center.kind === "conflict" ? (
-            <ConflictViewer path={center.path} />
-          ) : (
-            <CommitGraph />
-          )}
-        </main>
+        <main className="flex-1 min-w-0 overflow-hidden bg-[var(--color-bg-primary)]">{mainPane()}</main>
 
         {repoPath && (
           <div className="w-80 shrink-0 overflow-hidden border-l border-white/10">

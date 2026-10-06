@@ -44,6 +44,36 @@ interface PendingEdge {
   curve: GraphEdge["curve"];
 }
 
+/** Première colonne libre (une nouvelle colonne est ajoutée si besoin). */
+function freeLane(lanes: (string | null)[]): number {
+  const free = lanes.indexOf(null);
+  if (free !== -1) return free;
+  lanes.push(null);
+  return lanes.length - 1;
+}
+
+/**
+ * Colonne d'un commit : celle réservée par un enfant, sinon la première libre.
+ * Plusieurs enfants peuvent attendre ce commit : leurs autres colonnes le rejoignent ici et se libèrent.
+ */
+function takeLane(lanes: (string | null)[], hash: string): number {
+  const reserved = lanes.indexOf(hash);
+  const lane = reserved === -1 ? freeLane(lanes) : reserved;
+  lanes.forEach((h, i) => {
+    if (i !== lane && h === hash) lanes[i] = null;
+  });
+  return lane;
+}
+
+/** Colonne où un parent fusionné est attendu (réservée au besoin). */
+function reserveLane(lanes: (string | null)[], hash: string): number {
+  const existing = lanes.indexOf(hash);
+  if (existing !== -1) return existing;
+  const lane = freeLane(lanes);
+  lanes[lane] = hash;
+  return lane;
+}
+
 export function computeGraphLayout(commits: CommitInfo[]): GraphLayout {
   if (commits.length === 0) return { nodes: [], edges: [], laneCount: 0 };
 
@@ -56,25 +86,10 @@ export function computeGraphLayout(commits: CommitInfo[]): GraphLayout {
   const pending: PendingEdge[] = [];
   let maxLanes = 0;
 
-  const freeLane = () => {
-    const free = lanes.indexOf(null);
-    if (free !== -1) return free;
-    lanes.push(null);
-    return lanes.length - 1;
-  };
-
   for (let row = 0; row < commits.length; row++) {
     const commit = commits[row];
 
-    // Colonne réservée par un enfant, sinon première colonne libre
-    let lane = lanes.indexOf(commit.hash);
-    if (lane === -1) lane = freeLane();
-
-    // Plusieurs enfants peuvent attendre ce commit : leurs colonnes le rejoignent ici et se libèrent.
-    for (let i = 0; i < lanes.length; i++) {
-      if (i !== lane && lanes[i] === commit.hash) lanes[i] = null;
-    }
-
+    const lane = takeLane(lanes, commit.hash);
     const color = laneColor(lane);
     nodes.push({ commit, lane, row, color });
 
@@ -87,10 +102,8 @@ export function computeGraphLayout(commits: CommitInfo[]): GraphLayout {
       lanes[lane] = null;
     }
 
-    for (const parentHash of mergeParents) {
-      if (!hashToRow.has(parentHash)) continue;
-      if (lanes.indexOf(parentHash) === -1) lanes[freeLane()] = parentHash;
-      pending.push({ fromRow: row, fromLane: lane, parentHash, color: laneColor(lanes.indexOf(parentHash)), curve: "start" });
+    for (const parentHash of mergeParents.filter((p) => hashToRow.has(p))) {
+      pending.push({ fromRow: row, fromLane: lane, parentHash, color: laneColor(reserveLane(lanes, parentHash)), curve: "start" });
     }
 
     maxLanes = Math.max(maxLanes, lanes.length);

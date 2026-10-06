@@ -1,4 +1,10 @@
-import { useUiStore } from "../store/useUiStore";
+import { useUiStore, type Toast } from "../store/useUiStore";
+
+const TOAST_STYLES: Record<Toast["kind"], string> = {
+  error: "bg-red-950/95 border-red-500/40 text-red-200",
+  success: "bg-green-950/95 border-green-500/40 text-green-200",
+  info: "bg-[#1e2a3a]/95 border-sky-500/40 text-sky-200",
+};
 
 export function Toasts() {
   const toasts = useUiStore((s) => s.toasts);
@@ -10,13 +16,7 @@ export function Toasts() {
         <div
           key={t.id}
           role={t.kind === "error" ? "alert" : "status"}
-          className={`flex items-start gap-2 px-3 py-2 rounded shadow-lg border text-xs ${
-            t.kind === "error"
-              ? "bg-red-950/95 border-red-500/40 text-red-200"
-              : t.kind === "success"
-                ? "bg-green-950/95 border-green-500/40 text-green-200"
-                : "bg-[#1e2a3a]/95 border-sky-500/40 text-sky-200"
-          }`}
+          className={`flex items-start gap-2 px-3 py-2 rounded shadow-lg border text-xs ${TOAST_STYLES[t.kind]}`}
         >
           <span className="flex-1 break-words whitespace-pre-line select-text">{t.message}</span>
           <button className="opacity-60 hover:opacity-100" onClick={() => dismiss(t.id)} aria-label="Fermer">✕</button>

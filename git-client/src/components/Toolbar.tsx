@@ -8,6 +8,15 @@ import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "../lib/repoAct
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { SearchBar } from "./SearchBar";
 import logoMark from "../assets/logo-mark.webp";
+import type { RepoInfo } from "../types/git";
+
+/** Position courante affichée dans la barre d'outils. */
+function headLabel(info: RepoInfo): string {
+  const rebase = info.interactive_rebase;
+  if (rebase) return `Rebase interactif ${rebase.step}/${rebase.total}`;
+  if (info.head_detached) return `HEAD détaché @ ${info.head_hash?.slice(0, 7)}`;
+  return `⎇ ${info.head_branch ?? ""}`;
+}
 
 export function Toolbar({ onClone }: { onClone: () => void }) {
   const repoPath = useRepoStore((s) => s.repoPath);
@@ -118,11 +127,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       </button>
       {info && (
         <span className="text-xs font-mono text-[var(--color-accent)] truncate max-w-48" title="Branche courante">
-          {info.interactive_rebase
-            ? `Rebase interactif ${info.interactive_rebase.step}/${info.interactive_rebase.total}`
-            : info.head_detached
-              ? `HEAD détaché @ ${info.head_hash?.slice(0, 7)}`
-              : `⎇ ${info.head_branch ?? ""}`}
+          {headLabel(info)}
         </span>
       )}
 

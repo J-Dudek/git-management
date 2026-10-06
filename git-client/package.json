@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest",
+    "lint": "eslint --max-warnings 0 .",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -28,8 +29,12 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "@vitest/ui": "^5.0.3",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-sonarjs": "^4.2.2",
     "jsdom": "^29.1.1",
     "typescript": "~5.8.3",
+    "typescript-eslint": "^8.71.1",
     "vite": "^7.0.4",
     "vitest": "^5.0.3"
   },
