@@ -23,7 +23,7 @@ pub fn open_new_window(app: &AppHandle, repo: Option<&str>) -> Result<(), String
 
     WebviewWindowBuilder::new(app, &label, WebviewUrl::App("/".into()))
         .initialization_script(&init)
-        .title("J6N — Git Repository Manager")
+        .title("Merathon — Git Repository Manager")
         .inner_size(1280.0, 800.0)
         .min_inner_size(900.0, 600.0)
         .build()

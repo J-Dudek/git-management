@@ -55,7 +55,7 @@ pub fn get_json(account: &Account, token: &str, path: &str) -> Result<Value, Str
         .get(&url)
         .timeout(Duration::from_secs(30))
         .set("Authorization", &format!("Bearer {token}"))
-        .set("User-Agent", "J6N");
+        .set("User-Agent", "Merathon");
     request = match account.provider {
         Provider::Github => request
             .set("Accept", "application/vnd.github+json")

@@ -71,7 +71,7 @@ jobs:
             git-client/src-tauri/Cargo.toml git-client/src-tauri/Cargo.lock \
             git-client/src-tauri/tauri.conf.json
           git commit -m "chore(release): v$VERSION [skip ci]"
-          git tag -a "v$VERSION" -m "J6N v$VERSION"
+          git tag -a "v$VERSION" -m "Merathon v$VERSION"
           # Commit et tag poussés ensemble : soit les deux, soit aucun.
           git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "v$VERSION"
 
@@ -138,9 +138,9 @@ jobs:
         with:
           projectPath: git-client
           tagName: ${{ env.TAG }}
-          releaseName: "J6N ${{ env.TAG }}"
+          releaseName: "Merathon ${{ env.TAG }}"
           releaseBody: |
-            ## J6N — Git Repository Manager ${{ env.TAG }}
+            ## Merathon — Git Repository Manager ${{ env.TAG }}
 
             ### Téléchargements
             - **Linux** : `.deb` (Debian/Ubuntu) · `.AppImage` (universel)

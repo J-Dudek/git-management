@@ -128,9 +128,9 @@ function IdentitySection() {
 
 function tokenHelpUrl(kind: Kind, url: string): string {
   if (kind === "github") {
-    return "https://github.com/settings/tokens/new?scopes=repo,read:user,workflow&description=J6N";
+    return "https://github.com/settings/tokens/new?scopes=repo,read:user,workflow&description=Merathon";
   }
-  return `${url}/-/user_settings/personal_access_tokens?name=J6N&scopes=api,read_user,write_repository`;
+  return `${url}/-/user_settings/personal_access_tokens?name=Merathon&scopes=api,read_user,write_repository`;
 }
 
 const CLIENT_ID_KEY = "git-client.oauth-client-ids";

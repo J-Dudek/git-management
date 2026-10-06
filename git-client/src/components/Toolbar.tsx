@@ -129,7 +129,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
           draggable={false}
           className="w-6 h-6 rounded-md ring-1 ring-white/10 shrink-0 select-none"
         />
-        <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "J6N"}</span>
+        <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</span>
         <span className="text-[10px] text-[var(--color-muted)]">▾</span>
       </button>
       {info && (
