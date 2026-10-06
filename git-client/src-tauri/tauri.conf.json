@@ -50,6 +50,13 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Julien Dudek",
+    "copyright": "Copyright © 2026 Julien Dudek",
+    "license": "MIT",
+    "homepage": "https://github.com/J-Dudek/git-management",
+    "category": "DeveloperTool",
+    "shortDescription": "Client Git graphique de bureau",
+    "longDescription": "J6N est un client Git graphique : graphe des branches, indexation ligne par ligne, rebase interactif, résolution de conflits, sous-modules, Git LFS et comptes GitHub / GitLab.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

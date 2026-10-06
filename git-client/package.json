@@ -2,6 +2,13 @@
   "name": "git-client",
   "private": true,
   "version": "0.1.0",
+  "description": "J6N — Git Repository Manager : client Git graphique de bureau",
+  "author": "Julien Dudek",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/J-Dudek/git-management.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

@@ -155,3 +155,7 @@ git-client/
         └── git/         # Opérations Git (git2) : status, diff, patch (hunks), history, merge, rebase,
                          # interactive (rebase -i), stash, submodule, lfs, remote, auth…
 ```
+
+## Licence
+
+Distribué sous licence [MIT](LICENSE).

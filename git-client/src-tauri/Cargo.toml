@@ -1,8 +1,11 @@
 [package]
 name = "git-client"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "J6N — Git Repository Manager : client Git graphique de bureau"
+authors = ["Julien Dudek"]
+license = "MIT"
+repository = "https://github.com/J-Dudek/git-management"
+homepage = "https://github.com/J-Dudek/git-management"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
