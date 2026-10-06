@@ -24,12 +24,12 @@ export async function checkForUpdates(manual = false) {
     return;
   }
   if (!update) {
-    if (manual) ui.notify("success", "J6N est à jour");
+    if (manual) ui.notify("success", "Merathon est à jour");
     return;
   }
 
   const answer = await ui.ask({
-    title: `J6N ${update.version} est disponible`,
+    title: `Merathon ${update.version} est disponible`,
     message: `Version installée : ${update.currentVersion}. L'application redémarrera après l'installation.`,
     confirmLabel: "Installer et redémarrer",
   });

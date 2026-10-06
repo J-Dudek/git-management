@@ -1,5 +1,7 @@
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
+import { useTabsStore } from "../store/useTabsStore";
+import { AppWindow, CloudDownload, FolderOpen, FolderPlus, History, RefreshCw, Settings, SquarePlus, X } from "lucide-react";
 import {
   createBranch, fetchRemote, openNewWindow, pull, push, stashApply, stashSave,
 } from "../ipc/commands";
@@ -25,7 +27,11 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
   const branches = useRepoStore((s) => s.branches);
   const stashes = useRepoStore((s) => s.stashes);
   const recent = useRepoStore((s) => s.recentRepos);
-  const closeRepo = useRepoStore((s) => s.closeRepo);
+  const newTab = useTabsStore((s) => s.newTab);
+  const closeTab = useTabsStore((s) => s.closeTab);
+  const activeTab = useTabsStore((s) => s.activeId);
+  const tabCount = useTabsStore((s) => s.tabs.length);
+  const setPreferencesOpen = useUiStore((s) => s.setPreferencesOpen);
   const busy = useUiStore((s) => s.busy);
   const ask = useUiStore((s) => s.ask);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
@@ -34,17 +40,27 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
   const repoName = repoPath?.split(/[\\/]/).pop();
 
   function repoMenu(): MenuEntry[] {
+    const others = recent.filter((p) => p !== repoPath).slice(0, 6);
     return [
-      { label: "Ouvrir un dépôt…", action: chooseAndOpenRepo },
-      { label: "Cloner un dépôt…", action: onClone },
-      { label: "Initialiser un dépôt…", action: chooseAndInitRepo },
-      { label: "Nouvelle fenêtre", action: () => openNewWindow() },
-      { label: "Rechercher des mises à jour…", action: () => checkForUpdates(true) },
-      ...(recent.filter((p) => p !== repoPath).length > 0 ? ["separator" as const] : []),
-      ...recent
-        .filter((p) => p !== repoPath)
-        .map((p) => ({ label: p.split(/[\\/]/).pop() ?? p, hint: p, action: () => openRepoAt(p) })),
-      ...(repoPath ? ["separator" as const, { label: "Fermer le dépôt", action: closeRepo }] : []),
+      { header: "Dépôt" },
+      { label: "Ouvrir…", icon: FolderOpen, shortcut: "Ctrl+O", action: chooseAndOpenRepo },
+      { label: "Cloner…", icon: CloudDownload, action: onClone },
+      { label: "Initialiser…", icon: FolderPlus, action: chooseAndInitRepo },
+      ...(others.length > 0
+        ? [
+            { header: "Récents" },
+            ...others.map((p) => ({ label: p.split(/[\\/]/).pop() ?? p, hint: p, icon: History, action: () => openRepoAt(p) })),
+          ]
+        : []),
+      "separator",
+      { label: "Nouvel onglet", icon: SquarePlus, shortcut: "Ctrl+T", action: newTab },
+      { label: "Nouvelle fenêtre", icon: AppWindow, shortcut: "Ctrl+Maj+N", action: () => openNewWindow() },
+      ...(repoPath || tabCount > 1
+        ? [{ label: "Fermer l'onglet", icon: X, shortcut: "Ctrl+W", action: () => closeTab(activeTab) }]
+        : []),
+      "separator",
+      { label: "Préférences…", icon: Settings, shortcut: "Ctrl+,", action: () => setPreferencesOpen(true) },
+      { label: "Rechercher des mises à jour…", icon: RefreshCw, action: () => checkForUpdates(true) },
     ];
   }
 
@@ -124,7 +140,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
           draggable={false}
           className="w-6 h-6 rounded-md ring-1 ring-white/10 shrink-0 select-none"
         />
-        <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "J6N"}</span>
+        <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</span>
         <span className="text-[10px] text-[var(--color-muted)]">▾</span>
       </button>
       {info && (

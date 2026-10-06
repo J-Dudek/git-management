@@ -1,9 +1,35 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type {
   BranchInfo, CommitDetails, CommitInfo, FileDiff, FileStatus, Identity, MergeResult,
   InteractiveOutcome, LfsStatus, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit,
 } from "../types/git";
 import type { DeviceCode, ForgeAccount, Provider, SavedAccount } from "../types/forge";
+import { describeCommand } from "../lib/journal";
+import { useJournalStore } from "../store/useJournalStore";
+
+function errorText(e: unknown): string {
+  if (typeof e === "string") return e;
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Appel au backend ; les opérations qui modifient un dépôt sont inscrites au journal. */
+async function invoke<T>(cmd: string, args?: InvokeArgs): Promise<T> {
+  const command = describeCommand(cmd, args);
+  if (!command) return tauriInvoke<T>(cmd, args);
+  const journal = useJournalStore.getState();
+  const path = (args as { path?: unknown } | undefined)?.path;
+  const id = journal.start(typeof path === "string" ? path : null, command);
+  try {
+    const result = await tauriInvoke<T>(cmd, args);
+    const conflicts = (result as { conflicted_files?: string[] } | null)?.conflicted_files;
+    if (conflicts?.length) journal.finish(id, "warning", `Conflits : ${conflicts.join(", ")}`);
+    else journal.finish(id, "success");
+    return result;
+  } catch (e) {
+    journal.finish(id, "error", errorText(e));
+    throw e;
+  }
+}
 
 // ---------------------------------------------------------------- Dépôt
 
@@ -149,3 +175,20 @@ export const oauthStart = (provider: Provider, baseUrl: string, clientId: string
 export const oauthComplete = (provider: Provider, baseUrl: string, clientId: string, device: DeviceCode, label: string | null) =>
   invoke<SavedAccount>("oauth_complete", { provider, baseUrl, clientId, device, label });
 export const oauthCancel = (deviceCode: string) => invoke<void>("oauth_cancel", { deviceCode });
+
+/** Outils de développement (sans effet dans les builds de release). */
+export const openDevtools = () => invoke<void>("open_devtools");
+
+// ---------------------------------------------------------------- Terminal intégré
+
+export type TerminalEvent = { kind: "output"; data: string } | { kind: "exit"; code: number | null };
+
+/** Lance le shell de l'utilisateur dans `cwd` ; ses sorties arrivent dans `onEvent`. */
+export const terminalOpen = (cwd: string, cols: number, rows: number, onEvent: (e: TerminalEvent) => void) => {
+  const channel = new Channel<TerminalEvent>();
+  channel.onmessage = onEvent;
+  return invoke<number>("terminal_open", { cwd, cols, rows, onEvent: channel });
+};
+export const terminalWrite = (id: number, data: string) => invoke<void>("terminal_write", { id, data });
+export const terminalResize = (id: number, cols: number, rows: number) => invoke<void>("terminal_resize", { id, cols, rows });
+export const terminalClose = (id: number) => invoke<void>("terminal_close", { id });

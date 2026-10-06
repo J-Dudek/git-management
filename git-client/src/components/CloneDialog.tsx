@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useAccountsStore } from "../store/useAccountsStore";
-import { useRepoStore } from "../store/useRepoStore";
+import { openRepoAt } from "../lib/repoActions";
 import { useUiStore } from "../store/useUiStore";
 import { cloneRepository } from "../ipc/commands";
 import { errorMessage } from "../lib/actions";
@@ -16,7 +16,6 @@ function repoNameFromUrl(url: string): string {
 export function CloneDialog({ onClose }: { onClose: () => void }) {
   const accounts = useAccountsStore((s) => s.accounts);
   const client = useAccountsStore((s) => s.client);
-  const openRepo = useRepoStore((s) => s.openRepo);
   const notify = useUiStore((s) => s.notify);
 
   const [url, setUrl] = useState("");
@@ -67,7 +66,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
     setCloning(true);
     try {
       const warning = await cloneRepository(url.trim(), target);
-      await openRepo(target);
+      await openRepoAt(target);
       notify(warning ? "info" : "success", warning ?? `Dépôt cloné dans ${target}`);
       onClose();
     } catch (e) {

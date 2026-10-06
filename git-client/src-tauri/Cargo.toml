@@ -1,7 +1,7 @@
 [package]
 name = "git-client"
 version = "1.1.0"
-description = "J6N — Git Repository Manager : client Git graphique de bureau"
+description = "Merathon — Git Repository Manager : client Git graphique de bureau"
 authors = ["Julien Dudek"]
 license = "MIT"
 repository = "https://github.com/J-Dudek/git-management"
@@ -38,6 +38,7 @@ ureq = { version = "2", features = ["json"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8"
 webpki-roots = "1"
+portable-pty = "0.9"
 
 [dev-dependencies]
 tempfile = "3"

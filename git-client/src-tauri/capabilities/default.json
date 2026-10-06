@@ -5,6 +5,7 @@
   "windows": ["main", "repo-*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-set-webview-zoom",
     "opener:default",
     "dialog:allow-open"
   ]

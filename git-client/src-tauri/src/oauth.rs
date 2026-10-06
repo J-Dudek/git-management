@@ -212,7 +212,7 @@ pub fn fetch_username(provider: Provider, endpoints: &Endpoints, access_token: &
         .get(&endpoints.user_url)
         .set("Authorization", &format!("Bearer {access_token}"))
         .set("Accept", "application/json")
-        .set("User-Agent", "J6N")
+        .set("User-Agent", "Merathon")
         .timeout(Duration::from_secs(30))
         .call()
         .map_err(|e| format!("Impossible de lire le profil : {e}"))?

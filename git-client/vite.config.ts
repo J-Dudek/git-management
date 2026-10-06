@@ -17,6 +17,8 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  // Application de bureau : les fichiers sont lus sur le disque, la taille du bundle (xterm.js inclus) importe peu.
+  build: { chunkSizeWarningLimit: 1000 },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

@@ -22,6 +22,26 @@ export interface DialogResult {
   checked: boolean;
 }
 
+/** Panneau repliable sous le graphe (terminal / journal). */
+export interface BottomPanelState {
+  open: boolean;
+  tab: "terminal" | "journal";
+  /** Hauteur en pixels quand il est déplié. */
+  height: number;
+}
+
+const PANEL_KEY = "git-client.bottom-panel";
+const defaultPanel: BottomPanelState = { open: false, tab: "terminal", height: 260 };
+
+function loadPanel(): BottomPanelState {
+  try {
+    const raw = localStorage.getItem(PANEL_KEY);
+    return raw ? { ...defaultPanel, ...(JSON.parse(raw) as Partial<BottomPanelState>) } : defaultPanel;
+  } catch {
+    return defaultPanel;
+  }
+}
+
 interface PendingDialog extends DialogOptions {
   resolve: (result: DialogResult | null) => void;
 }
@@ -33,6 +53,9 @@ interface UiStore {
   busy: string | null;
   /** Commit de base du rebase interactif en cours de préparation. */
   interactiveRebaseBase: string | null;
+  panel: BottomPanelState;
+  /** Fenêtre des préférences ouverte. */
+  preferencesOpen: boolean;
 
   notify: (kind: Toast["kind"], message: string) => void;
   dismiss: (id: number) => void;
@@ -40,6 +63,8 @@ interface UiStore {
   closeDialog: (result: DialogResult | null) => void;
   setBusy: (label: string | null) => void;
   setInteractiveRebaseBase: (hash: string | null) => void;
+  setPanel: (patch: Partial<BottomPanelState>) => void;
+  setPreferencesOpen: (open: boolean) => void;
 }
 
 let nextToastId = 1;
@@ -49,6 +74,8 @@ export const useUiStore = create<UiStore>((set, get) => ({
   dialog: null,
   busy: null,
   interactiveRebaseBase: null,
+  panel: loadPanel(),
+  preferencesOpen: false,
 
   notify: (kind, message) => {
     const id = nextToastId++;
@@ -71,6 +98,18 @@ export const useUiStore = create<UiStore>((set, get) => ({
 
   setBusy: (busy) => set({ busy }),
   setInteractiveRebaseBase: (interactiveRebaseBase) => set({ interactiveRebaseBase }),
+
+  setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
+
+  setPanel: (patch) => {
+    const panel = { ...get().panel, ...patch };
+    set({ panel });
+    try {
+      localStorage.setItem(PANEL_KEY, JSON.stringify(panel));
+    } catch {
+      // stockage indisponible : réglage gardé pour la session
+    }
+  },
 }));
 
 /** Fenêtre de confirmation simple. */

@@ -17,7 +17,7 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
       <div className="flex flex-col items-center text-center">
         <img
           src={logo}
-          alt="J6N — Git Repository Manager"
+          alt="Merathon — Git Repository Manager"
           width={176}
           height={176}
           draggable={false}

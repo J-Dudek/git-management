@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="log.png" alt="J6N — Git Repository Manager" width="200" />
+  <img src="log.png" alt="Merathon — Git Repository Manager" width="200" />
 </p>
 
-<h1 align="center">J6N — Git Repository Manager</h1>
+<h1 align="center">Merathon — Git Repository Manager</h1>
+
+<p align="center"><em>« Ton code, c'est un marathon. »</em></p>
 
 <p align="center">
   Client Git graphique de bureau, construit avec <strong>Tauri 2</strong> (backend Rust + <code>git2</code>)
@@ -10,28 +12,63 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Démo : graphe avec les auteurs, squash de plusieurs commits, suppression de plusieurs branches" width="960" />
+  <img src="docs/demo.gif" alt="Démo : graphe avec les auteurs, détail d'un commit, onglets de dépôts, terminal intégré, commit, journal des opérations et préférences d'affichage" width="960" />
 </p>
+
+## Pourquoi « Merathon » ?
+
+- **Merge + marathon** : le mot se comprend tout de suite, on sourit et on le retient.
+- Il raconte bien le métier : un projet, c'est un marathon fait de merges.
+- Il se dit pareil en français et en anglais, et en une seconde : « j'utilise Merathon ».
+- Le logo suit la même idée : un **M** dessiné comme un graphe Git (une branche qui part puis fusionne) au centre d'une piste d'athlétisme, avec sa ligne d'arrivée. La signature **J6N** de l'auteur, le lettrage du logo d'origine, y court sous le M.
+
+## Installation
+
+Les paquets de chaque version sont publiés dans les [releases GitHub](https://github.com/J-Dudek/git-management/releases/latest) :
+
+- **Linux** : `.deb` (Debian/Ubuntu) ou `.AppImage` (universel). Le paquet `.deb` remplace automatiquement l'ancien paquet `j6n`.
+- **Windows** : `.msi` ou `.exe`. Les installeurs ne sont pas encore signés : au premier lancement, cliquer sur **Informations complémentaires** puis **Exécuter quand même**.
+
+Les empreintes SHA-256 de tous les fichiers sont dans `SHA256SUMS.txt`. Une fois installée, l'application se met à jour toute seule.
 
 ## Fonctionnalités
 
-- **Dépôts** : ouvrir, initialiser, cloner (avec la liste des dépôts de tes comptes), dépôts récents, multi-fenêtres.
+- **Dépôts et onglets** : ouvrir, initialiser, cloner (avec la liste des dépôts de tes comptes), dépôts récents. Chaque dépôt s'ouvre dans un **onglet** ; pull, push, fetch… s'appliquent à l'onglet affiché, qui garde son état (sélection, diff, message de commit en cours) quand on passe à un autre. Un dépôt déjà ouvert est simplement réaffiché, et les onglets sont rouverts au démarrage. Plusieurs fenêtres restent possibles.
+- **Terminal intégré** : panneau repliable sous le graphe (Ctrl+J), avec un vrai shell ouvert dans le dossier du dépôt de l'onglet. Le graphe et le statut se rafraîchissent tout seuls après chaque commande.
+- **Journal des opérations** : à côté du terminal, chaque action de l'application (commit, pull, push, rebase, stash…) est affichée sous la forme de la commande `git` équivalente, avec son statut, sa durée et le message d'erreur complet en cas d'échec. Les identifiants contenus dans une URL ne sont jamais affichés.
 - **Historique** : graphe de toutes les branches (locales, distantes, tags), recherche, détail d'un commit (message, auteur, fichiers modifiés) et diff de chaque fichier. Chaque point du graphe porte les initiales de l'auteur, dont le nom s'affiche au survol. Sélection de plusieurs commits avec Ctrl+clic (ou Cmd+clic) et Maj+clic pour une plage, puis clic droit → **Squasher les commits sélectionnés** : ils sont fusionnés dans le plus ancien, avec un message modifiable (pré-rempli avec les messages d'origine).
 - **Copie de travail** : indexer / désindexer / annuler par fichier, par bloc (hunk) ou ligne par ligne depuis le diff (clic, Maj+clic pour une plage), commit avec résumé + description, amend.
 - **Branches** : création, checkout (y compris d'une branche distante avec suivi, ou d'un commit en HEAD détaché), renommage, suppression, branche suivie, ahead/behind. Un badge `local` signale, dans la barre latérale et sur le graphe, les branches qui n'existent sur aucun remote. Plusieurs branches locales peuvent être sélectionnées (Ctrl+clic, Maj+clic) et supprimées en une fois.
 - **Intégration** : merge (fast-forward ou commit de merge), rebase, cherry-pick, revert, reset soft/mixed/hard, avec résolution de conflits et continuer / annuler.
 - **Rebase interactif** (clic droit sur un commit) : réordonner (glisser-déposer ou flèches), renommer, modifier (arrêt pour amender ou ajouter des commits), fusionner (squash / fixup) ou supprimer des commits. Avec des merges dans l'historique, au choix : *aplatir* (comme `git rebase -i`) ou *préserver les merges* (comme `--rebase-merges` : forme conservée, résolutions de conflits des merges gardées). Le rebase s'arrête sur un conflit à résoudre puis « Continuer », et peut être annulé à tout moment pour revenir exactement à l'état initial ; l'ancienne position reste accessible via `ORIG_HEAD`. Comme avec git, un commit devenu vide (ses changements sont déjà présents) est sauté.
-- **Sous-modules** : liste et état, initialisation / mise à jour récursive (avec les identifiants des comptes), récupération automatique après un clone, ouverture dans une nouvelle fenêtre.
+- **Sous-modules** : liste et état, initialisation / mise à jour récursive (avec les identifiants des comptes), récupération automatique après un clone, ouverture dans un nouvel onglet ou une nouvelle fenêtre.
 - **Git LFS** (nécessite [git-lfs](https://git-lfs.com)) : les fichiers LFS sont indexés via `git add` (pointeur, pas le binaire), les objets LFS sont envoyés avant chaque push et récupérés après clone / pull / checkout ; suivi de motifs, liste des fichiers non téléchargés.
 - **Remotes** : fetch, pull (merge ou rebase), push (forcé en option), suppression de branche distante, ajout / suppression de remotes.
 - **Tags et stash** : tags légers ou annotés (création, push, suppression), stash (avec fichiers non suivis), apply, pop, drop.
 - **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. Les PR/MR et issues du dépôt courant sont affichées, avec checkout de la branche d'une PR et lien de création de PR/MR.
 - **Identité Git** : nom et email, globaux ou propres au dépôt.
-- **Mises à jour automatiques** : au démarrage, l'application vérifie s'il existe une nouvelle release, propose de l'installer puis redémarre (aussi via le menu J6N → « Rechercher des mises à jour… »). Les paquets sont signés et la signature est vérifiée avant toute installation (AppImage, `.deb`, `.exe`, `.msi`).
+- **Préférences** (Ctrl+,) : taille de toute l'interface de 80 à 200 % (Ctrl+= / Ctrl+- / Ctrl+0), taille du texte du terminal, densité du graphe (compacte, normale, aérée) et liste des raccourcis clavier. Les réglages s'appliquent immédiatement à toutes les fenêtres.
+- **Mises à jour automatiques** : au démarrage, l'application vérifie s'il existe une nouvelle release, propose de l'installer puis redémarre (aussi via le menu Merathon → « Rechercher des mises à jour… »). Les paquets sont signés et la signature est vérifiée avant toute installation (AppImage, `.deb`, `.exe`, `.msi`).
+
+### Raccourcis clavier
+
+| Action | Raccourci |
+|---|---|
+| Ouvrir un dépôt | <kbd>Ctrl</kbd>+<kbd>O</kbd> |
+| Nouvel onglet / fermer l'onglet | <kbd>Ctrl</kbd>+<kbd>T</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd> |
+| Onglet suivant / précédent | <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>Tab</kbd> |
+| Nouvelle fenêtre | <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>N</kbd> |
+| Afficher / masquer le terminal et le journal | <kbd>Ctrl</kbd>+<kbd>J</kbd> |
+| Agrandir / réduire / taille par défaut | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd> |
+| Préférences | <kbd>Ctrl</kbd>+<kbd>,</kbd> |
+| Rafraîchir le dépôt | <kbd>F5</kbd> |
+| Copier / coller dans le terminal | <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>Maj</kbd>+<kbd>V</kbd> |
+
+Quand le terminal a le focus, les touches vont au shell (Ctrl+R, Ctrl+W, Échap…).
 
 Le code de l'application se trouve dans le dossier [`git-client/`](git-client/).
 
-## Prérequis
+## Prérequis pour le développement
 
 - **Node.js** 22.12+ et npm
 - **Rust** stable (via [rustup](https://rustup.rs/))
@@ -58,6 +95,7 @@ Le code de l'application se trouve dans le dossier [`git-client/`](git-client/).
 - **Envoi des identifiants** : uniquement au serveur du compte et en HTTPS (pas après une redirection vers un autre hôte, pas à un serveur LFS tiers déclaré par un dépôt). Les instances doivent être en HTTPS (HTTP accepté seulement pour `localhost`).
 - **Dépôts non fiables** : libgit2 n'exécute aucune commande définie par un dépôt ; les rares appels à `git` (Git LFS) imposent leurs réglages (pas de hooks, fsmonitor, helpers ou filtres définis par la configuration locale du dépôt).
 - **Interface** : CSP stricte (scripts locaux uniquement, aucun accès réseau depuis le webview), `freezePrototype`, chemins de fichiers validés côté Rust (pas de sortie du dépôt).
+- **Terminal intégré** : il lance le shell de l'utilisateur, avec ses droits, comme un terminal classique ; ses processus sont arrêtés à la fermeture de l'onglet ou de la fenêtre.
 - **Dépendances** : `npm audit` et `cargo audit` exécutés à chaque CI.
 
 ## Connexion OAuth
@@ -136,17 +174,22 @@ La branche `main` étant protégée, le commit de version est poussé avec le se
 
 Vérifier localement la prochaine version : `node git-client/scripts/version.mjs next`.
 
+Le mode de merge de la pull request compte : avec un **commit de merge** ou un **rebase**, tous les commits de la branche sont analysés ; avec un **squash**, seul le titre de la pull request l'est (le préfixer par `feat:` ou `fix:` pour déclencher une release).
+
 Les mises à jour automatiques reposent sur une clé de signature dédiée : la clé publique est dans `tauri.conf.json` (`plugins > updater > pubkey`), la clé privée et son mot de passe dans les secrets `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Le build signe chaque paquet et publie `latest.json`, le manifeste que l'application consulte. **Si la clé privée est perdue, les versions installées ne pourront plus être mises à jour** : la conserver dans un gestionnaire de mots de passe.
+
 ## Structure
 
 ```
 git-client/
+├── branding/            # Sources du logo et de l'icône (SVG) et signature J6N
 ├── src/                 # Frontend React
-│   ├── components/      # UI (Sidebar, Toolbar, DiffViewer, StagingPanel, ConflictViewer…)
+│   ├── components/      # UI : Toolbar, TabBar, Sidebar, StagingPanel, BottomPanel (terminal / journal),
+│   │                    # PreferencesDialog, DiffViewer, ConflictViewer…
 │   ├── graph/           # Rendu du graphe de commits
-│   ├── store/           # État global (Zustand)
-│   ├── ipc/commands.ts  # Appels aux commandes Tauri
-│   ├── lib/             # Actions git, URL de remote, plan de squash, sélection multiple…
+│   ├── store/           # État global (Zustand) : dépôt affiché, onglets, journal, réglages d'affichage…
+│   ├── ipc/commands.ts  # Appels aux commandes Tauri (et inscription au journal)
+│   ├── lib/             # Actions git, terminaux (xterm.js), commandes du journal, plan de squash…
 │   └── api/             # Clients GitHub / GitLab
 └── src-tauri/           # Backend Rust
     └── src/
@@ -154,6 +197,7 @@ git-client/
         ├── commands.rs  # Commandes exposées au frontend (réseau hors thread UI)
         ├── accounts.rs  # Comptes GitHub / GitLab et stockage des tokens
         ├── oauth.rs     # Connexion OAuth (device flow) et renouvellement des tokens
+        ├── terminal.rs  # Terminal intégré (pseudo-terminal, shell de l'utilisateur)
         ├── window.rs    # Gestion multi-fenêtres
         └── git/         # Opérations Git (git2) : status, diff, patch (hunks), history, merge, rebase,
                          # interactive (rebase -i), stash, submodule, lfs, remote, auth…

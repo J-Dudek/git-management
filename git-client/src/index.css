@@ -17,3 +17,37 @@ body {
   font-family: 'Inter', system-ui, sans-serif;
   overflow: hidden;
 }
+
+/* Curseur des préférences : piste remplie jusqu'à la valeur, poignée ronde. */
+.pref-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  background: transparent;
+  cursor: pointer;
+}
+.pref-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--color-accent) var(--fill, 0%), rgb(255 255 255 / 0.12) var(--fill, 0%));
+}
+.pref-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  border: 3px solid var(--color-accent);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+  transition: transform 0.1s;
+}
+.pref-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.pref-slider:focus-visible {
+  outline: none;
+}
+.pref-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgb(233 69 96 / 0.3);
+}

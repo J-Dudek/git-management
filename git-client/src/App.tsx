@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Toolbar } from "./components/Toolbar";
+import { TabBar } from "./components/TabBar";
+import { BottomPanel } from "./components/BottomPanel";
 import { Sidebar } from "./components/Sidebar";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { CommitGraph } from "./graph/CommitGraph";
@@ -15,15 +19,22 @@ import { InteractiveRebaseDialog } from "./components/InteractiveRebaseDialog";
 import { useRepoStore } from "./store/useRepoStore";
 import { useAccountsStore } from "./store/useAccountsStore";
 import { useUiStore } from "./store/useUiStore";
+import { persistTabSession, useTabsStore } from "./store/useTabsStore";
+import { stepZoom, useDisplayStore } from "./store/useDisplayStore";
+import { PreferencesDialog } from "./components/PreferencesDialog";
+import { openNewWindow } from "./ipc/commands";
+import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
+import { openDevtools } from "./ipc/commands";
 
 type LeftTab = "repo" | "accounts";
 
 export default function App() {
   const [leftTab, setLeftTab] = useState<LeftTab>("repo");
   const [showClone, setShowClone] = useState(false);
+  const zoom = useDisplayStore((s) => s.zoom);
   const repoPath = useRepoStore((s) => s.repoPath);
   const center = useRepoStore((s) => s.center);
   const selectedCommit = useRepoStore((s) => s.selectedCommit);
@@ -31,7 +42,10 @@ export default function App() {
   const refresh = useRepoStore((s) => s.refresh);
   const loadAccounts = useAccountsStore((s) => s.load);
   const notify = useUiStore((s) => s.notify);
+  const activeTab = useTabsStore((s) => s.activeId);
   const rebaseBase = useUiStore((s) => s.interactiveRebaseBase);
+  const preferencesOpen = useUiStore((s) => s.preferencesOpen);
+  const setPreferencesOpen = useUiStore((s) => s.setPreferencesOpen);
   const setRebaseBase = useUiStore((s) => s.setInteractiveRebaseBase);
 
   useEffect(() => {
@@ -52,10 +66,17 @@ export default function App() {
     checkForUpdatesOnStartup();
   }, []);
 
+  // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
+  useEffect(() => {
+    getCurrentWebview().setZoom(zoom).catch((e) => notify("error", `Zoom : ${errorMessage(e)}`));
+  }, [zoom, notify]);
+
   // Fenêtre ouverte sur un dépôt précis (ex. un sous-module) : voir window.rs.
+  // La fenêtre principale rouvre les onglets de la session précédente et les mémorise.
   useEffect(() => {
     const repo = (window as { __GIT_CLIENT_OPEN_REPO__?: string | null }).__GIT_CLIENT_OPEN_REPO__;
     if (repo) openRepoAt(repo);
+    if (getCurrentWindow().label === "main") return persistTabSession(!repo);
   }, []);
 
   // Les fichiers ont pu changer dans un éditeur externe : on rafraîchit au retour sur la fenêtre.
@@ -70,13 +91,17 @@ export default function App() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Dans le terminal intégré, les touches vont au shell (Ctrl+R, Ctrl+W, Échap…).
+      if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
       if (e.key === "Escape" && !useUiStore.getState().dialog && useRepoStore.getState().center.kind !== "graph") {
         setCenter({ kind: "graph" });
       }
+      if (e.key === "F12" && import.meta.env.DEV) openDevtools().catch(() => {});
       if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
         e.preventDefault();
         refresh().catch((err) => notify("error", errorMessage(err)));
       }
+      if (!useUiStore.getState().dialog && windowShortcut(e)) e.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -106,8 +131,10 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       <Toolbar onClone={() => setShowClone(true)} />
+      <TabBar />
 
-      <div className="flex flex-1 overflow-hidden">
+      {/* Remonté à chaque changement d'onglet : pas de sélection d'un dépôt appliquée à un autre. */}
+      <div key={activeTab} className="flex flex-1 overflow-hidden">
         <div className="w-60 shrink-0 flex flex-col overflow-hidden border-r border-white/10 bg-[var(--color-bg-secondary)]">
           <div className="flex shrink-0 border-b border-white/10">
             <LeftTabBtn active={leftTab === "repo"} onClick={() => setLeftTab("repo")}>Dépôt</LeftTabBtn>
@@ -116,7 +143,10 @@ export default function App() {
           <div className="flex-1 overflow-hidden">{leftPane()}</div>
         </div>
 
-        <main className="flex-1 min-w-0 overflow-hidden bg-[var(--color-bg-primary)]">{mainPane()}</main>
+        <main className="flex-1 min-w-0 overflow-hidden flex flex-col bg-[var(--color-bg-primary)]">
+          <div className="flex-1 min-h-0 overflow-hidden">{mainPane()}</div>
+          <BottomPanel />
+        </main>
 
         {repoPath && (
           <div className="w-80 shrink-0 overflow-hidden border-l border-white/10">
@@ -126,11 +156,60 @@ export default function App() {
       </div>
 
       {showClone && <CloneDialog onClose={() => setShowClone(false)} />}
+      {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
       {rebaseBase && repoPath && <InteractiveRebaseDialog base={rebaseBase} onClose={() => setRebaseBase(null)} />}
       <Dialog />
       <Toasts />
     </div>
   );
+}
+
+/** Passe à l'onglet suivant (1) ou précédent (-1). */
+function cycleTab(direction: 1 | -1) {
+  const tabs = useTabsStore.getState();
+  const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
+  const n = tabs.tabs.length;
+  tabs.switchTab(tabs.tabs[(i + direction + n) % n].id);
+}
+
+function zoomBy(direction: 1 | -1) {
+  const display = useDisplayStore.getState();
+  display.update({ zoom: stepZoom(display.zoom, direction) });
+}
+
+/** Raccourcis de la fenêtre (avec Ctrl), par touche en minuscules ; "shift+…" quand Maj est enfoncée. */
+const SHORTCUTS: Record<string, () => void> = {
+  ",": () => useUiStore.getState().setPreferencesOpen(true),
+  o: () => openRepoDialog(),
+  "shift+n": () => openNewWindow().catch(() => {}),
+  "=": () => zoomBy(1),
+  "+": () => zoomBy(1),
+  "shift++": () => zoomBy(1),
+  "-": () => zoomBy(-1),
+  "0": () => useDisplayStore.getState().update({ zoom: 1 }),
+  j: () => {
+    const ui = useUiStore.getState();
+    ui.setPanel({ open: !ui.panel.open });
+  },
+  t: () => useTabsStore.getState().newTab(),
+  w: () => {
+    const tabs = useTabsStore.getState();
+    tabs.closeTab(tabs.activeId);
+  },
+  tab: () => cycleTab(1),
+  "shift+tab": () => cycleTab(-1),
+  pagedown: () => cycleTab(1),
+  pageup: () => cycleTab(-1),
+};
+
+/** Exécute le raccourci correspondant à la touche ; renvoie vrai s'il y en avait un. */
+function windowShortcut(e: KeyboardEvent): boolean {
+  if (!e.ctrlKey && !e.metaKey) return false;
+  const key = e.key.toLowerCase();
+  const action = (e.shiftKey && SHORTCUTS[`shift+${key}`]) || SHORTCUTS[key];
+  if (!action || (key === "n" && !e.shiftKey)) return false;
+  action();
+  return true;
 }
 
 function LeftTabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
