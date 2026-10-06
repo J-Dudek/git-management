@@ -1,0 +1,451 @@
+import { useEffect, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { useRepoStore, type CenterView } from "../store/useRepoStore";
+import { useUiStore, confirmAction } from "../store/useUiStore";
+import {
+  abortInteractiveRebase, abortMerge, abortRebase, continueInteractiveRebase, continueRebase, createCommit, discardFiles, getCommitDetails, lfsTrack, stageAll,
+  stageFiles, unstageAll, unstageFiles,
+} from "../ipc/commands";
+import { errorMessage, reportInteractive, reportMerge, runGit } from "../lib/actions";
+import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
+import { plural } from "../lib/strings";
+import type { FileStatus, InteractiveStop, RepoState } from "../types/git";
+
+const STATE_LABELS: Record<Exclude<RepoState, "clean">, string> = {
+  merge: "Merge en cours",
+  rebase: "Rebase en cours",
+  cherrypick: "Cherry-pick en cours",
+  revert: "Revert en cours",
+  bisect: "Bisect en cours",
+  apply: "Application de patch en cours",
+};
+
+/** Le fichier est-il celui affiché au centre (diff ou résolution de conflit) ? */
+function isShown(center: CenterView, f: FileStatus): boolean {
+  if (center.kind === "conflict") return center.path === f.path;
+  return center.kind === "diff" && center.source.type === "workdir" && center.path === f.path && center.source.staged === f.staged;
+}
+
+/** Consigne affichée pendant un merge / rebase / cherry-pick… */
+function operationHint(state: RepoState, conflicts: number): string {
+  if (conflicts > 0) return `${plural(conflicts, "conflit")} à résoudre : clique sur un fichier pour choisir les versions.`;
+  return state === "rebase" ? "Tous les conflits sont résolus : continue le rebase." : "Tous les conflits sont résolus : commite pour terminer.";
+}
+
+function commitLabel(committing: boolean, amend: boolean, state: RepoState, stagedCount: number): string {
+  if (committing) return "Commit…";
+  if (amend) return "Modifier le dernier commit";
+  if (state === "merge") return "Commiter le merge";
+  return `Commiter ${plural(stagedCount, "fichier")}`;
+}
+
+function interactiveHint(stop: InteractiveStop, conflicts: number): string {
+  if (stop.reason === "edit") return "Modifie ce commit (case « amend » ci-dessous) ou ajoute des commits, puis Continuer.";
+  if (conflicts > 0) return `${plural(conflicts, "conflit")} à résoudre (clique sur un fichier), puis Continuer.`;
+  return "Conflits résolus : clique sur Continuer pour créer le commit et poursuivre.";
+}
+
+export function StagingPanel() {
+  const repoPath = useRepoStore((s) => s.repoPath);
+  const info = useRepoStore((s) => s.info);
+  const status = useRepoStore((s) => s.status);
+  const center = useRepoStore((s) => s.center);
+  const lfs = useRepoStore((s) => s.lfs);
+  const setCenter = useRepoStore((s) => s.setCenter);
+  const notify = useUiStore((s) => s.notify);
+  const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+
+  const [summary, setSummary] = useState("");
+  const [description, setDescription] = useState("");
+  const [amend, setAmend] = useState(false);
+  const [committing, setCommitting] = useState(false);
+
+  const conflicted = status.filter((f) => f.status === "conflicted");
+  const staged = status.filter((f) => f.staged);
+  const unstaged = status.filter((f) => !f.staged && f.status !== "conflicted");
+  const state = info?.state ?? "clean";
+  const pendingMessage = info?.pending_message ?? null;
+  const interactive = !!info?.interactive_rebase;
+
+  // Message préparé par git (merge, cherry-pick, revert) : on pré-remplit le formulaire.
+  useEffect(() => {
+    if (!pendingMessage || state === "clean" || state === "rebase" || interactive) return;
+    const [first, ...rest] = pendingMessage.split("\n");
+    setSummary(first);
+    setDescription(rest.filter((l) => !l.startsWith("#")).join("\n").trim());
+  }, [pendingMessage, state, interactive]);
+
+  if (!repoPath) return null;
+  const path = repoPath;
+
+  const selected = (f: FileStatus) => isShown(center, f);
+
+  function show(f: FileStatus) {
+    if (f.status === "conflicted") setCenter({ kind: "conflict", path: f.path });
+    else setCenter({ kind: "diff", path: f.path, source: { type: "workdir", staged: f.staged } });
+  }
+
+  async function discard(files: FileStatus[]) {
+    const label = files.length === 1 ? `« ${files[0].path} »` : `${files.length} fichiers`;
+    const untracked = files.some((f) => f.status === "untracked");
+    const ok = await confirmAction(
+      `Annuler les modifications de ${label} ?`,
+      untracked ? "Les fichiers non suivis seront supprimés définitivement." : "Les modifications non indexées seront perdues.",
+      true,
+    );
+    if (ok) await runGit(() => discardFiles(path, files.map((f) => f.path)));
+  }
+
+  function fileMenu(f: FileStatus): MenuEntry[] {
+    const abs = `${path}/${f.path}`;
+    return [
+      f.staged
+        ? { label: "Désindexer", action: () => runGit(() => unstageFiles(path, [f.path])) }
+        : { label: f.status === "conflicted" ? "Marquer comme résolu (indexer)" : "Indexer", action: () => runGit(() => stageFiles(path, [f.path])) },
+      ...(!f.staged && f.status !== "conflicted"
+        ? [{ label: "Annuler les modifications…", danger: true, action: () => discard([f]) }]
+        : []),
+      ...lfsEntry(f),
+      "separator" as const,
+      { label: "Copier le chemin", action: () => navigator.clipboard.writeText(f.path) },
+      { label: "Afficher dans le gestionnaire de fichiers", action: () => revealItemInDir(abs).catch((e) => notify("error", errorMessage(e))) },
+    ];
+  }
+
+  /** Propose de suivre l'extension du fichier avec LFS (fichier pas encore commité). */
+  function lfsEntry(f: FileStatus): MenuEntry[] {
+    const ext = f.path.match(/\.[^./]+$/)?.[0];
+    if (!ext || f.status !== "untracked") return [];
+    const pattern = `*${ext}`;
+    if (lfs?.patterns.includes(pattern)) return [];
+    return [{
+      label: `Suivre les fichiers ${pattern} avec Git LFS`,
+      action: () => runGit(() => lfsTrack(path, pattern), { success: `${pattern} suivi avec LFS (.gitattributes modifié)` }),
+    }];
+  }
+
+  async function toggleAmend(checked: boolean) {
+    setAmend(checked);
+    if (!checked || !info?.head_hash || summary.trim()) return;
+    try {
+      const details = await getCommitDetails(path, info.head_hash);
+      setSummary(details.summary);
+      setDescription(details.message.slice(details.summary.length).trim());
+    } catch (e) {
+      notify("error", errorMessage(e));
+    }
+  }
+
+  const canCommit =
+    !!summary.trim() && conflicted.length === 0 && (staged.length > 0 || amend || state === "merge") && !committing;
+
+  async function handleCommit() {
+    if (!canCommit) return;
+    setCommitting(true);
+    const message = description.trim() ? `${summary.trim()}\n\n${description.trim()}` : summary.trim();
+    const hash = await runGit(() => createCommit(path, message, amend), {
+      success: amend ? "Commit modifié" : undefined,
+    });
+    setCommitting(false);
+    if (hash) {
+      setSummary("");
+      setDescription("");
+      setAmend(false);
+      if (center.kind !== "graph") setCenter({ kind: "graph" });
+    }
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[var(--color-bg-secondary)] text-sm">
+      {info?.interactive_rebase && (
+        <InteractiveBanner
+          stop={info.interactive_rebase}
+          conflicts={conflicted.length}
+          onContinue={async () => reportInteractive(await runGit(() => continueInteractiveRebase(path)))}
+          onAbort={async () => {
+            if (await confirmAction("Annuler le rebase interactif ?", "La branche et les fichiers reviennent à leur état d'avant le rebase.", true))
+              await runGit(() => abortInteractiveRebase(path), { success: "Rebase interactif annulé" });
+          }}
+        />
+      )}
+
+      {state !== "clean" && !info?.interactive_rebase && (
+        <div className="px-3 py-2 border-b border-amber-400/30 bg-amber-500/10 flex flex-col gap-1.5 shrink-0">
+          <p className="text-xs font-semibold text-amber-300">{STATE_LABELS[state]}</p>
+          <p className="text-[11px] text-amber-200/80">
+            {operationHint(state, conflicted.length)}
+          </p>
+          <div className="flex gap-2">
+            {state === "rebase" ? (
+              <>
+                <SmallBtn
+                  disabled={conflicted.length > 0}
+                  onClick={async () => reportMerge(await runGit(() => continueRebase(path)), "Rebase terminé")}
+                >
+                  Continuer
+                </SmallBtn>
+                <SmallBtn danger onClick={async () => {
+                  if (await confirmAction("Annuler le rebase ?", "La branche revient à son état d'avant le rebase.", true))
+                    await runGit(() => abortRebase(path), { success: "Rebase annulé" });
+                }}>
+                  Annuler le rebase
+                </SmallBtn>
+              </>
+            ) : (
+              <SmallBtn danger onClick={async () => {
+                if (await confirmAction("Tout annuler ?", "La copie de travail revient à l'état du dernier commit.", true)) {
+                  await runGit(() => abortMerge(path), { success: "Opération annulée" });
+                  setSummary("");
+                  setDescription("");
+                }
+              }}>
+                Annuler l'opération
+              </SmallBtn>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto">
+        {conflicted.length > 0 && (
+          <FileSection title="Conflits" count={conflicted.length}>
+            {conflicted.map((f) => (
+              <FileRow
+                key={`c:${f.path}`}
+                file={f}
+                selected={selected(f)}
+                onClick={() => show(f)}
+                onContextMenu={(e) => openMenu(e, fileMenu(f))}
+              />
+            ))}
+          </FileSection>
+        )}
+
+        <FileSection
+          title="Non indexé"
+          count={unstaged.length}
+          actions={unstaged.length > 0 && (
+            <>
+              <HeaderBtn title="Annuler toutes les modifications" onClick={() => discard(unstaged)}>↺</HeaderBtn>
+              <HeaderBtn title="Tout indexer" onClick={() => runGit(() => stageAll(path))}>Tout indexer</HeaderBtn>
+            </>
+          )}
+        >
+          {unstaged.map((f) => (
+            <FileRow
+              key={`u:${f.path}`}
+              file={f}
+              selected={selected(f)}
+              onClick={() => show(f)}
+              onContextMenu={(e) => openMenu(e, fileMenu(f))}
+              actions={
+                <>
+                  <RowBtn title="Annuler les modifications" onClick={() => discard([f])}>↺</RowBtn>
+                  <RowBtn title="Indexer" onClick={() => runGit(() => stageFiles(path, [f.path]))}>+</RowBtn>
+                </>
+              }
+            />
+          ))}
+        </FileSection>
+
+        <FileSection
+          title="Indexé"
+          count={staged.length}
+          actions={staged.length > 0 && (
+            <HeaderBtn title="Tout désindexer" onClick={() => runGit(() => unstageAll(path))}>Tout désindexer</HeaderBtn>
+          )}
+        >
+          {staged.map((f) => (
+            <FileRow
+              key={`s:${f.path}`}
+              file={f}
+              selected={selected(f)}
+              onClick={() => show(f)}
+              onContextMenu={(e) => openMenu(e, fileMenu(f))}
+              actions={<RowBtn title="Désindexer" onClick={() => runGit(() => unstageFiles(path, [f.path]))}>−</RowBtn>}
+            />
+          ))}
+        </FileSection>
+
+        {status.length === 0 && state === "clean" && (
+          <p className="p-3 text-xs text-[var(--color-muted)] italic">Aucune modification en cours</p>
+        )}
+      </div>
+
+      <div className="p-2 border-t border-white/10 flex flex-col gap-1.5 shrink-0">
+        <input
+          className={commitInput}
+          placeholder="Résumé du commit"
+          value={summary}
+          maxLength={200}
+          onChange={(e) => setSummary(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.ctrlKey || e.metaKey) && handleCommit()}
+        />
+        <textarea
+          className={`${commitInput} resize-none`}
+          rows={3}
+          placeholder="Description (optionnelle)"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && (e.ctrlKey || e.metaKey) && handleCommit()}
+        />
+        <label className="flex items-center gap-2 text-[11px] text-[var(--color-muted)] cursor-pointer">
+          <input
+            type="checkbox"
+            checked={amend}
+            disabled={!info?.head_hash || state !== "clean"}
+            onChange={(e) => toggleAmend(e.target.checked)}
+          />
+          Modifier le dernier commit (amend)
+        </label>
+        <button
+          className="bg-[var(--color-accent)] hover:opacity-90 disabled:opacity-40 text-white text-xs font-semibold py-1.5 rounded transition-opacity"
+          onClick={handleCommit}
+          disabled={!canCommit}
+          title="Ctrl+Entrée"
+        >
+          {commitLabel(committing, amend, state, staged.length)}
+        </button>
+      </div>
+
+      {menu && <ContextMenu menu={menu} onClose={closeMenu} />}
+    </div>
+  );
+}
+
+function InteractiveBanner({ stop, conflicts, onContinue, onAbort }: {
+  stop: InteractiveStop;
+  conflicts: number;
+  onContinue: () => void;
+  onAbort: () => void;
+}) {
+  return (
+    <div className="px-3 py-2 border-b border-sky-400/30 bg-sky-500/10 flex flex-col gap-1.5 shrink-0">
+      <p className="text-xs font-semibold text-sky-300">
+        Rebase interactif — étape {stop.step}/{stop.total}
+      </p>
+      <p className="text-[11px] text-sky-100/80">
+        <span className="font-mono">{stop.short_hash}</span> « {stop.summary} »
+      </p>
+      <p className="text-[11px] text-sky-100/70">
+        {interactiveHint(stop, conflicts)}
+      </p>
+      <div className="flex gap-2">
+        <button
+          onClick={onContinue}
+          disabled={stop.reason === "conflict" && conflicts > 0}
+          className="text-[11px] px-2 py-0.5 rounded bg-green-700/60 hover:bg-green-700/80 text-white disabled:opacity-40"
+        >
+          Continuer
+        </button>
+        <button onClick={onAbort} className="text-[11px] px-2 py-0.5 rounded bg-red-800/60 hover:bg-red-800/80 text-white">
+          Annuler le rebase
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const commitInput =
+  "w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-[var(--color-muted)]";
+
+function FileSection({ title, count, actions, children }: {
+  title: string;
+  count: number;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mb-1">
+      <div className="flex items-center gap-1 px-3 pt-2 pb-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">
+          {title} <span className="font-normal opacity-60">{count}</span>
+        </span>
+        <div className="ml-auto flex gap-1">{actions}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const STATUS_BADGE: Record<FileStatus["status"], { letter: string; color: string }> = {
+  modified: { letter: "M", color: "text-yellow-400" },
+  added: { letter: "A", color: "text-green-400" },
+  deleted: { letter: "D", color: "text-red-400" },
+  renamed: { letter: "R", color: "text-sky-400" },
+  untracked: { letter: "?", color: "text-green-300" },
+  conflicted: { letter: "!", color: "text-red-400" },
+};
+
+function FileRow({ file, selected, onClick, onContextMenu, actions }: {
+  file: FileStatus;
+  selected: boolean;
+  onClick: () => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+  actions?: React.ReactNode;
+}) {
+  const { letter, color } = STATUS_BADGE[file.status];
+  const name = file.path.split("/").pop();
+  const dir = file.path.slice(0, file.path.length - (name?.length ?? 0));
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-[3px] cursor-pointer group ${selected ? "bg-white/10" : "hover:bg-white/5"}`}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+      title={file.path}
+    >
+      <span className={`text-[10px] font-bold font-mono w-3 shrink-0 ${color}`}>{letter}</span>
+      <span className="flex-1 truncate text-[11px] font-mono">
+        <span className="text-[var(--color-text)]">{name}</span>
+        {dir && <span className="text-[var(--color-muted)] ml-1.5">{dir}</span>}
+      </span>
+      <div className="flex gap-0.5 opacity-0 group-hover:opacity-100">{actions}</div>
+    </div>
+  );
+}
+
+function RowBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      title={title}
+      className="text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10 rounded w-5 h-5 flex items-center justify-center text-sm font-bold"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HeaderBtn({ title, onClick, children }: { title: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      title={title}
+      className="text-[10px] px-1.5 py-0.5 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SmallBtn({ onClick, disabled, danger, children }: {
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`text-[11px] px-2 py-0.5 rounded disabled:opacity-40 ${
+        danger ? "bg-red-800/60 hover:bg-red-800/80 text-white" : "bg-green-700/60 hover:bg-green-700/80 text-white"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
