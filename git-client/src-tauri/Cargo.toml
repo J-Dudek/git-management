@@ -31,6 +31,10 @@ tokio = { version = "1", features = ["full"] }
 thiserror = "1"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 ureq = { version = "2", features = ["json"] }
+# TLS des appels aux forges : autorités du système (certificats d'entreprise) en plus de celles de Mozilla.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-native-certs = "0.8"
+webpki-roots = "1"
 
 [dev-dependencies]
 tempfile = "3"
