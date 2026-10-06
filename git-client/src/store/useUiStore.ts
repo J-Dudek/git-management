@@ -54,6 +54,8 @@ interface UiStore {
   /** Commit de base du rebase interactif en cours de préparation. */
   interactiveRebaseBase: string | null;
   panel: BottomPanelState;
+  /** Fenêtre des préférences ouverte. */
+  preferencesOpen: boolean;
 
   notify: (kind: Toast["kind"], message: string) => void;
   dismiss: (id: number) => void;
@@ -62,6 +64,7 @@ interface UiStore {
   setBusy: (label: string | null) => void;
   setInteractiveRebaseBase: (hash: string | null) => void;
   setPanel: (patch: Partial<BottomPanelState>) => void;
+  setPreferencesOpen: (open: boolean) => void;
 }
 
 let nextToastId = 1;
@@ -72,6 +75,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   busy: null,
   interactiveRebaseBase: null,
   panel: loadPanel(),
+  preferencesOpen: false,
 
   notify: (kind, message) => {
     const id = nextToastId++;
@@ -94,6 +98,8 @@ export const useUiStore = create<UiStore>((set, get) => ({
 
   setBusy: (busy) => set({ busy }),
   setInteractiveRebaseBase: (interactiveRebaseBase) => set({ interactiveRebaseBase }),
+
+  setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
 
   setPanel: (patch) => {
     const panel = { ...get().panel, ...patch };

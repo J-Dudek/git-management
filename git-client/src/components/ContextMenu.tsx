@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { LucideIcon } from "lucide-react";
+import { Kbd } from "./Kbd";
 
 export interface MenuItem {
   label: string;
@@ -8,9 +10,17 @@ export interface MenuItem {
   disabled?: boolean;
   /** Texte secondaire affiché sous le libellé. */
   hint?: string;
+  icon?: LucideIcon;
+  /** Raccourci clavier affiché à droite, ex. "Ctrl+T". */
+  shortcut?: string;
 }
 
-export type MenuEntry = MenuItem | "separator";
+/** Titre de section. */
+export interface MenuHeader {
+  header: string;
+}
+
+export type MenuEntry = MenuItem | MenuHeader | "separator";
 
 export interface ContextMenuState {
   x: number;
@@ -64,18 +74,27 @@ export function ContextMenu({ menu, onClose }: Props) {
     <div
       ref={ref}
       style={style}
-      className="min-w-44 max-w-96 max-h-[80vh] overflow-y-auto bg-[#1e2030] border border-white/10 rounded shadow-xl py-1 select-none"
+      role="menu"
+      className="min-w-48 max-w-96 max-h-[80vh] overflow-y-auto p-1 rounded-lg border border-white/10 bg-[#1b1d2b]/95 backdrop-blur-md shadow-2xl shadow-black/50 ring-1 ring-black/40 select-none"
     >
-      {menu.items.map((entry, i) =>
-        entry === "separator" ? (
-          <div key={i} className="my-1 border-t border-white/10" />
-        ) : (
+      {menu.items.map((entry, i) => {
+        if (entry === "separator") return <div key={i} className="my-1 mx-1 h-px bg-white/10" />;
+        if ("header" in entry) {
+          return (
+            <div key={i} className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+              {entry.header}
+            </div>
+          );
+        }
+        const Icon = entry.icon;
+        return (
           <button
             key={i}
-            className={`w-full text-left px-3 py-1.5 text-xs transition-colors disabled:opacity-40 disabled:cursor-default ${
+            role="menuitem"
+            className={`group w-full flex items-center gap-2.5 text-left px-2 py-1.5 rounded-md text-xs transition-colors disabled:opacity-40 disabled:cursor-default ${
               entry.danger
-                ? "text-red-400 hover:bg-red-900/30"
-                : "text-[var(--color-text)] hover:bg-white/10"
+                ? "text-red-400 hover:bg-red-500/15"
+                : "text-[var(--color-text)] hover:bg-white/[0.08]"
             }`}
             disabled={entry.disabled}
             onClick={() => {
@@ -83,13 +102,17 @@ export function ContextMenu({ menu, onClose }: Props) {
               onClose();
             }}
           >
-            <span className="block truncate">{entry.label}</span>
-            {entry.hint && (
-              <span className="block truncate text-[10px] text-[var(--color-muted)] font-mono">{entry.hint}</span>
-            )}
+            {Icon && <Icon size={14} strokeWidth={1.75} className="shrink-0 opacity-70 group-hover:opacity-100" />}
+            <span className="flex-1 min-w-0">
+              <span className="block truncate">{entry.label}</span>
+              {entry.hint && (
+                <span className="block truncate text-[10px] text-[var(--color-muted)] font-mono">{entry.hint}</span>
+              )}
+            </span>
+            {entry.shortcut && <Kbd keys={entry.shortcut} className="ml-4" />}
           </button>
-        )
-      )}
+        );
+      })}
     </div>,
     document.body
   );

@@ -3,7 +3,8 @@ import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore, confirmAction } from "../store/useUiStore";
 import { computeGraphLayout } from "./layout";
 import { filterCommits } from "../search/filterCommits";
-import { GraphCanvas, H_PADDING, LANE_WIDTH, ROW_HEIGHT } from "./GraphCanvas";
+import { GraphCanvas, H_PADDING, LANE_WIDTH } from "./GraphCanvas";
+import { ROW_HEIGHTS, useDisplayStore } from "../store/useDisplayStore";
 import { ContextMenu, useContextMenu, type MenuEntry } from "../components/ContextMenu";
 import {
   checkoutCommit, cherryPick, createBranch, createTag, interactiveRebase, mergeBranch, rebaseOnto, rebaseTodo, resetTo,
@@ -33,6 +34,7 @@ export function CommitGraph() {
   const hasCommits = visibleCommits.length > 0;
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 400, height: 400 });
+  const rowHeight = useDisplayStore((s) => ROW_HEIGHTS[s.density]);
   const [scrollTop, setScrollTop] = useState(0);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
   // Sélection multiple (Ctrl / Cmd + clic, Maj + clic pour une plage), en plus du commit affiché dans le détail.
@@ -128,11 +130,11 @@ export function CommitGraph() {
     if (!el || !selectedCommit) return;
     const row = layout.nodes.findIndex((n) => n.commit.hash === selectedCommit.hash);
     if (row === -1) return;
-    const top = row * ROW_HEIGHT;
-    if (top < el.scrollTop || top + ROW_HEIGHT > el.scrollTop + el.clientHeight) {
+    const top = row * rowHeight;
+    if (top < el.scrollTop || top + rowHeight > el.scrollTop + el.clientHeight) {
       el.scrollTop = Math.max(0, top - el.clientHeight / 3);
     }
-  }, [selectedCommit, layout]);
+  }, [selectedCommit, layout, rowHeight]);
 
   function commitMenu(commit: CommitInfo): MenuEntry[] {
     if (!repoPath) return [];
@@ -258,8 +260,8 @@ export function CommitGraph() {
     );
   }
 
-  const firstRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const lastRow = Math.min(layout.nodes.length, Math.ceil((scrollTop + size.height) / ROW_HEIGHT) + OVERSCAN);
+  const firstRow = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
+  const lastRow = Math.min(layout.nodes.length, Math.ceil((scrollTop + size.height) / rowHeight) + OVERSCAN);
 
   return (
     <div className="flex flex-col h-full">
@@ -269,13 +271,14 @@ export function CommitGraph() {
         className="relative flex-1 overflow-y-auto overflow-x-hidden select-none"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
-        <div className="relative" style={{ height: visibleCommits.length * ROW_HEIGHT }}>
+        <div className="relative" style={{ height: visibleCommits.length * rowHeight }}>
           <GraphCanvas
             layout={layout}
             selectedHash={selectedCommit?.hash ?? null}
             headHash={info?.head_hash ?? null}
             onSelectRow={(row) => selectOne(layout.nodes[row]?.commit ?? null)}
             width={graphWidth}
+            rowHeight={rowHeight}
             scrollTop={scrollTop}
             viewportHeight={size.height}
           />
@@ -285,6 +288,7 @@ export function CommitGraph() {
               key={node.commit.hash}
               commit={node.commit}
               row={node.row}
+              rowHeight={rowHeight}
               graphWidth={graphWidth}
               isSelected={node.commit.hash === selectedCommit?.hash || multi.includes(node.commit.hash)}
               containerWidth={size.width}
@@ -308,6 +312,7 @@ export function CommitGraph() {
 interface CommitRowProps {
   commit: CommitInfo;
   row: number;
+  rowHeight: number;
   graphWidth: number;
   isSelected: boolean;
   containerWidth: number;
@@ -316,7 +321,7 @@ interface CommitRowProps {
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function CommitRow({ commit, row, graphWidth, isSelected, containerWidth, localOnly, onClick, onContextMenu }: CommitRowProps) {
+function CommitRow({ commit, row, rowHeight, graphWidth, isSelected, containerWidth, localOnly, onClick, onContextMenu }: CommitRowProps) {
   const date = new Date(commit.timestamp * 1000).toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "short",
@@ -329,10 +334,10 @@ function CommitRow({ commit, row, graphWidth, isSelected, containerWidth, localO
         isSelected ? "bg-white/10" : "hover:bg-white/5"
       }`}
       style={{
-        top: row * ROW_HEIGHT,
+        top: row * rowHeight,
         left: graphWidth,
         width: Math.max(containerWidth - graphWidth, 0),
-        height: ROW_HEIGHT,
+        height: rowHeight,
       }}
       onClick={onClick}
       onContextMenu={onContextMenu}

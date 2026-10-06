@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
 import { BottomPanel } from "./components/BottomPanel";
@@ -19,6 +20,10 @@ import { useRepoStore } from "./store/useRepoStore";
 import { useAccountsStore } from "./store/useAccountsStore";
 import { useUiStore } from "./store/useUiStore";
 import { persistTabSession, useTabsStore } from "./store/useTabsStore";
+import { stepZoom, useDisplayStore } from "./store/useDisplayStore";
+import { PreferencesDialog } from "./components/PreferencesDialog";
+import { openNewWindow } from "./ipc/commands";
+import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
@@ -29,6 +34,7 @@ type LeftTab = "repo" | "accounts";
 export default function App() {
   const [leftTab, setLeftTab] = useState<LeftTab>("repo");
   const [showClone, setShowClone] = useState(false);
+  const zoom = useDisplayStore((s) => s.zoom);
   const repoPath = useRepoStore((s) => s.repoPath);
   const center = useRepoStore((s) => s.center);
   const selectedCommit = useRepoStore((s) => s.selectedCommit);
@@ -38,6 +44,8 @@ export default function App() {
   const notify = useUiStore((s) => s.notify);
   const activeTab = useTabsStore((s) => s.activeId);
   const rebaseBase = useUiStore((s) => s.interactiveRebaseBase);
+  const preferencesOpen = useUiStore((s) => s.preferencesOpen);
+  const setPreferencesOpen = useUiStore((s) => s.setPreferencesOpen);
   const setRebaseBase = useUiStore((s) => s.setInteractiveRebaseBase);
 
   useEffect(() => {
@@ -57,6 +65,11 @@ export default function App() {
   useEffect(() => {
     checkForUpdatesOnStartup();
   }, []);
+
+  // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
+  useEffect(() => {
+    getCurrentWebview().setZoom(zoom).catch((e) => notify("error", `Zoom : ${errorMessage(e)}`));
+  }, [zoom, notify]);
 
   // Fenêtre ouverte sur un dépôt précis (ex. un sous-module) : voir window.rs.
   // La fenêtre principale rouvre les onglets de la session précédente et les mémorise.
@@ -143,6 +156,7 @@ export default function App() {
       </div>
 
       {showClone && <CloneDialog onClose={() => setShowClone(false)} />}
+      {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
       {rebaseBase && repoPath && <InteractiveRebaseDialog base={rebaseBase} onClose={() => setRebaseBase(null)} />}
       <Dialog />
       <Toasts />
@@ -150,26 +164,51 @@ export default function App() {
   );
 }
 
-/** Raccourcis d'onglets et du panneau du bas ; renvoie vrai si la touche a été traitée. */
-function windowShortcut(e: KeyboardEvent): boolean {
-  if (!e.ctrlKey && !e.metaKey) return false;
+/** Passe à l'onglet suivant (1) ou précédent (-1). */
+function cycleTab(direction: 1 | -1) {
   const tabs = useTabsStore.getState();
-  const key = e.key.toLowerCase();
-  if (key === "j") {
+  const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
+  const n = tabs.tabs.length;
+  tabs.switchTab(tabs.tabs[(i + direction + n) % n].id);
+}
+
+function zoomBy(direction: 1 | -1) {
+  const display = useDisplayStore.getState();
+  display.update({ zoom: stepZoom(display.zoom, direction) });
+}
+
+/** Raccourcis de la fenêtre (avec Ctrl), par touche en minuscules ; "shift+…" quand Maj est enfoncée. */
+const SHORTCUTS: Record<string, () => void> = {
+  ",": () => useUiStore.getState().setPreferencesOpen(true),
+  o: () => openRepoDialog(),
+  "shift+n": () => openNewWindow().catch(() => {}),
+  "=": () => zoomBy(1),
+  "+": () => zoomBy(1),
+  "shift++": () => zoomBy(1),
+  "-": () => zoomBy(-1),
+  "0": () => useDisplayStore.getState().update({ zoom: 1 }),
+  j: () => {
     const ui = useUiStore.getState();
     ui.setPanel({ open: !ui.panel.open });
-  } else if (key === "t") {
-    tabs.newTab();
-  } else if (key === "w") {
+  },
+  t: () => useTabsStore.getState().newTab(),
+  w: () => {
+    const tabs = useTabsStore.getState();
     tabs.closeTab(tabs.activeId);
-  } else if (e.key === "Tab" || e.key === "PageDown" || e.key === "PageUp") {
-    const back = e.key === "PageUp" || (e.key === "Tab" && e.shiftKey);
-    const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
-    const n = tabs.tabs.length;
-    tabs.switchTab(tabs.tabs[(i + (back ? n - 1 : 1)) % n].id);
-  } else {
-    return false;
-  }
+  },
+  tab: () => cycleTab(1),
+  "shift+tab": () => cycleTab(-1),
+  pagedown: () => cycleTab(1),
+  pageup: () => cycleTab(-1),
+};
+
+/** Exécute le raccourci correspondant à la touche ; renvoie vrai s'il y en avait un. */
+function windowShortcut(e: KeyboardEvent): boolean {
+  if (!e.ctrlKey && !e.metaKey) return false;
+  const key = e.key.toLowerCase();
+  const action = (e.shiftKey && SHORTCUTS[`shift+${key}`]) || SHORTCUTS[key];
+  if (!action || (key === "n" && !e.shiftKey)) return false;
+  action();
   return true;
 }
 

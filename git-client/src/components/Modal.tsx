@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { X } from "lucide-react";
 
 interface Props {
   title: string;
@@ -23,7 +24,17 @@ export function Modal({ title, onClose, children, width = "w-[420px]" }: Props) 
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
       <div className={`${width} max-w-[92vw] max-h-[76vh] flex flex-col bg-[#1e2030] border border-white/10 rounded-lg shadow-2xl`}>
-        <div className="px-4 py-3 border-b border-white/10 text-sm font-semibold text-[var(--color-text)]">{title}</div>
+        <div className="flex items-center justify-between pl-4 pr-2 py-2 border-b border-white/10">
+          <span className="text-sm font-semibold text-[var(--color-text)]">{title}</span>
+          <button
+            onClick={onClose}
+            aria-label="Fermer"
+            title="Fermer (Échap)"
+            className="w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+          >
+            <X size={15} strokeWidth={1.75} />
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>,

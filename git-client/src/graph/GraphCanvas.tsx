@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import type { CommitNode, GraphEdge, GraphLayout } from "./layout";
 import { authorInitials } from "../lib/initials";
 
-export const ROW_HEIGHT = 28;
 export const LANE_WIDTH = 24;
 /** Assez grand pour contenir les initiales de l'auteur. */
 const NODE_RADIUS = 9;
@@ -15,12 +14,15 @@ interface Props {
   headHash: string | null;
   onSelectRow: (row: number) => void;
   width: number;
+  /** Hauteur d'une ligne (densité choisie dans les réglages d'affichage). */
+  rowHeight: number;
   /** Position de défilement et hauteur visibles : seul ce qui est à l'écran est dessiné. */
   scrollTop: number;
   viewportHeight: number;
 }
 
-export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width, scrollTop, viewportHeight }: Props) {
+export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width, rowHeight, scrollTop, viewportHeight }: Props) {
+  const rowY = (row: number) => row * rowHeight + rowHeight / 2;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const height = Math.max(viewportHeight, 1);
   // Auteur du point survolé, affiché dans une infobulle près du curseur.
@@ -41,24 +43,24 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
     ctx.setTransform(dpr, 0, 0, dpr, 0, -scrollTop * dpr);
     ctx.clearRect(0, scrollTop, width, height);
 
-    const top = scrollTop - ROW_HEIGHT;
-    const bottom = scrollTop + height + ROW_HEIGHT;
-    for (const edge of layout.edges) drawEdge(ctx, edge, top, bottom);
+    const top = scrollTop - rowHeight;
+    const bottom = scrollTop + height + rowHeight;
+    for (const edge of layout.edges) drawEdge(ctx, edge, top, bottom, rowHeight);
 
-    const firstRow = Math.max(0, Math.floor(top / ROW_HEIGHT));
-    const lastRow = Math.min(layout.nodes.length - 1, Math.ceil(bottom / ROW_HEIGHT));
+    const firstRow = Math.max(0, Math.floor(top / rowHeight));
+    const lastRow = Math.min(layout.nodes.length - 1, Math.ceil(bottom / rowHeight));
     for (let row = firstRow; row <= lastRow; row++) {
       const node = layout.nodes[row];
-      drawNode(ctx, node, { selected: node.commit.hash === selectedHash, head: node.commit.hash === headHash });
+      drawNode(ctx, node, { selected: node.commit.hash === selectedHash, head: node.commit.hash === headHash }, rowHeight);
     }
-  }, [layout, selectedHash, headHash, width, height, scrollTop]);
+  }, [layout, selectedHash, headHash, width, height, scrollTop, rowHeight]);
 
   /** Commit dont le point est sous le curseur. */
   function nodeAt(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = canvasRef.current!.getBoundingClientRect();
     const px = e.clientX - rect.left;
     const py = e.clientY - rect.top + scrollTop;
-    const node = layout.nodes[Math.floor(py / ROW_HEIGHT)];
+    const node = layout.nodes[Math.floor(py / rowHeight)];
     if (!node) return null;
     const radius = node.commit.parents.length > 1 ? MERGE_RADIUS : NODE_RADIUS;
     return Math.hypot(px - laneX(node.lane), py - rowY(node.row)) <= radius + 2 ? node : null;
@@ -71,7 +73,7 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
 
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = canvasRef.current!.getBoundingClientRect();
-    const row = Math.floor((e.clientY - rect.top + scrollTop) / ROW_HEIGHT);
+    const row = Math.floor((e.clientY - rect.top + scrollTop) / rowHeight);
     if (row >= 0 && row < layout.nodes.length) {
       onSelectRow(row);
     }
@@ -100,11 +102,11 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
 }
 
 const laneX = (lane: number) => H_PADDING + lane * LANE_WIDTH + LANE_WIDTH / 2;
-const rowY = (row: number) => row * ROW_HEIGHT + ROW_HEIGHT / 2;
+const centerY = (row: number, rowHeight: number) => row * rowHeight + rowHeight / 2;
 
-function drawEdge(ctx: CanvasRenderingContext2D, edge: GraphEdge, top: number, bottom: number) {
-  const y1 = rowY(edge.fromRow);
-  const y2 = rowY(edge.toRow);
+function drawEdge(ctx: CanvasRenderingContext2D, edge: GraphEdge, top: number, bottom: number, rowHeight: number) {
+  const y1 = centerY(edge.fromRow, rowHeight);
+  const y2 = centerY(edge.toRow, rowHeight);
   if (y2 < top || y1 > bottom) return;
   const x1 = laneX(edge.fromLane);
   const x2 = laneX(edge.toLane);
@@ -117,12 +119,12 @@ function drawEdge(ctx: CanvasRenderingContext2D, edge: GraphEdge, top: number, b
     ctx.lineTo(x2, y2);
   } else if (edge.curve === "start") {
     // Quitte l'enfant en courbe vers la colonne du parent, puis descend.
-    const yCurve = Math.min(y1 + ROW_HEIGHT, y2);
+    const yCurve = Math.min(y1 + rowHeight, y2);
     ctx.bezierCurveTo(x1, (y1 + yCurve) / 2, x2, (y1 + yCurve) / 2, x2, yCurve);
     ctx.lineTo(x2, y2);
   } else {
     // Descend dans la colonne de l'enfant, puis rejoint le parent en courbe.
-    const yCurve = Math.max(y2 - ROW_HEIGHT, y1);
+    const yCurve = Math.max(y2 - rowHeight, y1);
     ctx.lineTo(x1, yCurve);
     ctx.bezierCurveTo(x1, (yCurve + y2) / 2, x2, (yCurve + y2) / 2, x2, y2);
   }
@@ -136,9 +138,9 @@ function nodeFill(color: string, { selected, head }: { selected: boolean; head: 
   return color;
 }
 
-function drawNode(ctx: CanvasRenderingContext2D, node: CommitNode, state: { selected: boolean; head: boolean }) {
+function drawNode(ctx: CanvasRenderingContext2D, node: CommitNode, state: { selected: boolean; head: boolean }, rowHeight: number) {
   const nx = laneX(node.lane);
-  const ny = rowY(node.row);
+  const ny = centerY(node.row, rowHeight);
   const highlighted = state.selected || state.head;
   // Les merges restent de petits points ; les autres commits portent les initiales de l'auteur.
   const isMerge = node.commit.parents.length > 1;

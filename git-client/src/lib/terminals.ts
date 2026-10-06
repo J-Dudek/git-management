@@ -5,6 +5,7 @@ import { terminalClose, terminalOpen, terminalResize, terminalWrite, type Termin
 import { useRepoStore } from "../store/useRepoStore";
 import { useTabsStore } from "../store/useTabsStore";
 import { useUiStore } from "../store/useUiStore";
+import { useDisplayStore } from "../store/useDisplayStore";
 import { errorMessage } from "./actions";
 
 /**
@@ -91,7 +92,7 @@ function start(s: Session) {
 function createSession(path: string): Session {
   const term = new Terminal({
     fontFamily: "ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace",
-    fontSize: 12,
+    fontSize: useDisplayStore.getState().terminalFontSize,
     cursorBlink: true,
     scrollback: 5000,
     allowProposedApi: false,
@@ -191,6 +192,15 @@ export function restartTerminal(tabId: number) {
   s.term.reset();
   start(s);
 }
+
+// Taille du texte changée dans les réglages d'affichage : appliquée aux terminaux ouverts.
+useDisplayStore.subscribe((state, prev) => {
+  if (state.terminalFontSize === prev.terminalFontSize) return;
+  for (const s of sessions.values()) {
+    s.term.options.fontSize = state.terminalFontSize;
+    fitSafe(s);
+  }
+});
 
 // Onglet fermé : son shell aussi.
 useTabsStore.subscribe((state) => {
