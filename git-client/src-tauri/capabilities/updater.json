@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Mises à jour automatiques : vérification, installation et redémarrage, depuis la fenêtre principale uniquement",
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}
