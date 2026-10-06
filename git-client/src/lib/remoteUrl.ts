@@ -27,6 +27,23 @@ export function hostOf(baseUrl: string): string | null {
   }
 }
 
+/**
+ * URL racine d'une instance saisie à la main : `https://` ajouté s'il manque (ou retiré s'il est doublé),
+ * chemin ignoré (une URL de projet collée depuis le navigateur donne l'instance).
+ * Null tant que la saisie ne ressemble pas à un hôte complet.
+ */
+export function instanceUrl(input: string): string | null {
+  const trimmed = input.trim().replace(/^(?:https?:\/\/)+(?=https?:\/\/)/i, "");
+  if (!trimmed || /^https?:\/\/$/i.test(trimmed)) return null;
+  try {
+    const url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+    if (!url.hostname.includes(".") && url.hostname !== "localhost") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 /** Remote du dépôt hébergé sur l'instance du compte (origin en priorité). */
 export function remoteForAccount(
   remotes: RemoteInfo[],

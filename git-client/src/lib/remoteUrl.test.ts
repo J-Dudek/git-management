@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { hostOf, newPullRequestUrl, parseRemoteUrl, remoteForAccount } from "./remoteUrl";
+import { hostOf, instanceUrl, newPullRequestUrl, parseRemoteUrl, remoteForAccount } from "./remoteUrl";
 import type { ForgeAccount } from "../types/forge";
 
 const gitlabCorp: ForgeAccount = {
@@ -56,5 +56,22 @@ describe("newPullRequestUrl", () => {
   it("hostOf handles invalid URLs", () => {
     expect(hostOf("https://GitLab.com/")).toBe("gitlab.com");
     expect(hostOf("nope")).toBeNull();
+  });
+});
+
+describe("instanceUrl", () => {
+  it("normalizes what the user types", () => {
+    expect(instanceUrl("https://gitlab.corp.io")).toBe("https://gitlab.corp.io");
+    expect(instanceUrl("  https://GitLab.corp.io/ ")).toBe("https://gitlab.corp.io");
+    expect(instanceUrl("gitlab.corp.io")).toBe("https://gitlab.corp.io");
+    expect(instanceUrl("https://https://gitlab.corp.io")).toBe("https://gitlab.corp.io");
+    expect(instanceUrl("https://gitlab.corp.io/group/project/-/tree/main")).toBe("https://gitlab.corp.io");
+    expect(instanceUrl("http://localhost:8080")).toBe("http://localhost:8080");
+  });
+
+  it("is null while the host is incomplete", () => {
+    expect(instanceUrl("")).toBeNull();
+    expect(instanceUrl("https://")).toBeNull();
+    expect(instanceUrl("https://gitlab")).toBeNull();
   });
 });

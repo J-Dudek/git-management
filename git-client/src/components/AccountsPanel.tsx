@@ -7,7 +7,7 @@ import {
   checkoutRemoteBranch, fetchRemote, getIdentity, oauthCancel, oauthComplete, oauthDefaults, oauthStart, setIdentity,
 } from "../ipc/commands";
 import { errorMessage, runGit } from "../lib/actions";
-import { hostOf, remoteForAccount } from "../lib/remoteUrl";
+import { hostOf, instanceUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { inputClass } from "./Modal";
 import type { DeviceCode, ForgeAccount, ForgeIssue, ForgePR, Provider } from "../types/forge";
@@ -126,12 +126,11 @@ function IdentitySection() {
 
 // ---------------------------------------------------------------- Comptes
 
-function tokenHelpUrl(kind: Kind, baseUrl: string): string {
+function tokenHelpUrl(kind: Kind, url: string): string {
   if (kind === "github") {
     return "https://github.com/settings/tokens/new?scopes=repo,read:user,workflow&description=J6N";
   }
-  const base = (kind === "gitlab" ? defaultBaseUrl("gitlab") : baseUrl).replace(/\/+$/, "");
-  return `${base}/-/user_settings/personal_access_tokens?name=J6N&scopes=api,read_user,write_repository`;
+  return `${url}/-/user_settings/personal_access_tokens?name=J6N&scopes=api,read_user,write_repository`;
 }
 
 const CLIENT_ID_KEY = "git-client.oauth-client-ids";
@@ -153,10 +152,9 @@ function rememberClientId(host: string, clientId: string) {
 }
 
 /** Page d'enregistrement d'une application OAuth sur la forge. */
-function oauthAppHelpUrl(kind: Kind, baseUrl: string): string {
+function oauthAppHelpUrl(kind: Kind, url: string): string {
   if (kind === "github") return "https://github.com/settings/applications/new";
-  const base = (kind === "gitlab" ? defaultBaseUrl("gitlab") : baseUrl).replace(/\/+$/, "");
-  return `${base}/-/user_settings/applications`;
+  return `${url}/-/user_settings/applications`;
 }
 
 function AddAccountForm({ onDone }: { onDone: () => void }) {
@@ -176,8 +174,9 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
   const [device, setDevice] = useState<DeviceCode | null>(null);
 
   const provider: Provider = kind === "github" ? "github" : "gitlab";
-  const url = kind === "gitlab-self" ? baseUrl : defaultBaseUrl(provider);
-  const host = hostOf(url);
+  // Instance normalisée (null tant que la saisie est incomplète) : sert aux liens d'aide et à la connexion.
+  const url = kind === "gitlab-self" ? instanceUrl(baseUrl) : defaultBaseUrl(provider);
+  const host = url ? hostOf(url) : null;
 
   useEffect(() => {
     oauthDefaults().then(setDefaults).catch(() => {});
@@ -204,20 +203,20 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
   const valid = (kind !== "gitlab-self" || !!host) && (mode === "pat" ? !!token.trim() : !!effectiveClientId?.trim());
 
   async function submitToken() {
-    const account = await add({ provider, baseUrl: url, token: token.trim(), label });
+    const account = await add({ provider, baseUrl: url!, token: token.trim(), label });
     notify("success", `Compte ${account.username} connecté`);
     onDone();
   }
 
   async function submitOAuth() {
     const id = effectiveClientId!.trim();
-    const code = await oauthStart(provider, url.replace(/\/+$/, ""), id);
+    const code = await oauthStart(provider, url!, id);
     // On ne mémorise que ce que l'utilisateur a saisi lui-même.
     if (showClientId) rememberClientId(host!, id);
     setDevice(code);
     openUrl(code.verification_uri_complete ?? code.verification_uri).catch(() => {});
     try {
-      const saved = await oauthComplete(provider, url.replace(/\/+$/, ""), id, code, label || null);
+      const saved = await oauthComplete(provider, url!, id, code, label || null);
       addConnected(saved);
       notify("success", `Compte ${saved.account.username} connecté`);
       onDone();
@@ -324,8 +323,9 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
           <button
             type="button"
             className="text-left text-[10px] text-sky-400 hover:underline disabled:opacity-40"
-            disabled={!host}
-            onClick={() => openUrl(tokenHelpUrl(kind, baseUrl))}
+            disabled={!url}
+            title={url ? tokenHelpUrl(kind, url) : "Renseigne d'abord l'URL de l'instance"}
+            onClick={() => url && openUrl(tokenHelpUrl(kind, url))}
           >
             Créer un token ({kind === "github" ? "scopes repo, read:user, workflow" : "scopes api, read_user, write_repository"}) ↗
           </button>
@@ -346,8 +346,9 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
               <button
                 type="button"
                 className="text-sky-400 hover:underline disabled:opacity-40"
-                disabled={!host}
-                onClick={() => openUrl(oauthAppHelpUrl(kind, baseUrl))}
+                disabled={!url}
+                title={url ? oauthAppHelpUrl(kind, url) : "Renseigne d'abord l'URL de l'instance"}
+                onClick={() => url && openUrl(oauthAppHelpUrl(kind, url))}
               >
                 Enregistrer une application ↗
               </button>
