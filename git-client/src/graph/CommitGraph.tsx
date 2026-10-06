@@ -9,6 +9,7 @@ import {
   checkoutCommit, cherryPick, createBranch, createTag, mergeBranch, rebaseOnto, resetTo, revertCommit,
 } from "../ipc/commands";
 import { reportMerge, runGit } from "../lib/actions";
+import { localOnlyBranches } from "../lib/branches";
 import type { CommitInfo, RefLabel } from "../types/git";
 
 const INFO_OFFSET = 20;
@@ -22,6 +23,8 @@ export function CommitGraph() {
   const selectedCommit = useRepoStore((s) => s.selectedCommit);
   const setSelectedCommit = useRepoStore((s) => s.setSelectedCommit);
   const repoPath = useRepoStore((s) => s.repoPath);
+  const branches = useRepoStore((s) => s.branches);
+  const localOnly = useMemo(() => localOnlyBranches(branches), [branches]);
   const visibleCommits = useMemo(() => filterCommits(commits, searchQuery), [commits, searchQuery]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 400, height: 400 });
@@ -207,6 +210,7 @@ export function CommitGraph() {
               graphWidth={graphWidth}
               isSelected={node.commit.hash === selectedCommit?.hash}
               containerWidth={size.width}
+              localOnly={localOnly}
               onClick={() => setSelectedCommit(node.commit)}
               onContextMenu={(e) => {
                 setSelectedCommit(node.commit);
@@ -228,11 +232,12 @@ interface CommitRowProps {
   graphWidth: number;
   isSelected: boolean;
   containerWidth: number;
+  localOnly: Set<string>;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function CommitRow({ commit, row, graphWidth, isSelected, containerWidth, onClick, onContextMenu }: CommitRowProps) {
+function CommitRow({ commit, row, graphWidth, isSelected, containerWidth, localOnly, onClick, onContextMenu }: CommitRowProps) {
   const date = new Date(commit.timestamp * 1000).toLocaleDateString("fr-FR", {
     day: "2-digit",
     month: "short",
@@ -255,7 +260,11 @@ function CommitRow({ commit, row, graphWidth, isSelected, containerWidth, onClic
     >
       {commit.refs.length > 0 && (
         <div className="flex gap-1 shrink-0 max-w-[45%] overflow-hidden">
-          {commit.refs.slice(0, 4).map((ref) => <RefBadge key={`${ref.kind}:${ref.name}`} label={ref} />)}
+          {commit.refs.slice(0, 4).map((ref) => <RefBadge
+              key={`${ref.kind}:${ref.name}`}
+              label={ref}
+              localOnly={(ref.kind === "head" || ref.kind === "local") && localOnly.has(ref.name)}
+            />)}
           {commit.refs.length > 4 && <span className="text-[10px] text-[var(--color-muted)]">+{commit.refs.length - 4}</span>}
         </div>
       )}
@@ -276,13 +285,15 @@ const REF_STYLES: Record<RefLabel["kind"], string> = {
 
 const REF_ICONS: Record<RefLabel["kind"], string> = { head: "⎇", local: "⎇", remote: "☁", tag: "⌂" };
 
-function RefBadge({ label }: { label: RefLabel }) {
+function RefBadge({ label, localOnly }: { label: RefLabel; localOnly: boolean }) {
+  const title = label.kind === "head" ? `${label.name} (branche courante)` : label.name;
   return (
     <span
-      className={`px-1 text-[10px] rounded font-mono border whitespace-nowrap ${REF_STYLES[label.kind]}`}
-      title={label.kind === "head" ? `${label.name} (branche courante)` : label.name}
+      className={`px-1 text-[10px] rounded font-mono border whitespace-nowrap ${REF_STYLES[label.kind]} ${localOnly ? "border-dashed" : ""}`}
+      title={localOnly ? `${title} — uniquement en local, absente des remotes` : title}
     >
       {REF_ICONS[label.kind]} {label.name}
+      {localOnly && <span className="ml-1 opacity-70 italic">local</span>}
     </span>
   );
 }

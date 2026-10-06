@@ -12,6 +12,7 @@ import { reportMerge, runGit } from "../lib/actions";
 import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
+import { localOnlyBranches } from "../lib/branches";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo } from "../types/git";
 
 const SUBMODULE_STATES: Record<SubmoduleInfo["state"], { label: string; color: string }> = {
@@ -41,6 +42,7 @@ export function Sidebar() {
 
   const local = branches.filter((b) => !b.is_remote);
   const remoteBranches = branches.filter((b) => b.is_remote);
+  const localOnly = localOnlyBranches(branches);
   const head = info?.head_branch ?? "HEAD";
 
   function selectHash(hash: string) {
@@ -254,11 +256,11 @@ export function Sidebar() {
             icon="⎇"
             label={b.name}
             active={b.is_head}
-            title={b.upstream ? `suit ${b.upstream}` : "aucune branche distante suivie"}
+            title={b.upstream ? `suit ${b.upstream}` : localOnly.has(b.name) ? "uniquement en local : absente des remotes" : "aucune branche distante suivie"}
             onClick={() => selectHash(b.target_hash)}
             onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
             onContextMenu={(e) => openMenu(e, localMenu(b))}
-            trailing={<AheadBehind ahead={b.ahead} behind={b.behind} />}
+            trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
           />
         ))}
       </Group>
@@ -474,6 +476,14 @@ function Row({ icon, label, active, indent, title, trailing, onClick, onDoubleCl
         {trailing}
       </div>
     </li>
+  );
+}
+
+function LocalOnlyBadge() {
+  return (
+    <span className="shrink-0 px-1 text-[9px] italic rounded border border-dashed border-[var(--color-accent)]/50 text-[var(--color-accent)]">
+      local
+    </span>
   );
 }
 
