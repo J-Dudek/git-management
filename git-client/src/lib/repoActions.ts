@@ -1,15 +1,12 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { useRepoStore } from "../store/useRepoStore";
+import { useTabsStore } from "../store/useTabsStore";
 import { useUiStore } from "../store/useUiStore";
 import { initRepository } from "../ipc/commands";
 import { errorMessage } from "./actions";
 
+/** Ouvre un dépôt dans un onglet (celui du dépôt s'il est déjà ouvert) ; les erreurs sont notifiées. */
 export async function openRepoAt(path: string) {
-  try {
-    await useRepoStore.getState().openRepo(path);
-  } catch (e) {
-    useUiStore.getState().notify("error", `Impossible d'ouvrir ${path} : ${errorMessage(e)}`);
-  }
+  await useTabsStore.getState().openInTab(path);
 }
 
 export async function chooseAndOpenRepo() {

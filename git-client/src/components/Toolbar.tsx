@@ -1,5 +1,6 @@
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
+import { useTabsStore } from "../store/useTabsStore";
 import {
   createBranch, fetchRemote, openNewWindow, pull, push, stashApply, stashSave,
 } from "../ipc/commands";
@@ -25,7 +26,10 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
   const branches = useRepoStore((s) => s.branches);
   const stashes = useRepoStore((s) => s.stashes);
   const recent = useRepoStore((s) => s.recentRepos);
-  const closeRepo = useRepoStore((s) => s.closeRepo);
+  const newTab = useTabsStore((s) => s.newTab);
+  const closeTab = useTabsStore((s) => s.closeTab);
+  const activeTab = useTabsStore((s) => s.activeId);
+  const tabCount = useTabsStore((s) => s.tabs.length);
   const busy = useUiStore((s) => s.busy);
   const ask = useUiStore((s) => s.ask);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
@@ -38,13 +42,14 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       { label: "Ouvrir un dépôt…", action: chooseAndOpenRepo },
       { label: "Cloner un dépôt…", action: onClone },
       { label: "Initialiser un dépôt…", action: chooseAndInitRepo },
+      { label: "Nouvel onglet (Ctrl+T)", action: newTab },
       { label: "Nouvelle fenêtre", action: () => openNewWindow() },
       { label: "Rechercher des mises à jour…", action: () => checkForUpdates(true) },
       ...(recent.filter((p) => p !== repoPath).length > 0 ? ["separator" as const] : []),
       ...recent
         .filter((p) => p !== repoPath)
         .map((p) => ({ label: p.split(/[\\/]/).pop() ?? p, hint: p, action: () => openRepoAt(p) })),
-      ...(repoPath ? ["separator" as const, { label: "Fermer le dépôt", action: closeRepo }] : []),
+      ...(repoPath || tabCount > 1 ? ["separator" as const, { label: "Fermer l'onglet (Ctrl+W)", action: () => closeTab(activeTab) }] : []),
     ];
   }
 

@@ -294,8 +294,8 @@ export function Sidebar() {
     const abs = `${path}/${sm.path}`;
     const initialized = sm.state !== "uninitialized";
     return [
+      { label: "Ouvrir dans un nouvel onglet", disabled: !initialized, action: () => openRepoAt(abs) },
       { label: "Ouvrir dans une nouvelle fenêtre", disabled: !initialized, action: () => openNewWindow(abs) },
-      { label: "Ouvrir ici", disabled: !initialized, action: () => openRepoAt(abs) },
       "separator",
       {
         label: initialized ? "Mettre à jour (commit enregistré)" : "Initialiser et récupérer",
@@ -380,7 +380,7 @@ export function Sidebar() {
                 icon="▣"
                 label={sm.path}
                 title={submoduleTitle(sm)}
-                onDoubleClick={() => sm.state !== "uninitialized" && openNewWindow(`${path}/${sm.path}`)}
+                onDoubleClick={() => sm.state !== "uninitialized" && openRepoAt(`${path}/${sm.path}`)}
                 onContextMenu={(e) => openMenu(e, submoduleMenu(sm))}
                 trailing={state.label && <span className={`text-[10px] shrink-0 ${state.color}`}>{state.label}</span>}
               />

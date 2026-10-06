@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toolbar } from "./components/Toolbar";
+import { TabBar } from "./components/TabBar";
 import { Sidebar } from "./components/Sidebar";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { CommitGraph } from "./graph/CommitGraph";
@@ -15,6 +17,7 @@ import { InteractiveRebaseDialog } from "./components/InteractiveRebaseDialog";
 import { useRepoStore } from "./store/useRepoStore";
 import { useAccountsStore } from "./store/useAccountsStore";
 import { useUiStore } from "./store/useUiStore";
+import { persistTabSession, useTabsStore } from "./store/useTabsStore";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
@@ -31,6 +34,7 @@ export default function App() {
   const refresh = useRepoStore((s) => s.refresh);
   const loadAccounts = useAccountsStore((s) => s.load);
   const notify = useUiStore((s) => s.notify);
+  const activeTab = useTabsStore((s) => s.activeId);
   const rebaseBase = useUiStore((s) => s.interactiveRebaseBase);
   const setRebaseBase = useUiStore((s) => s.setInteractiveRebaseBase);
 
@@ -53,9 +57,11 @@ export default function App() {
   }, []);
 
   // Fenêtre ouverte sur un dépôt précis (ex. un sous-module) : voir window.rs.
+  // La fenêtre principale rouvre les onglets de la session précédente et les mémorise.
   useEffect(() => {
     const repo = (window as { __GIT_CLIENT_OPEN_REPO__?: string | null }).__GIT_CLIENT_OPEN_REPO__;
     if (repo) openRepoAt(repo);
+    if (getCurrentWindow().label === "main") return persistTabSession(!repo);
   }, []);
 
   // Les fichiers ont pu changer dans un éditeur externe : on rafraîchit au retour sur la fenêtre.
@@ -76,6 +82,22 @@ export default function App() {
       if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
         e.preventDefault();
         refresh().catch((err) => notify("error", errorMessage(err)));
+      }
+      if (useUiStore.getState().dialog) return;
+      const tabs = useTabsStore.getState();
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        tabs.newTab();
+      } else if (mod && e.key.toLowerCase() === "w") {
+        e.preventDefault();
+        tabs.closeTab(tabs.activeId);
+      } else if (mod && (e.key === "Tab" || e.key === "PageDown" || e.key === "PageUp")) {
+        e.preventDefault();
+        const back = e.key === "PageUp" || (e.key === "Tab" && e.shiftKey);
+        const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
+        const n = tabs.tabs.length;
+        tabs.switchTab(tabs.tabs[(i + (back ? n - 1 : 1)) % n].id);
       }
     }
     window.addEventListener("keydown", onKey);
@@ -106,8 +128,10 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden">
       <Toolbar onClone={() => setShowClone(true)} />
+      <TabBar />
 
-      <div className="flex flex-1 overflow-hidden">
+      {/* Remonté à chaque changement d'onglet : pas de sélection d'un dépôt appliquée à un autre. */}
+      <div key={activeTab} className="flex flex-1 overflow-hidden">
         <div className="w-60 shrink-0 flex flex-col overflow-hidden border-r border-white/10 bg-[var(--color-bg-secondary)]">
           <div className="flex shrink-0 border-b border-white/10">
             <LeftTabBtn active={leftTab === "repo"} onClick={() => setLeftTab("repo")}>Dépôt</LeftTabBtn>

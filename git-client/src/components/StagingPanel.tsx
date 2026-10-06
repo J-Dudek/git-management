@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { useRepoStore, type CenterView } from "../store/useRepoStore";
+import { useRepoStore, type CenterView, type CommitDraft } from "../store/useRepoStore";
 import { useUiStore, confirmAction } from "../store/useUiStore";
 import {
   abortInteractiveRebase, abortMerge, abortRebase, continueInteractiveRebase, continueRebase, createCommit, discardFiles, getCommitDetails, lfsTrack, stageAll,
@@ -55,9 +55,8 @@ export function StagingPanel() {
   const notify = useUiStore((s) => s.notify);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
 
-  const [summary, setSummary] = useState("");
-  const [description, setDescription] = useState("");
-  const [amend, setAmend] = useState(false);
+  const { summary, description, amend } = useRepoStore((s) => s.commitDraft);
+  const setCommitDraft = useRepoStore((s) => s.setCommitDraft);
   const [committing, setCommitting] = useState(false);
 
   const conflicted = status.filter((f) => f.status === "conflicted");
@@ -67,13 +66,22 @@ export function StagingPanel() {
   const pendingMessage = info?.pending_message ?? null;
   const interactive = !!info?.interactive_rebase;
 
-  // Message préparé par git (merge, cherry-pick, revert) : on pré-remplit le formulaire.
+  /** Brouillon de ce dépôt : ignoré si l'utilisateur a changé d'onglet pendant une opération. */
+  function updateDraft(patch: Partial<CommitDraft>) {
+    if (useRepoStore.getState().repoPath === repoPath) setCommitDraft(patch);
+  }
+  const setSummary = (summary: string) => updateDraft({ summary });
+  const setDescription = (description: string) => updateDraft({ description });
+  const setAmend = (amend: boolean) => updateDraft({ amend });
+
+  // Message préparé par git (merge, cherry-pick, revert) : on pré-remplit le formulaire,
+  // sans écraser un message déjà saisi (retour sur l'onglet).
   useEffect(() => {
     if (!pendingMessage || state === "clean" || state === "rebase" || interactive) return;
+    if (useRepoStore.getState().commitDraft.summary) return;
     const [first, ...rest] = pendingMessage.split("\n");
-    setSummary(first);
-    setDescription(rest.filter((l) => !l.startsWith("#")).join("\n").trim());
-  }, [pendingMessage, state, interactive]);
+    setCommitDraft({ summary: first, description: rest.filter((l) => !l.startsWith("#")).join("\n").trim() });
+  }, [pendingMessage, state, interactive, setCommitDraft]);
 
   if (!repoPath) return null;
   const path = repoPath;
@@ -129,8 +137,7 @@ export function StagingPanel() {
     if (!checked || !info?.head_hash || summary.trim()) return;
     try {
       const details = await getCommitDetails(path, info.head_hash);
-      setSummary(details.summary);
-      setDescription(details.message.slice(details.summary.length).trim());
+      updateDraft({ summary: details.summary, description: details.message.slice(details.summary.length).trim() });
     } catch (e) {
       notify("error", errorMessage(e));
     }
@@ -148,9 +155,7 @@ export function StagingPanel() {
     });
     setCommitting(false);
     if (hash) {
-      setSummary("");
-      setDescription("");
-      setAmend(false);
+      updateDraft({ summary: "", description: "", amend: false });
       if (center.kind !== "graph") setCenter({ kind: "graph" });
     }
   }
@@ -195,8 +200,7 @@ export function StagingPanel() {
               <SmallBtn danger onClick={async () => {
                 if (await confirmAction("Tout annuler ?", "La copie de travail revient à l'état du dernier commit.", true)) {
                   await runGit(() => abortMerge(path), { success: "Opération annulée" });
-                  setSummary("");
-                  setDescription("");
+                  updateDraft({ summary: "", description: "" });
                 }
               }}>
                 Annuler l'opération

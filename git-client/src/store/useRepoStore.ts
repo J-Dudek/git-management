@@ -32,6 +32,13 @@ function saveRecent(list: string[]) {
   }
 }
 
+/** Message de commit en cours de rédaction (conservé par onglet). */
+export interface CommitDraft {
+  summary: string;
+  description: string;
+  amend: boolean;
+}
+
 interface RepoStore {
   repoPath: string | null;
   info: RepoInfo | null;
@@ -46,6 +53,7 @@ interface RepoStore {
   selectedCommit: CommitInfo | null;
   searchQuery: string;
   center: CenterView;
+  commitDraft: CommitDraft;
   recentRepos: string[];
 
   openRepo: (path: string) => Promise<void>;
@@ -55,10 +63,23 @@ interface RepoStore {
   setSelectedCommit: (commit: CommitInfo | null) => void;
   setSearchQuery: (q: string) => void;
   setCenter: (view: CenterView) => void;
+  setCommitDraft: (patch: Partial<CommitDraft>) => void;
   forgetRecent: (path: string) => void;
+  /** État du dépôt affiché, pour le mettre de côté en changeant d'onglet. */
+  snapshot: () => RepoState;
+  /** Réaffiche un état mis de côté par `snapshot`. */
+  restore: (state: RepoState) => void;
 }
 
-const emptyRepo = {
+/** Tout l'état propre au dépôt ouvert (sans la liste des récents, commune à tous les onglets). */
+export type RepoState = Omit<RepoStore, "recentRepos" | {
+  [K in keyof RepoStore]: RepoStore[K] extends (...args: never[]) => unknown ? K : never;
+}[keyof RepoStore]>;
+
+/** Incrémenté à chaque changement de dépôt affiché : une ouverture en cours devenue obsolète est abandonnée. */
+let generation = 0;
+
+export const emptyRepo: RepoState = {
   repoPath: null,
   info: null,
   commits: [],
@@ -71,7 +92,8 @@ const emptyRepo = {
   status: [],
   selectedCommit: null,
   searchQuery: "",
-  center: { kind: "graph" } as CenterView,
+  center: { kind: "graph" },
+  commitDraft: { summary: "", description: "", amend: false },
 };
 
 export const useRepoStore = create<RepoStore>((set, get) => ({
@@ -79,14 +101,19 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
   recentRepos: loadRecent(),
 
   openRepo: async (path) => {
+    const gen = ++generation;
     const info = await openRepository(path);
+    if (gen !== generation) return; // l'utilisateur a changé d'onglet entre-temps
     const recentRepos = [info.path, ...get().recentRepos.filter((p) => p !== info.path)].slice(0, MAX_RECENT);
     saveRecent(recentRepos);
     set({ ...emptyRepo, repoPath: info.path, info, recentRepos });
     await get().refresh();
   },
 
-  closeRepo: () => set(emptyRepo),
+  closeRepo: () => {
+    generation++;
+    set(emptyRepo);
+  },
 
   refresh: async () => {
     const path = get().repoPath;
@@ -120,10 +147,25 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
   setSelectedCommit: (selectedCommit) => set({ selectedCommit }),
   setSearchQuery: (searchQuery) => set({ searchQuery }),
   setCenter: (center) => set({ center }),
+  setCommitDraft: (patch) => set((s) => ({ commitDraft: { ...s.commitDraft, ...patch } })),
 
   forgetRecent: (path) => {
     const recentRepos = get().recentRepos.filter((p) => p !== path);
     saveRecent(recentRepos);
     set({ recentRepos });
+  },
+
+  snapshot: () => {
+    const s = get();
+    return {
+      repoPath: s.repoPath, info: s.info, commits: s.commits, branches: s.branches, tags: s.tags, stashes: s.stashes,
+      remotes: s.remotes, submodules: s.submodules, lfs: s.lfs, status: s.status, selectedCommit: s.selectedCommit,
+      searchQuery: s.searchQuery, center: s.center, commitDraft: s.commitDraft,
+    };
+  },
+
+  restore: (state) => {
+    generation++;
+    set(state);
   },
 }));
