@@ -472,6 +472,23 @@ fn record(state: &mut SavedRebase, original: &Commit, planned: &Planned, produce
     Ok(())
 }
 
+/// Commit ordinaire devenu vide une fois rejoué (ses changements sont déjà présents) : comme git,
+/// on le saute. Un commit vide dès l'origine est conservé.
+fn becomes_empty(original: &Commit, planned: &Planned, tree: &git2::Tree) -> Result<bool, GitError> {
+    Ok(planned.squash_target.is_none()
+        && planned.replay == Replay::Pick
+        && original.parent_count() == 1
+        && tree.id() == planned.onto.tree_id()
+        && original.tree_id() != original.parent(0)?.tree_id())
+}
+
+/// Saute une étape : le commit est remplacé par celui sur lequel il aurait été appliqué.
+fn skip(state: &mut SavedRebase, original: &Commit, planned: &Planned) {
+    let onto = planned.onto.id().to_string();
+    state.mapping.insert(original.id().to_string(), onto.clone());
+    state.tip = onto;
+}
+
 /// Place la copie de travail et HEAD (détaché) sur `commit`.
 fn materialize(repo: &Repository, commit: &Commit) -> Result<(), GitError> {
     repo.checkout_tree(commit.as_object(), Some(CheckoutBuilder::default().safe()))?;
@@ -543,6 +560,11 @@ fn run(repo: &Repository, mut state: SavedRebase) -> Result<InteractiveOutcome, 
                 return stop(repo, &mut state, index, StopReason::Conflict);
             }
             let tree = repo.find_tree(index_mem.write_tree_to(repo)?)?;
+            if becomes_empty(&original, &planned, &tree)? {
+                skip(&mut state, &original, &planned);
+                state.next = index + 1;
+                continue;
+            }
             commit_step(repo, &step, &original, &planned, &tree)?
         };
 
@@ -598,18 +620,34 @@ pub fn continue_interactive(repo: &Repository) -> Result<InteractiveOutcome, Git
             if in_progress {
                 // Les conflits résolus sont dans l'index : on crée le commit de l'étape.
                 let tree = repo.find_tree(repo.index()?.write_tree()?)?;
-                let produced = commit_step(repo, &step, &original, &planned, &tree)?;
-                repo.cleanup_state()?;
-                repo.set_head_detached(produced.id())?;
-                record(&mut state, &original, &planned, &produced)?;
-                state.next = index + 1;
-                if step.action == RebaseAction::Edit {
-                    return stop(repo, &mut state, index, StopReason::Edit);
+                if becomes_empty(&original, &planned, &tree)? {
+                    // Conflit résolu en gardant la version existante : plus rien à appliquer.
+                    repo.cleanup_state()?;
+                    skip(&mut state, &original, &planned);
+                    state.next = index + 1;
+                } else {
+                    let produced = commit_step(repo, &step, &original, &planned, &tree)?;
+                    repo.cleanup_state()?;
+                    repo.set_head_detached(produced.id())?;
+                    record(&mut state, &original, &planned, &produced)?;
+                    state.next = index + 1;
+                    if step.action == RebaseAction::Edit {
+                        return stop(repo, &mut state, index, StopReason::Edit);
+                    }
                 }
             } else {
                 // L'utilisateur a commité lui-même : on repart de HEAD.
                 let head = repo.head()?.peel_to_commit()?;
-                record(&mut state, &original, &planned, &head)?;
+                let produced = match &planned.squash_target {
+                    // Squash : son commit, créé au-dessus du commit cible, est fusionné dedans.
+                    Some(target) if head.parent_count() == 1 && head.parent_id(0)? == target.id() => {
+                        let produced = commit_step(repo, &step, &original, &planned, &head.tree()?)?;
+                        repo.set_head_detached(produced.id())?;
+                        produced
+                    }
+                    _ => head,
+                };
+                record(&mut state, &original, &planned, &produced)?;
                 state.next = index + 1;
             }
         }
@@ -926,6 +964,82 @@ mod tests {
         assert!(tip.tree().unwrap().get_name("g.txt").is_some());
     }
 
+    #[test]
+    fn commit_that_becomes_empty_is_skipped() {
+        // c2 annule c1 : sans c1, c2 n'apporte plus rien et doit disparaître.
+        let (dir, repo) = new_repo();
+        let base = commit_file(&repo, &dir, "f.txt", "v0\n", "base");
+        let c1 = commit_file(&repo, &dir, "f.txt", "v1\n", "c1");
+        let c2 = commit_file(&repo, &dir, "f.txt", "v0\n", "revert c1");
+        let c3 = commit_file(&repo, &dir, "g.txt", "g\n", "c3");
+        let _ = c1;
+        let steps = vec![step(&c2, RebaseAction::Pick, None), step(&c3, RebaseAction::Pick, None)];
+        assert!(interactive_rebase(&repo, &base, &steps, RebaseMode::Linear).unwrap().done);
+
+        let tip = head(&repo);
+        assert_eq!(tip.message().ok(), Some("c3"));
+        assert_eq!(tip.parent(0).unwrap().id().to_string(), base, "le commit devenu vide est sauté");
+        workdir_clean_and_on_master(&repo);
+    }
+
+    #[test]
+    fn originally_empty_commit_is_kept() {
+        let f = fixture();
+        // Commit vide volontaire (même arbre que son parent).
+        let parent = head(&f.repo);
+        let sig = git2::Signature::now("Test", "test@test.com").unwrap();
+        let empty = f.repo.commit(Some("HEAD"), &sig, &sig, "empty", &parent.tree().unwrap(), &[&parent]).unwrap().to_string();
+        let steps = vec![
+            step(&f.c[0], RebaseAction::Reword, Some("c1 reworded")),
+            step(&f.c[1], RebaseAction::Pick, None),
+            step(&f.c[2], RebaseAction::Pick, None),
+            step(&empty, RebaseAction::Pick, None),
+        ];
+        interactive_rebase(&f.repo, &f.base, &steps, RebaseMode::Linear).unwrap();
+        let tip = head(&f.repo);
+        assert_eq!(tip.message().ok(), Some("empty"));
+        assert_eq!(tip.tree_id(), tip.parent(0).unwrap().tree_id());
+    }
+
+    #[test]
+    fn conflict_resolved_to_existing_content_skips_the_commit() {
+        let (dir, repo, base, c1, c2) = conflicting();
+        let steps = vec![step(&c2, RebaseAction::Pick, None), step(&c1, RebaseAction::Pick, None)];
+        let outcome = interactive_rebase(&repo, &base, &steps, RebaseMode::Linear).unwrap();
+        assert_eq!(outcome.stopped.unwrap().hash, c2);
+        // Résolution en gardant la version de la base : c2 n'apporte plus rien.
+        resolve(&repo, &dir, "f.txt", "v0\n");
+        assert!(continue_interactive(&repo).unwrap().done);
+
+        let tip = head(&repo);
+        assert_eq!(tip.message().ok(), Some("c1"));
+        assert_eq!(tip.parent(0).unwrap().id().to_string(), base);
+        assert_eq!(fs::read_to_string(dir.path().join("f.txt")).unwrap(), "v1\n");
+        workdir_clean_and_on_master(&repo);
+    }
+
+    #[test]
+    fn squash_conflict_committed_by_user_is_folded_into_target() {
+        let (dir, repo, base, _c1, c2) = conflicting();
+        let c3 = commit_file(&repo, &dir, "g.txt", "g\n", "c3");
+        let steps = vec![step(&c3, RebaseAction::Pick, None), step(&c2, RebaseAction::Squash, Some("c3 + c2"))];
+        let outcome = interactive_rebase(&repo, &base, &steps, RebaseMode::Linear).unwrap();
+        assert_eq!(outcome.stopped.unwrap().reason, StopReason::Conflict);
+
+        // L'utilisateur résout puis commite lui-même au lieu de cliquer sur Continuer.
+        resolve(&repo, &dir, "f.txt", "v2\n");
+        crate::git::create_commit(&repo, "my own commit", false).unwrap();
+        assert!(continue_interactive(&repo).unwrap().done);
+
+        let tip = head(&repo);
+        assert_eq!(tip.message().ok(), Some("c3 + c2"));
+        assert_eq!(tip.parent(0).unwrap().id().to_string(), base, "un seul commit au-dessus de la base");
+        let tree = tip.tree().unwrap();
+        assert!(tree.get_name("g.txt").is_some());
+        assert_eq!(fs::read_to_string(dir.path().join("f.txt")).unwrap(), "v2\n");
+        workdir_clean_and_on_master(&repo);
+    }
+
     // ------------------------------------------------------------ Historiques avec merges
 
     /// base → c1 (f = "main") → M ← c2 (g = "side"), puis c3 (h) au-dessus de M.
@@ -1218,5 +1332,122 @@ mod tests {
 ");
         assert_eq!(repo.state(), RepositoryState::Clean);
         assert_eq!(repo.head().unwrap().shorthand().ok(), Some("master"));
+    }
+
+    fn workdir_clean_and_on_master(repo: &Repository) {
+        assert!(workdir_is_clean(repo).unwrap(), "copie de travail ou index modifiés après le rebase");
+        assert_eq!(repo.state(), RepositoryState::Clean);
+        assert_eq!(repo.head().unwrap().shorthand().ok(), Some("master"));
+        assert!(interactive_status(repo).is_none());
+    }
+
+    #[test]
+    fn squash_non_adjacent_commits_groups_them_behind_the_oldest() {
+        // Plan produit par la sélection multiple du graphe : c1 + c3, c2 reste à part.
+        let f = fixture();
+        let steps = vec![
+            step(&f.c[0], RebaseAction::Pick, None),
+            step(&f.c[2], RebaseAction::Squash, Some("c1 + c3")),
+            step(&f.c[1], RebaseAction::Pick, None),
+        ];
+        assert!(interactive_rebase(&f.repo, &f.base, &steps, RebaseMode::Linear).unwrap().done);
+
+        let tip = head(&f.repo);
+        assert_eq!(tip.message().ok(), Some("c2"));
+        let squashed = tip.parent(0).unwrap();
+        assert_eq!(squashed.message().ok(), Some("c1 + c3"));
+        assert_eq!(squashed.parent(0).unwrap().id().to_string(), f.base);
+        let tree = squashed.tree().unwrap();
+        assert!(tree.get_name("a.txt").is_some() && tree.get_name("c.txt").is_some());
+        assert!(tree.get_name("b.txt").is_none(), "c2 ne doit pas être dans le commit squashé");
+        workdir_clean_and_on_master(&f.repo);
+    }
+
+    #[test]
+    fn squash_without_message_concatenates_all_messages() {
+        let f = fixture();
+        let steps = vec![
+            step(&f.c[0], RebaseAction::Pick, None),
+            step(&f.c[1], RebaseAction::Squash, None),
+            step(&f.c[2], RebaseAction::Squash, None),
+        ];
+        interactive_rebase(&f.repo, &f.base, &steps, RebaseMode::Linear).unwrap();
+        assert_eq!(head(&f.repo).message().ok(), Some("c1\n\nc2\n\nc3"));
+        workdir_clean_and_on_master(&f.repo);
+    }
+
+    #[test]
+    fn rewritten_commits_keep_their_author() {
+        let (dir, repo) = new_repo();
+        let base = commit_file(&repo, &dir, "base.txt", "base\n", "base");
+        // Commit d'un autre auteur que l'utilisateur configuré (committer).
+        fs::write(dir.path().join("a.txt"), "a\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+        let alice = git2::Signature::now("Alice", "alice@test.com").unwrap();
+        let parent = head(&repo);
+        let c1 = repo.commit(Some("HEAD"), &alice, &alice, "by alice", &tree, &[&parent]).unwrap().to_string();
+        let c2 = commit_file(&repo, &dir, "b.txt", "b\n", "by test");
+
+        let steps = vec![step(&c1, RebaseAction::Reword, Some("reworded")), step(&c2, RebaseAction::Fixup, None)];
+        interactive_rebase(&repo, &base, &steps, RebaseMode::Linear).unwrap();
+        let tip = head(&repo);
+        assert_eq!(tip.message().ok(), Some("reworded"));
+        assert_eq!(tip.author().name().ok(), Some("Alice"), "l'auteur du commit cible est conservé");
+        assert_eq!(tip.committer().name().ok(), Some("Test"));
+    }
+
+    #[test]
+    fn detached_head_stays_detached() {
+        let f = fixture();
+        f.repo.set_head_detached(Oid::from_str(&f.c[2]).unwrap()).unwrap();
+        let steps = vec![step(&f.c[0], RebaseAction::Pick, None), step(&f.c[2], RebaseAction::Pick, None)];
+        interactive_rebase(&f.repo, &f.base, &steps, RebaseMode::Linear).unwrap();
+        assert!(f.repo.head_detached().unwrap());
+        assert_eq!(head(&f.repo).message().ok(), Some("c3"));
+        let master = f.repo.find_branch("master", git2::BranchType::Local).unwrap();
+        assert_eq!(master.get().target().unwrap().to_string(), f.c[2], "la branche n'est pas touchée");
+    }
+
+    #[test]
+    fn edit_stop_then_abort_restores_branch() {
+        let f = fixture();
+        let steps = vec![
+            step(&f.c[0], RebaseAction::Pick, None),
+            step(&f.c[1], RebaseAction::Reword, Some("c2 reworded")),
+            step(&f.c[2], RebaseAction::Edit, None),
+        ];
+        let outcome = interactive_rebase(&f.repo, &f.base, &steps, RebaseMode::Linear).unwrap();
+        assert_eq!(outcome.stopped.unwrap().reason, StopReason::Edit);
+        abort_interactive(&f.repo).unwrap();
+
+        assert_eq!(head(&f.repo).id().to_string(), f.c[2]);
+        assert_eq!(head(&f.repo).parent(0).unwrap().message().ok(), Some("c2"));
+        workdir_clean_and_on_master(&f.repo);
+    }
+
+    #[test]
+    fn untracked_file_in_the_way_fails_without_changing_anything() {
+        // c4 supprime b.txt, puis l'utilisateur crée un b.txt non suivi. Supprimer c4 du plan
+        // ferait réapparaître b.txt et écraserait ce fichier : le rebase doit refuser sans rien casser.
+        let f = fixture();
+        fs::remove_file(f.dir.path().join("b.txt")).unwrap();
+        let mut index = f.repo.index().unwrap();
+        index.remove_path(std::path::Path::new("b.txt")).unwrap();
+        index.write().unwrap();
+        crate::git::create_commit(&f.repo, "c4", false).unwrap();
+        let c4 = head(&f.repo).id();
+        fs::write(f.dir.path().join("b.txt"), "untracked\n").unwrap();
+
+        let steps: Vec<_> = f.c.iter().map(|h| step(h, RebaseAction::Pick, None)).collect();
+        let result = interactive_rebase(&f.repo, &f.base, &steps, RebaseMode::Linear);
+
+        assert!(result.is_err(), "le fichier non suivi aurait été écrasé");
+        assert_eq!(fs::read_to_string(f.dir.path().join("b.txt")).unwrap(), "untracked\n");
+        assert_eq!(head(&f.repo).id(), c4);
+        assert_eq!(f.repo.head().unwrap().shorthand().ok(), Some("master"));
+        assert!(interactive_status(&f.repo).is_none(), "aucun rebase ne doit rester en cours");
     }
 }
