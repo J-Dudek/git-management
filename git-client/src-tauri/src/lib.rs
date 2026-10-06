@@ -1,6 +1,7 @@
 mod accounts;
 mod commands;
 mod forge;
+mod http;
 mod oauth;
 mod git;
 mod window;

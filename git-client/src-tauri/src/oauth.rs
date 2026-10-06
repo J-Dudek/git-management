@@ -91,7 +91,8 @@ pub fn now() -> i64 {
 
 /// POST de formulaire ; renvoie le JSON même pour une réponse 4xx (les erreurs OAuth y sont décrites).
 fn post_form(url: &str, form: &[(&str, &str)]) -> Result<Value, String> {
-    let response = ureq::post(url)
+    let response = crate::http::agent()
+        .post(url)
         .set("Accept", "application/json")
         .timeout(Duration::from_secs(30))
         .send_form(form);
@@ -207,7 +208,8 @@ pub fn refresh(token: &OAuthToken) -> Result<OAuthToken, String> {
 
 /// Nom d'utilisateur associé au token.
 pub fn fetch_username(provider: Provider, endpoints: &Endpoints, access_token: &str) -> Result<String, String> {
-    let json: Value = ureq::get(&endpoints.user_url)
+    let json: Value = crate::http::agent()
+        .get(&endpoints.user_url)
         .set("Authorization", &format!("Bearer {access_token}"))
         .set("Accept", "application/json")
         .set("User-Agent", "J6N")

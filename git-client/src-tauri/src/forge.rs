@@ -41,7 +41,8 @@ fn http_error(host: &str, e: ureq::Error) -> String {
             let body: String = response.into_string().unwrap_or_default().chars().take(200).collect();
             format!("API {host} : erreur {code} {body}")
         }
-        ureq::Error::Transport(_) => format!("Impossible de joindre {host} : vérifie l'URL de l'instance et ta connexion"),
+        // Le détail distingue une URL erronée d'un certificat non reconnu ou d'un proxy.
+        ureq::Error::Transport(t) => format!("Impossible de joindre {host} ({t}) : vérifie l'URL de l'instance et ta connexion"),
     }
 }
 
@@ -50,7 +51,8 @@ pub fn get_json(account: &Account, token: &str, path: &str) -> Result<Value, Str
     validate_api_path(path)?;
     let url = format!("{}{}", api_base(account.provider, &account.base_url), path);
     let host = url_host(&url).unwrap_or_default();
-    let mut request = ureq::get(&url)
+    let mut request = crate::http::agent()
+        .get(&url)
         .timeout(Duration::from_secs(30))
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", "J6N");
