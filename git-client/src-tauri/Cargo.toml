@@ -1,6 +1,6 @@
 [package]
 name = "git-client"
-version = "1.0.1"
+version = "1.1.0"
 description = "J6N — Git Repository Manager : client Git graphique de bureau"
 authors = ["Julien Dudek"]
 license = "MIT"
