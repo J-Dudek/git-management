@@ -6,10 +6,12 @@ import { filterCommits } from "../search/filterCommits";
 import { GraphCanvas, H_PADDING, LANE_WIDTH, ROW_HEIGHT } from "./GraphCanvas";
 import { ContextMenu, useContextMenu, type MenuEntry } from "../components/ContextMenu";
 import {
-  checkoutCommit, cherryPick, createBranch, createTag, mergeBranch, rebaseOnto, resetTo, revertCommit,
+  checkoutCommit, cherryPick, createBranch, createTag, interactiveRebase, mergeBranch, rebaseOnto, rebaseTodo, resetTo,
+  revertCommit,
 } from "../ipc/commands";
-import { reportMerge, runGit } from "../lib/actions";
+import { reportInteractive, reportMerge, runGit } from "../lib/actions";
 import { localOnlyBranches } from "../lib/branches";
+import { squashPlan } from "../lib/squash";
 import type { CommitInfo, RefLabel } from "../types/git";
 
 const INFO_OFFSET = 20;
@@ -30,6 +32,97 @@ export function CommitGraph() {
   const [size, setSize] = useState({ width: 400, height: 400 });
   const [scrollTop, setScrollTop] = useState(0);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+  // Sélection multiple (Ctrl / Cmd + clic, Maj + clic pour une plage), en plus du commit affiché dans le détail.
+  const [multi, setMulti] = useState<string[]>([]);
+  // Point de départ des plages Maj + clic : dernier commit cliqué sans Maj.
+  const [anchor, setAnchor] = useState<string | null>(null);
+
+  // Les commits réécrits ou disparus après un rafraîchissement sortent de la sélection.
+  useEffect(() => {
+    setMulti((prev) => {
+      const next = prev.filter((h) => commits.some((c) => c.hash === h));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [commits]);
+
+  // Commit sélectionné ailleurs (ex. clic sur une branche de la barre latérale) : on repart de lui.
+  useEffect(() => {
+    const hash = selectedCommit?.hash ?? null;
+    if (hash !== anchor && !(hash && multi.includes(hash))) {
+      setMulti([]);
+      setAnchor(hash);
+    }
+  }, [selectedCommit]);
+
+  function selectOne(commit: CommitInfo | null) {
+    setMulti([]);
+    setAnchor(commit?.hash ?? null);
+    setSelectedCommit(commit);
+  }
+
+  function handleRowClick(e: React.MouseEvent, commit: CommitInfo) {
+    const toggle = e.ctrlKey || e.metaKey;
+    // Le premier Ctrl / Maj + clic ajoute aussi le commit déjà sélectionné.
+    const current = multi.length ? multi : selectedCommit ? [selectedCommit.hash] : [];
+    const from = layout.nodes.findIndex((n) => n.commit.hash === (anchor ?? selectedCommit?.hash));
+    if (e.shiftKey && from !== -1) {
+      // Plage dans l'ordre affiché ; avec Ctrl, elle s'ajoute à la sélection existante.
+      const to = layout.nodes.findIndex((n) => n.commit.hash === commit.hash);
+      const range = layout.nodes.slice(Math.min(from, to), Math.max(from, to) + 1).map((n) => n.commit.hash);
+      setMulti(toggle ? [...current, ...range.filter((h) => !current.includes(h))] : range);
+      setSelectedCommit(commit);
+      return;
+    }
+    if (!toggle) return selectOne(commit);
+    setMulti(current.includes(commit.hash) ? current.filter((h) => h !== commit.hash) : [...current, commit.hash]);
+    setAnchor(commit.hash);
+    setSelectedCommit(commit);
+  }
+
+  async function squashSelected(hashes: string[]) {
+    if (!repoPath) return;
+    const path = repoPath;
+    const ui = useUiStore.getState();
+    const head = info?.head_branch ?? "HEAD";
+    // Le graphe est trié topologiquement : le plus ancien des commits sélectionnés est le dernier.
+    const selected = commits.filter((c) => hashes.includes(c.hash));
+    const oldest = selected[selected.length - 1];
+    const base = oldest?.parents[0];
+    if (!base) {
+      ui.notify("error", "Le premier commit du dépôt ne peut pas être squashé");
+      return;
+    }
+    const todo = await runGit(() => rebaseTodo(path, base), { refresh: false });
+    if (!todo) return;
+    const check = squashPlan(todo, hashes, "");
+    if (typeof check === "string") {
+      ui.notify("error", check);
+      return;
+    }
+
+    const result = await ui.ask({
+      title: `Squasher ${hashes.length} commits sur ${head}`,
+      message: "Ils seront fusionnés en un seul commit, à la place du plus ancien. L'historique de la branche sera réécrit.",
+      input: { multiline: true, initial: check.commits.map((c) => c.message.trim()).join("\n\n") },
+      confirmLabel: "Squasher",
+    });
+    if (!result) return;
+    const plan = squashPlan(todo, hashes, result.value);
+    if (typeof plan === "string") return;
+
+    setMulti([]);
+    const outcome = await runGit(() => interactiveRebase(path, base, plan.steps, plan.mode), { busy: "Squash…" });
+    if (outcome && !outcome.stopped) ui.notify("success", `${hashes.length} commits squashés (ancienne position : ORIG_HEAD)`);
+    else reportInteractive(outcome);
+  }
+
+  function multiMenu(hashes: string[]): MenuEntry[] {
+    return [
+      { label: `Squasher les ${hashes.length} commits sélectionnés…`, action: () => squashSelected(hashes) },
+      "separator",
+      { label: "Annuler la sélection", action: () => setMulti([]) },
+    ];
+  }
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -150,7 +243,7 @@ export function CommitGraph() {
       className={`flex items-center gap-2 w-full shrink-0 px-3 h-7 text-xs border-b border-white/10 ${
         selectedCommit ? "hover:bg-white/5 text-[var(--color-muted)]" : "bg-white/10 text-[var(--color-text)]"
       }`}
-      onClick={() => setSelectedCommit(null)}
+      onClick={() => selectOne(null)}
       title="Afficher les modifications en cours"
     >
       <span className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-[var(--color-accent)]" />
@@ -196,7 +289,7 @@ export function CommitGraph() {
             layout={layout}
             selectedHash={selectedCommit?.hash ?? null}
             headHash={info?.head_hash ?? null}
-            onSelectRow={(row) => setSelectedCommit(layout.nodes[row]?.commit ?? null)}
+            onSelectRow={(row) => selectOne(layout.nodes[row]?.commit ?? null)}
             width={graphWidth}
             scrollTop={scrollTop}
             viewportHeight={size.height}
@@ -208,12 +301,13 @@ export function CommitGraph() {
               commit={node.commit}
               row={node.row}
               graphWidth={graphWidth}
-              isSelected={node.commit.hash === selectedCommit?.hash}
+              isSelected={node.commit.hash === selectedCommit?.hash || multi.includes(node.commit.hash)}
               containerWidth={size.width}
               localOnly={localOnly}
-              onClick={() => setSelectedCommit(node.commit)}
+              onClick={(e) => handleRowClick(e, node.commit)}
               onContextMenu={(e) => {
-                setSelectedCommit(node.commit);
+                if (multi.length > 1 && multi.includes(node.commit.hash)) return openMenu(e, multiMenu(multi));
+                selectOne(node.commit);
                 openMenu(e, commitMenu(node.commit));
               }}
             />
@@ -233,7 +327,7 @@ interface CommitRowProps {
   isSelected: boolean;
   containerWidth: number;
   localOnly: Set<string>;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
