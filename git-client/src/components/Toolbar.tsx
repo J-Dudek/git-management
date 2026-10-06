@@ -7,6 +7,7 @@ import { reportMerge, runGit } from "../lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "../lib/repoActions";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { SearchBar } from "./SearchBar";
+import { checkForUpdates } from "../lib/updater";
 import logoMark from "../assets/logo-mark.webp";
 import type { RepoInfo } from "../types/git";
 
@@ -38,6 +39,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       { label: "Cloner un dépôt…", action: onClone },
       { label: "Initialiser un dépôt…", action: chooseAndInitRepo },
       { label: "Nouvelle fenêtre", action: () => openNewWindow() },
+      { label: "Rechercher des mises à jour…", action: () => checkForUpdates(true) },
       ...(recent.filter((p) => p !== repoPath).length > 0 ? ["separator" as const] : []),
       ...recent
         .filter((p) => p !== repoPath)

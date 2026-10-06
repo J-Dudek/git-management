@@ -27,6 +27,7 @@
 - **Tags et stash** : tags légers ou annotés (création, push, suppression), stash (avec fichiers non suivis), apply, pop, drop.
 - **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. Les PR/MR et issues du dépôt courant sont affichées, avec checkout de la branche d'une PR et lien de création de PR/MR.
 - **Identité Git** : nom et email, globaux ou propres au dépôt.
+- **Mises à jour automatiques** : au démarrage, l'application vérifie s'il existe une nouvelle release, propose de l'installer puis redémarre (aussi via le menu J6N → « Rechercher des mises à jour… »). Les paquets sont signés et la signature est vérifiée avant toute installation (AppImage, `.deb`, `.exe`, `.msi`).
 
 Le code de l'application se trouve dans le dossier [`git-client/`](git-client/).
 
@@ -134,6 +135,8 @@ Les installeurs sont générés dans `git-client/src-tauri/target/release/bundle
 La branche `main` étant protégée, le commit de version est poussé avec le secret `RELEASE_TOKEN` : un token autorisé à contourner la protection (GitHub App ou token *fine-grained* limité à ce dépôt, permission « Contents : read and write »).
 
 Vérifier localement la prochaine version : `node git-client/scripts/version.mjs next`.
+
+Les mises à jour automatiques reposent sur une clé de signature dédiée : la clé publique est dans `tauri.conf.json` (`plugins > updater > pubkey`), la clé privée et son mot de passe dans les secrets `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Le build signe chaque paquet et publie `latest.json`, le manifeste que l'application consulte. **Si la clé privée est perdue, les versions installées ne pourront plus être mises à jour** : la conserver dans un gestionnaire de mots de passe.
 ## Structure
 
 ```

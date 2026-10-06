@@ -17,6 +17,7 @@ import { useAccountsStore } from "./store/useAccountsStore";
 import { useUiStore } from "./store/useUiStore";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
+import { checkForUpdatesOnStartup } from "./lib/updater";
 
 type LeftTab = "repo" | "accounts";
 
@@ -45,6 +46,10 @@ export default function App() {
     }
     window.addEventListener("contextmenu", onContextMenu);
     return () => window.removeEventListener("contextmenu", onContextMenu);
+  }, []);
+
+  useEffect(() => {
+    checkForUpdatesOnStartup();
   }, []);
 
   // Fenêtre ouverte sur un dépôt précis (ex. un sous-module) : voir window.rs.

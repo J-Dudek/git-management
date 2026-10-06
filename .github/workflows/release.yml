@@ -157,6 +157,8 @@ jobs:
             - Windows (PowerShell) : `Get-FileHash .\<fichier>` puis comparer avec la ligne correspondante
           # Brouillon pendant la génération : publié par le job suivant quand tous les paquets sont prêts.
           releaseDraft: true
+          # latest.json (manifeste des mises à jour automatiques) : entrée Windows générique sur l'installateur NSIS.
+          updaterJsonPreferNsis: true
           prerelease: false
           args: --bundles ${{ matrix.targets }}
 
