@@ -156,6 +156,8 @@ mod tests {
     fn repo_with(content: &str) -> (TempDir, Repository) {
         let dir = TempDir::new().unwrap();
         let repo = Repository::init(dir.path()).unwrap();
+        // Fins de ligne LF même si le git du système a core.autocrlf=true (runners Windows)
+        repo.config().unwrap().set_bool("core.autocrlf", false).unwrap();
         fs::write(dir.path().join("f.txt"), content).unwrap();
         {
             let sig = git2::Signature::now("T", "t@t").unwrap();

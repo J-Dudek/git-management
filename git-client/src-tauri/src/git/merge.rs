@@ -120,6 +120,8 @@ mod tests {
         let mut cfg = repo.config().unwrap();
         cfg.set_str("user.name", "Test").unwrap();
         cfg.set_str("user.email", "test@test.com").unwrap();
+        // Fins de ligne LF même si le git du système a core.autocrlf=true (runners Windows)
+        cfg.set_bool("core.autocrlf", false).unwrap();
 
         fs::write(dir.path().join("file.txt"), "line1\nline2\n").unwrap();
         let sig = Signature::now("Test", "test@test.com").unwrap();
