@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Toolbar } from "./components/Toolbar";
 import { TabBar } from "./components/TabBar";
+import { BottomPanel } from "./components/BottomPanel";
 import { Sidebar } from "./components/Sidebar";
 import { AccountsPanel } from "./components/AccountsPanel";
 import { CommitGraph } from "./graph/CommitGraph";
@@ -21,6 +22,7 @@ import { persistTabSession, useTabsStore } from "./store/useTabsStore";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
+import { openDevtools } from "./ipc/commands";
 
 type LeftTab = "repo" | "accounts";
 
@@ -76,29 +78,17 @@ export default function App() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Dans le terminal intégré, les touches vont au shell (Ctrl+R, Ctrl+W, Échap…).
+      if ((e.target as HTMLElement | null)?.closest?.(".xterm")) return;
       if (e.key === "Escape" && !useUiStore.getState().dialog && useRepoStore.getState().center.kind !== "graph") {
         setCenter({ kind: "graph" });
       }
+      if (e.key === "F12" && import.meta.env.DEV) openDevtools().catch(() => {});
       if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key === "r")) {
         e.preventDefault();
         refresh().catch((err) => notify("error", errorMessage(err)));
       }
-      if (useUiStore.getState().dialog) return;
-      const tabs = useTabsStore.getState();
-      const mod = e.ctrlKey || e.metaKey;
-      if (mod && e.key.toLowerCase() === "t") {
-        e.preventDefault();
-        tabs.newTab();
-      } else if (mod && e.key.toLowerCase() === "w") {
-        e.preventDefault();
-        tabs.closeTab(tabs.activeId);
-      } else if (mod && (e.key === "Tab" || e.key === "PageDown" || e.key === "PageUp")) {
-        e.preventDefault();
-        const back = e.key === "PageUp" || (e.key === "Tab" && e.shiftKey);
-        const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
-        const n = tabs.tabs.length;
-        tabs.switchTab(tabs.tabs[(i + (back ? n - 1 : 1)) % n].id);
-      }
+      if (!useUiStore.getState().dialog && windowShortcut(e)) e.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -140,7 +130,10 @@ export default function App() {
           <div className="flex-1 overflow-hidden">{leftPane()}</div>
         </div>
 
-        <main className="flex-1 min-w-0 overflow-hidden bg-[var(--color-bg-primary)]">{mainPane()}</main>
+        <main className="flex-1 min-w-0 overflow-hidden flex flex-col bg-[var(--color-bg-primary)]">
+          <div className="flex-1 min-h-0 overflow-hidden">{mainPane()}</div>
+          <BottomPanel />
+        </main>
 
         {repoPath && (
           <div className="w-80 shrink-0 overflow-hidden border-l border-white/10">
@@ -155,6 +148,29 @@ export default function App() {
       <Toasts />
     </div>
   );
+}
+
+/** Raccourcis d'onglets et du panneau du bas ; renvoie vrai si la touche a été traitée. */
+function windowShortcut(e: KeyboardEvent): boolean {
+  if (!e.ctrlKey && !e.metaKey) return false;
+  const tabs = useTabsStore.getState();
+  const key = e.key.toLowerCase();
+  if (key === "j") {
+    const ui = useUiStore.getState();
+    ui.setPanel({ open: !ui.panel.open });
+  } else if (key === "t") {
+    tabs.newTab();
+  } else if (key === "w") {
+    tabs.closeTab(tabs.activeId);
+  } else if (e.key === "Tab" || e.key === "PageDown" || e.key === "PageUp") {
+    const back = e.key === "PageUp" || (e.key === "Tab" && e.shiftKey);
+    const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
+    const n = tabs.tabs.length;
+    tabs.switchTab(tabs.tabs[(i + (back ? n - 1 : 1)) % n].id);
+  } else {
+    return false;
+  }
+  return true;
 }
 
 function LeftTabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {

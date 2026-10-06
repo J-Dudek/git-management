@@ -685,3 +685,41 @@ pub async fn oauth_complete(
 pub fn oauth_cancel(device_code: String) {
     oauth::cancel(&device_code);
 }
+
+/// Outils de développement du webview (builds de debug uniquement).
+#[tauri::command]
+pub fn open_devtools(window: tauri::WebviewWindow) {
+    #[cfg(debug_assertions)]
+    window.open_devtools();
+    #[cfg(not(debug_assertions))]
+    let _ = window;
+}
+
+// ---------------------------------------------------------------- Terminal intégré
+
+#[tauri::command]
+pub fn terminal_open(
+    app: AppHandle,
+    window: tauri::Window,
+    cwd: String,
+    cols: u16,
+    rows: u16,
+    on_event: tauri::ipc::Channel<crate::terminal::TerminalEvent>,
+) -> Result<u32, String> {
+    crate::terminal::open(&app, window.label(), &cwd, cols, rows, on_event)
+}
+
+#[tauri::command]
+pub fn terminal_write(app: AppHandle, id: u32, data: String) -> Result<(), String> {
+    crate::terminal::write(&app, id, &data)
+}
+
+#[tauri::command]
+pub fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) -> Result<(), String> {
+    crate::terminal::resize(&app, id, cols, rows)
+}
+
+#[tauri::command]
+pub fn terminal_close(app: AppHandle, id: u32) {
+    crate::terminal::close(&app, id)
+}

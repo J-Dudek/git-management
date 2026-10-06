@@ -1,14 +1,18 @@
+use tauri::Manager;
+
 mod accounts;
 mod commands;
 mod forge;
 mod http;
 mod oauth;
 mod git;
+mod terminal;
 mod window;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(terminal::Terminals::default())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -86,7 +90,17 @@ pub fn run() {
             commands::oauth_start,
             commands::oauth_complete,
             commands::oauth_cancel,
+            commands::open_devtools,
+            commands::terminal_open,
+            commands::terminal_write,
+            commands::terminal_resize,
+            commands::terminal_close,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                window.state::<terminal::Terminals>().close_window(window.label());
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

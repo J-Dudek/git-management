@@ -38,6 +38,7 @@ ureq = { version = "2", features = ["json"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8"
 webpki-roots = "1"
+portable-pty = "0.9"
 
 [dev-dependencies]
 tempfile = "3"
