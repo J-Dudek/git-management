@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRepoStore } from "../store/useRepoStore";
 import { useAccountsStore } from "../store/useAccountsStore";
@@ -8,7 +8,7 @@ import {
   deleteRemoteBranch, deleteRemoteTag, deleteTag, fetchRemote, lfsPull, lfsTrack, mergeBranch, pull, push, pushTag,
   openNewWindow, rebaseOnto, removeRemote, renameBranch, setUpstream, stashApply, stashDrop, updateSubmodules,
 } from "../ipc/commands";
-import { reportMerge, runGit } from "../lib/actions";
+import { errorMessage, reportMerge, runGit } from "../lib/actions";
 import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
@@ -36,6 +36,17 @@ export function Sidebar() {
   const accounts = useAccountsStore((s) => s.accounts);
   const busy = useUiStore((s) => s.busy);
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+  // Branches locales sélectionnées (Ctrl / Cmd + clic, Maj + clic pour une plage) pour les supprimer ensemble.
+  const [picked, setPicked] = useState<string[]>([]);
+  const [anchor, setAnchor] = useState<string | null>(null);
+
+  // Les branches supprimées ou renommées sortent de la sélection.
+  useEffect(() => {
+    setPicked((prev) => {
+      const next = prev.filter((n) => branches.some((b) => !b.is_remote && b.name === n));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [branches]);
 
   if (!repoPath) return null;
   const path = repoPath;
@@ -72,6 +83,50 @@ export function Sidebar() {
     });
     const name = result?.value.trim();
     if (name) await runGit(() => createBranch(path, name, from, result!.checked), { success: `Branche ${name} créée` });
+  }
+
+  function handleLocalClick(e: React.MouseEvent, b: BranchInfo) {
+    const toggle = e.ctrlKey || e.metaKey;
+    // La branche courante ne peut pas être supprimée : elle n'entre pas dans la sélection.
+    const selectable = (name: string) => name !== info?.head_branch;
+    const from = local.findIndex((l) => l.name === anchor);
+    if (e.shiftKey && from !== -1) {
+      const to = local.findIndex((l) => l.name === b.name);
+      const range = local.slice(Math.min(from, to), Math.max(from, to) + 1).map((l) => l.name).filter(selectable);
+      setPicked(toggle ? [...picked, ...range.filter((n) => !picked.includes(n))] : range);
+      return;
+    }
+    setAnchor(b.name);
+    if (toggle) {
+      if (selectable(b.name)) setPicked(picked.includes(b.name) ? picked.filter((n) => n !== b.name) : [...picked, b.name]);
+      return;
+    }
+    setPicked([]);
+    selectHash(b.target_hash);
+  }
+
+  async function deleteBranches(names: string[]) {
+    const ui = useUiStore.getState();
+    const n = names.length;
+    if (!(await confirmAction(`Supprimer ${n} branches locales ?`, `${names.join(", ")}\n\nLes commits non mergés ailleurs ne seront plus référencés.`, true)))
+      return;
+    const failed: string[] = [];
+    await runGit(async () => {
+      for (const name of names) {
+        await deleteBranch(path, name).catch((e) => failed.push(`${name} : ${errorMessage(e)}`));
+      }
+    }, { busy: "Suppression des branches…" });
+    setPicked([]);
+    if (failed.length === 0) ui.notify("success", `${n} branches supprimées`);
+    else ui.notify("error", `${n - failed.length}/${n} branches supprimées. Échec : ${failed.join(" ; ")}`);
+  }
+
+  function pickedMenu(names: string[]): MenuEntry[] {
+    return [
+      { label: `Supprimer les ${names.length} branches sélectionnées…`, danger: true, action: () => deleteBranches(names) },
+      "separator",
+      { label: "Annuler la sélection", action: () => setPicked([]) },
+    ];
   }
 
   function localMenu(b: BranchInfo): MenuEntry[] {
@@ -256,10 +311,11 @@ export function Sidebar() {
             icon="⎇"
             label={b.name}
             active={b.is_head}
+            selected={picked.includes(b.name)}
             title={b.upstream ? `suit ${b.upstream}` : localOnly.has(b.name) ? "uniquement en local : absente des remotes" : "aucune branche distante suivie"}
-            onClick={() => selectHash(b.target_hash)}
+            onClick={(e) => handleLocalClick(e, b)}
             onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
-            onContextMenu={(e) => openMenu(e, localMenu(b))}
+            onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
             trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
           />
         ))}
@@ -449,14 +505,16 @@ function SubGroup({ title, children, onContextMenu }: {
   );
 }
 
-function Row({ icon, label, active, indent, title, trailing, onClick, onDoubleClick, onContextMenu }: {
+function Row({ icon, label, active, selected, indent, title, trailing, onClick, onDoubleClick, onContextMenu }: {
   icon: string;
   label: string;
   active?: boolean;
+  /** Fait partie d'une sélection multiple. */
+  selected?: boolean;
   indent?: boolean;
   title?: string;
   trailing?: React.ReactNode;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   onDoubleClick?: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
@@ -465,7 +523,11 @@ function Row({ icon, label, active, indent, title, trailing, onClick, onDoubleCl
       <div
         title={title}
         className={`flex items-center gap-2 ${indent ? "pl-9" : "pl-6"} pr-2 py-[3px] cursor-default ${
-          active ? "text-[var(--color-accent)] bg-white/5 font-semibold" : "text-[var(--color-text)] hover:bg-white/5"
+          active
+            ? "text-[var(--color-accent)] bg-white/5 font-semibold"
+            : selected
+              ? "text-[var(--color-text)] bg-[var(--color-accent)]/20"
+              : "text-[var(--color-text)] hover:bg-white/5"
         }`}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
