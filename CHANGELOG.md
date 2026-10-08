@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.4.0](https://github.com/J-Dudek/git-management/compare/v1.3.0...v1.4.0) (2026-10-08)
+
+### Nouveautés
+
+- pull request review on app ([6041072](https://github.com/J-Dudek/git-management/commit/6041072647606fe9f9b27a6847e0b90702f63203))
+
 ## [1.3.0](https://github.com/J-Dudek/git-management/compare/v1.2.1...v1.3.0) (2026-10-08)
 
 ### Nouveautés
