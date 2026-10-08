@@ -27,6 +27,7 @@ import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
+import { startAutoSync } from "./lib/autoSync";
 import { openDevtools } from "./ipc/commands";
 
 type LeftTab = "repo" | "accounts";
@@ -65,6 +66,9 @@ export default function App() {
   useEffect(() => {
     checkForUpdatesOnStartup();
   }, []);
+
+  // Fetch et PR de chaque dépôt ouvert toutes les 5 minutes : les changements sont notifiés.
+  useEffect(() => startAutoSync(), []);
 
   // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
   useEffect(() => {

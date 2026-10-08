@@ -142,6 +142,8 @@ export const updateSubmodules = (path: string, names: string[] = []) => invoke<v
 /** `remote` null : tous les remotes. */
 export const fetchRemote = (path: string, remote: string | null = null) =>
   invoke<void>("fetch_remote", { path, remote });
+/** Fetch de tous les remotes en arrière-plan (synchronisation périodique) : pas inscrit au journal. */
+export const fetchAllQuietly = (path: string) => tauriInvoke<void>("fetch_remote", { path, remote: null });
 export const pull = (path: string, rebase: boolean) => invoke<MergeResult>("pull", { path, rebase });
 export const push = (path: string, opts: { branch?: string; remote?: string; force?: boolean } = {}) =>
   invoke<void>("push", { path, branch: opts.branch ?? null, remote: opts.remote ?? null, force: opts.force ?? false });

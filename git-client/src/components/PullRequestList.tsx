@@ -8,6 +8,7 @@ import { remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { PullRequestReviewDialog } from "./PullRequestReviewDialog";
 import type { ForgeAccount, ForgePR, PullRequestState } from "../types/forge";
+import type { RemoteInfo } from "../types/git";
 
 /** Compte et projet de la forge qui hébergent un remote du dépôt courant. */
 export interface LinkedForge {
@@ -17,15 +18,20 @@ export interface LinkedForge {
   remoteName: string;
 }
 
-/** Premier compte dont l'instance héberge un remote du dépôt courant (origin en priorité). */
-export function useLinkedForge(): LinkedForge | null {
-  const remotes = useRepoStore((s) => s.remotes);
-  const accounts = useAccountsStore((s) => s.accounts);
+/** Premier compte dont l'instance héberge un de ces remotes (origin en priorité). */
+export function linkedForge(remotes: RemoteInfo[], accounts: ForgeAccount[]): LinkedForge | null {
   for (const account of accounts) {
     const match = remoteForAccount(remotes, account);
     if (match) return { account, projectPath: match.path, remoteName: match.remote.name };
   }
   return null;
+}
+
+/** Forge liée au dépôt courant. */
+export function useLinkedForge(): LinkedForge | null {
+  const remotes = useRepoStore((s) => s.remotes);
+  const accounts = useAccountsStore((s) => s.accounts);
+  return linkedForge(remotes, accounts);
 }
 
 /** Checkout de la branche source d'une PR, après un fetch si elle n'est pas encore connue localement. */
@@ -56,9 +62,25 @@ function matchesScope(pr: ForgePR, scope: PrScope, me: string): boolean {
  */
 const cache = new Map<string, { open: ForgePR[]; filtered: ForgePR[] }>();
 
+/** Listes affichées à prévenir quand le cache est actualisé hors d'elles (synchronisation périodique). */
+const listeners = new Set<() => void>();
+
 /** Vide le cache (tests). */
 export function clearPullRequestCache() {
   cache.clear();
+}
+
+/**
+ * Recharge les PR ouvertes d'un projet dans le cache et met à jour les listes affichées.
+ * Renvoie les PR ouvertes connues avant (null si jamais chargées) et après.
+ */
+export async function refreshOpenPullRequests(account: ForgeAccount, projectPath: string) {
+  const key = `${account.id}|${projectPath}|open`;
+  const before = cache.get(key)?.open ?? null;
+  const open = await (await useAccountsStore.getState().client(account)).getPullRequests(projectPath, "open");
+  cache.set(key, { open, filtered: open });
+  listeners.forEach((l) => l());
+  return { before, after: open };
 }
 
 /**
@@ -102,6 +124,13 @@ export function usePullRequests(forge: LinkedForge | null) {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  useEffect(() => {
+    listeners.add(refreshed);
+    return () => {
+      listeners.delete(refreshed);
+    };
+  }, []);
 
   const prs = entry?.filtered ?? [];
   const visible = account ? prs.filter((pr) => matchesScope(pr, scope, account.username)) : [];
