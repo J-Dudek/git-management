@@ -2,6 +2,13 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.5.0](https://github.com/J-Dudek/git-management/compare/v1.4.0...v1.5.0) (2026-10-08)
+
+### Nouveautés
+
+- suivi des PR / MR lues, MR de tous les projets dans l'onglet Comptes, intervalle de synchronisation réglable ([86c8511](https://github.com/J-Dudek/git-management/commit/86c851165a4b2292ae36f2026abae925ce3688e4))
+- synchronisation périodique des dépôts ouverts (fetch et PR / MR) ([4dbe935](https://github.com/J-Dudek/git-management/commit/4dbe93568e6334ad4e1d84aecbf712598d1aa919))
+
 ## [1.4.0](https://github.com/J-Dudek/git-management/compare/v1.3.0...v1.4.0) (2026-10-08)
 
 ### Nouveautés
