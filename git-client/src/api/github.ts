@@ -1,5 +1,7 @@
 import type {
-  CreatedPullRequest, ForgeIssue, ForgeLabel, ForgeMilestone, ForgePR, ForgeRepo, ForgeUser, NewPullRequest, PullRequestOptions,
+  CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgeLabel, ForgeMilestone, ForgePR, ForgeRepo, ForgeUser,
+  LinePosition, MergeMethod, MergeOptions, NewPullRequest, PullRequestDetails, PullRequestOptions, PullRequestState,
+  ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread, SubmittedReview,
 } from "../types/forge";
 import { errorMessage } from "../lib/actions";
 
@@ -8,7 +10,11 @@ export type ApiGet = <T>(path: string) => Promise<T>;
 /** Requête d'écriture sur l'API du compte, avec corps JSON. */
 export type ApiSend = <T>(method: "POST" | "PUT" | "PATCH", path: string, body: unknown) => Promise<T>;
 
+/** Requête GraphQL sur l'instance du compte ; renvoie le champ `data`. */
+export type ApiGraphql = <T>(query: string, variables: Record<string, unknown>) => Promise<T>;
+
 const noSend: ApiSend = () => Promise.reject(new Error("Écriture non disponible"));
+const noGraphql: ApiGraphql = () => Promise.reject(new Error("GraphQL non disponible"));
 
 const seg = (value: string) => encodeURIComponent(value);
 
@@ -51,14 +57,68 @@ interface RawIssue {
 }
 
 interface RawPullRequest extends RawIssue {
+  /** Identifiant GraphQL. */
+  node_id?: string;
   merged_at: string | null;
   draft?: boolean;
-  head?: { ref: string };
+  head?: { ref: string; sha?: string };
   base?: { ref: string };
+  requested_reviewers?: RawUser[];
+  assignees?: RawUser[];
+  body?: string | null;
+  /** null tant que GitHub calcule la mergeabilité. */
+  mergeable?: boolean | null;
+  mergeable_state?: string;
 }
 
+interface RawRepoSettings {
+  allow_merge_commit?: boolean;
+  allow_squash_merge?: boolean;
+  allow_rebase_merge?: boolean;
+  permissions?: { push?: boolean };
+}
+
+interface RawReview {
+  id: number;
+  user: RawUser | null;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+  body: string | null;
+  submitted_at?: string;
+}
+
+interface RawComment {
+  id: number;
+  user: RawUser | null;
+  body: string;
+  created_at: string;
+}
+
+interface RawCheckRun {
+  name: string;
+  status: "queued" | "in_progress" | "completed" | string;
+  conclusion: string | null;
+  html_url: string | null;
+}
+
+interface RawStatus {
+  context: string;
+  state: "pending" | "success" | "failure" | "error";
+  target_url: string | null;
+}
+
+/** Explication de `mergeable_state` (https://docs.github.com/rest/pulls/pulls). */
+const MERGE_STATES: Record<string, string> = {
+  clean: "Prête à merger",
+  has_hooks: "Prête à merger",
+  unstable: "Mergeable, mais des checks non obligatoires échouent",
+  blocked: "Bloquée : relectures ou checks obligatoires manquants",
+  behind: "En retard sur la branche cible : à mettre à jour",
+  dirty: "Conflits avec la branche cible",
+  draft: "Brouillon : à passer en « prête » sur GitHub avant le merge",
+};
+
 export class GitHubClient {
-  constructor(private get: ApiGet, private send: ApiSend = noSend) {}
+  constructor(private get: ApiGet, private send: ApiSend = noSend, private graphql: ApiGraphql = noGraphql) {}
 
   /** Valide le token et renvoie le login associé. */
   async getCurrentUser(): Promise<string> {
@@ -81,9 +141,184 @@ export class GitHubClient {
     }));
   }
 
-  async getPullRequests(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<ForgePR[]> {
-    const data = await this.get<RawPullRequest[]>(`/repos/${seg(owner)}/${seg(repo)}/pulls?state=${state}&per_page=50`);
-    return data.map(parsePR);
+  /** GitHub ne filtre pas les PR mergées : elles sont extraites des PR fermées. */
+  async getPullRequests(owner: string, repo: string, state: PullRequestState = "open"): Promise<ForgePR[]> {
+    const query = state === "merged" ? "closed" : state;
+    const data = await this.get<RawPullRequest[]>(`/repos/${seg(owner)}/${seg(repo)}/pulls?state=${query}&per_page=50`);
+    const prs = data.map(parsePR);
+    if (state === "merged") return prs.filter((p) => p.state === "merged");
+    if (state === "closed") return prs.filter((p) => p.state === "closed");
+    return prs;
+  }
+
+  /** Les checks sont facultatifs : un token sans accès aux checks n'empêche pas d'afficher la PR. */
+  async getPullRequestDetails(owner: string, repo: string, number: number, me: string): Promise<PullRequestDetails> {
+    const base = `/repos/${seg(owner)}/${seg(repo)}`;
+    const [raw, settings, reviews] = await Promise.all([
+      this.get<RawPullRequest>(`${base}/pulls/${number}`),
+      this.get<RawRepoSettings>(base),
+      this.get<RawReview[]>(`${base}/pulls/${number}/reviews?per_page=100`),
+    ]);
+    const sha = raw.head?.sha ?? "";
+    const [runs, statuses] = sha
+      ? await Promise.all([
+        this.get<{ check_runs: RawCheckRun[] }>(`${base}/commits/${sha}/check-runs?per_page=100`).catch(() => ({ check_runs: [] })),
+        this.get<{ statuses: RawStatus[] }>(`${base}/commits/${sha}/status`).catch(() => ({ statuses: [] })),
+      ])
+      : [{ check_runs: [] }, { statuses: [] }];
+
+    // Dernier avis de chaque relecteur ; un simple commentaire ne remplace pas une approbation.
+    const verdicts = new Map<string, RawReview["state"]>();
+    for (const r of reviews) {
+      if (r.user && (r.state === "APPROVED" || r.state === "CHANGES_REQUESTED" || r.state === "DISMISSED")) verdicts.set(r.user.login, r.state);
+    }
+    const withVerdict = (state: RawReview["state"]) => [...verdicts].filter(([, s]) => s === state).map(([login]) => login);
+
+    const pr = parsePR(raw);
+    const methods: MergeMethod[] = [];
+    if (settings.allow_merge_commit !== false) methods.push("merge");
+    if (settings.allow_squash_merge !== false) methods.push("squash");
+    if (settings.allow_rebase_merge !== false) methods.push("rebase");
+
+    const mergeState = raw.mergeable_state ?? "unknown";
+    const mergeable = pr.state === "open"
+      && settings.permissions?.push !== false
+      && raw.mergeable === true
+      && ["clean", "has_hooks", "unstable"].includes(mergeState);
+
+    return {
+      pr,
+      description: raw.body ?? "",
+      headSha: sha,
+      approvedBy: withVerdict("APPROVED"),
+      changesRequestedBy: withVerdict("CHANGES_REQUESTED"),
+      approvedByMe: verdicts.get(me) === "APPROVED",
+      approvalsLeft: null,
+      checks: [...runs.check_runs.map(parseCheckRun), ...statuses.statuses.map(parseStatus)],
+      mergeable,
+      mergeStatus: describeMergeState(pr, raw, settings),
+      canUpdateBranch: pr.state === "open" && mergeState === "behind",
+      mergeMethods: methods,
+      defaultMergeMethod: methods[0] ?? "merge",
+      removeSourceBranchDefault: false,
+      diffRefs: null,
+    };
+  }
+
+  /** Commentaires de la conversation et avis de relecture, par date. */
+  async getComments(owner: string, repo: string, number: number): Promise<ForgeComment[]> {
+    const base = `/repos/${seg(owner)}/${seg(repo)}`;
+    const [comments, reviews] = await Promise.all([
+      this.get<RawComment[]>(`${base}/issues/${number}/comments?per_page=100`),
+      this.get<RawReview[]>(`${base}/pulls/${number}/reviews?per_page=100`),
+    ]);
+    const all: ForgeComment[] = [
+      ...comments.map((c) => ({ id: `c${c.id}`, author: c.user?.login ?? "", body: c.body, createdAt: c.created_at })),
+      ...reviews
+        .filter((r) => r.body || r.state === "APPROVED" || r.state === "CHANGES_REQUESTED")
+        .map((r): ForgeComment => ({
+          id: `r${r.id}`,
+          author: r.user?.login ?? "",
+          body: r.body ?? "",
+          createdAt: r.submitted_at ?? "",
+          review: REVIEW_VERDICTS[r.state],
+        })),
+    ];
+    return all.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async addComment(owner: string, repo: string, number: number, body: string): Promise<void> {
+    await this.send("POST", `/repos/${seg(owner)}/${seg(repo)}/issues/${number}/comments`, { body });
+  }
+
+  /** Une approbation GitHub ne se retire pas (seul un admin peut la rejeter). */
+  async review(owner: string, repo: string, number: number, event: ReviewEvent, body: string): Promise<void> {
+    if (event === "unapprove") throw new Error("GitHub ne permet pas de retirer sa propre approbation");
+    await this.send("POST", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/reviews`, {
+      event: event === "approve" ? "APPROVE" : "REQUEST_CHANGES",
+      body,
+    });
+  }
+
+  async merge(owner: string, repo: string, number: number, options: MergeOptions): Promise<void> {
+    await this.send("PUT", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/merge`, {
+      merge_method: options.method,
+      sha: options.sha,
+    });
+  }
+
+  async setState(owner: string, repo: string, number: number, state: "open" | "closed"): Promise<void> {
+    await this.send("PATCH", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}`, { state });
+  }
+
+  /** Brouillon ↔ prête : uniquement disponible en GraphQL. */
+  async setDraft(owner: string, repo: string, number: number, draft: boolean): Promise<void> {
+    const raw = await this.get<RawPullRequest>(`/repos/${seg(owner)}/${seg(repo)}/pulls/${number}`);
+    if (!raw.node_id) throw new Error("Identifiant GraphQL de la pull request introuvable");
+    const mutation = draft ? "convertPullRequestToDraft" : "markPullRequestReadyForReview";
+    await this.graphql(`mutation($id: ID!) { ${mutation}(input: { pullRequestId: $id }) { pullRequest { isDraft } } }`, { id: raw.node_id });
+  }
+
+  /** Fils de commentaires du diff : GraphQL, seul à exposer leur état résolu et leur ligne actuelle. */
+  async getReviewThreads(owner: string, repo: string, number: number): Promise<ReviewThread[]> {
+    const data = await this.graphql<{ repository: { pullRequest: { reviewThreads: { nodes: RawThread[] } } | null } | null }>(
+      `query($owner: String!, $name: String!, $number: Int!) {
+        repository(owner: $owner, name: $name) {
+          pullRequest(number: $number) {
+            reviewThreads(first: 100) {
+              nodes {
+                id isResolved path line diffSide
+                comments(first: 100) { nodes { databaseId body createdAt author { login } } }
+              }
+            }
+          }
+        }
+      }`,
+      { owner, name: repo, number },
+    );
+    return (data.repository?.pullRequest?.reviewThreads.nodes ?? []).map((t) => ({
+      id: t.id,
+      replyTo: String(t.comments.nodes[0]?.databaseId ?? ""),
+      path: t.path,
+      side: t.diffSide === "LEFT" ? "old" : "new",
+      line: t.line,
+      resolved: t.isResolved,
+      comments: t.comments.nodes.map((c) => ({
+        id: String(c.databaseId), author: c.author?.login ?? "", body: c.body, createdAt: c.createdAt,
+      })),
+    }));
+  }
+
+  async addLineComment(owner: string, repo: string, number: number, ctx: ReviewContext, position: LinePosition, body: string): Promise<void> {
+    await this.send("POST", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/comments`, {
+      body, commit_id: ctx.headSha, ...lineComment(position),
+    });
+  }
+
+  async replyToThread(owner: string, repo: string, number: number, replyTo: string, body: string): Promise<void> {
+    await this.send("POST", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/comments/${seg(replyTo)}/replies`, { body });
+  }
+
+  async resolveThread(threadId: string, resolved: boolean): Promise<void> {
+    const mutation = resolved ? "resolveReviewThread" : "unresolveReviewThread";
+    await this.graphql(`mutation($id: ID!) { ${mutation}(input: { threadId: $id }) { thread { isResolved } } }`, { id: threadId });
+  }
+
+  /** Une seule requête : la revue et ses commentaires de ligne sont publiés ensemble ou pas du tout. */
+  async submitReview(owner: string, repo: string, number: number, ctx: ReviewContext, review: ReviewSubmission): Promise<SubmittedReview> {
+    const events = { comment: "COMMENT", approve: "APPROVE", request_changes: "REQUEST_CHANGES" } as const;
+    await this.send("POST", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/reviews`, {
+      commit_id: ctx.headSha,
+      event: events[review.verdict],
+      body: review.body,
+      comments: review.comments.map((d) => ({ body: d.body, ...lineComment(d.position) })),
+    });
+    return { publishedIds: review.comments.map((d) => d.id), errors: [] };
+  }
+
+  /** Merge la branche cible dans la branche de la PR, côté GitHub. */
+  async updateBranch(owner: string, repo: string, number: number, sha: string): Promise<void> {
+    await this.send("PUT", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/update-branch`, { expected_head_sha: sha });
   }
 
   async getIssues(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<ForgeIssue[]> {
@@ -152,7 +387,52 @@ function parsePR(raw: RawPullRequest): ForgePR {
     labels: (raw.labels ?? []).map((l) => l.name),
     sourceBranch: raw.head?.ref ?? "",
     targetBranch: raw.base?.ref ?? "",
+    reviewers: (raw.requested_reviewers ?? []).map((u) => u.login),
+    assignees: (raw.assignees ?? []).map((u) => u.login),
   };
+}
+
+interface RawThread {
+  id: string;
+  isResolved: boolean;
+  path: string;
+  /** null quand le commentaire porte sur une version dépassée du diff. */
+  line: number | null;
+  diffSide: "LEFT" | "RIGHT";
+  comments: { nodes: { databaseId: number; body: string; createdAt: string; author: { login: string } | null }[] };
+}
+
+/** Champs de position d'un commentaire de ligne GitHub (`path` est toujours le chemin actuel). */
+function lineComment(p: LinePosition) {
+  return { path: p.path, line: p.line, side: p.side === "old" ? "LEFT" : "RIGHT" };
+}
+
+const REVIEW_VERDICTS: Partial<Record<RawReview["state"], ForgeComment["review"]>> = {
+  APPROVED: "approved",
+  CHANGES_REQUESTED: "changes_requested",
+};
+
+function describeMergeState(pr: ForgePR, raw: RawPullRequest, settings: RawRepoSettings): string {
+  const mergeState = raw.mergeable_state ?? "unknown";
+  if (pr.state === "merged") return "Déjà mergée";
+  if (pr.state === "closed") return "Fermée";
+  if (settings.permissions?.push === false) return "Droits insuffisants pour merger";
+  if (raw.mergeable == null || mergeState === "unknown") return "Vérification de la mergeabilité en cours…";
+  return MERGE_STATES[mergeState] ?? `Merge impossible (${mergeState})`;
+}
+
+function parseCheckRun(run: RawCheckRun): ForgeCheck {
+  let status: ForgeCheck["status"];
+  if (run.status !== "completed") status = "pending";
+  else if (run.conclusion === "success" || run.conclusion === "neutral") status = "success";
+  else if (run.conclusion === "skipped" || run.conclusion === "cancelled") status = "skipped";
+  else status = "failure";
+  return { name: run.name, status, url: run.html_url };
+}
+
+function parseStatus(raw: RawStatus): ForgeCheck {
+  const status = raw.state === "error" ? "failure" : raw.state;
+  return { name: raw.context, status, url: raw.target_url };
 }
 
 function parseIssue(raw: RawIssue): ForgeIssue {

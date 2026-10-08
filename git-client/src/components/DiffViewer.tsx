@@ -9,10 +9,19 @@ export interface PartialStaging {
   onApply: (hunk: number, lines: number[] | null, action: LineAction) => Promise<void>;
 }
 
+/** Commentaires de revue attachés aux lignes (diff d'une pull request). */
+export interface DiffAnnotations {
+  /** Contenu affiché sous la ligne (fils, brouillons, formulaire), ou null. */
+  below: (line: DiffLine) => React.ReactNode;
+  /** Ouvre le formulaire de commentaire sur la ligne ; absent : lecture seule. */
+  onComment?: (line: DiffLine) => void;
+}
+
 interface Props {
   diff: FileDiff | null;
   loading: boolean;
   staging?: PartialStaging;
+  annotations?: DiffAnnotations;
 }
 
 interface Selection {
@@ -21,7 +30,7 @@ interface Selection {
   anchor: number;
 }
 
-export function DiffViewer({ diff, loading, staging }: Props) {
+export function DiffViewer({ diff, loading, staging, annotations }: Props) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [applying, setApplying] = useState(false);
 
@@ -101,6 +110,7 @@ export function DiffViewer({ diff, loading, staging }: Props) {
                     selectable={!!staging && line.kind !== "context"}
                     selected={selection?.hunk === i && selection.lines.has(j)}
                     onToggle={(shift) => toggleLine(i, j, line, shift)}
+                    annotations={annotations}
                   />
                 ))}
               </tbody>
@@ -148,32 +158,61 @@ function HunkBtn({ onClick, disabled, danger, children }: {
   );
 }
 
-function DiffLineRow({ line, selectable, selected, onToggle }: {
+function DiffLineRow({ line, selectable, selected, onToggle, annotations }: {
   line: DiffLine;
   selectable: boolean;
   selected: boolean;
   onToggle: (shift: boolean) => void;
+  annotations?: DiffAnnotations;
 }) {
   const { bg, text, prefix } = lineStyle(line.kind);
+  const below = annotations?.below(line);
+  const onComment = annotations?.onComment;
 
   return (
-    <tr
-      className={`${selected ? "bg-sky-800/50" : bg} ${selectable ? "cursor-pointer hover:brightness-125" : ""}`}
-      onClick={(e) => selectable && onToggle(e.shiftKey)}
-      title={selectable ? "Clic : sélectionner la ligne · Maj+clic : plage" : undefined}
-    >
-      <td className={`w-1 ${selected ? "bg-sky-400" : ""}`} />
-      <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-white/5">
-        {line.old_lineno ?? ""}
-      </td>
-      <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-white/5">
-        {line.new_lineno ?? ""}
-      </td>
-      <td className={`pl-2 pr-4 whitespace-pre ${text}`}>
-        <span className="select-none mr-1 opacity-70">{prefix}</span>
-        {line.content}
-      </td>
-    </tr>
+    <>
+      <tr
+        className={`group ${selected ? "bg-sky-800/50" : bg} ${selectable ? "cursor-pointer hover:brightness-125" : ""}`}
+        onClick={(e) => selectable && onToggle(e.shiftKey)}
+        title={selectable ? "Clic : sélectionner la ligne · Maj+clic : plage" : undefined}
+      >
+        <td className={`w-1 ${selected ? "bg-sky-400" : ""}`} />
+        {annotations && (
+          <td className="w-5 select-none">
+            {onComment && (
+              <button
+                className="w-4 h-4 leading-none rounded bg-[var(--color-accent)] text-white font-sans font-bold opacity-0 group-hover:opacity-100 focus:opacity-100"
+                title="Commenter cette ligne"
+                aria-label="Commenter cette ligne"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onComment(line);
+                }}
+              >
+                +
+              </button>
+            )}
+          </td>
+        )}
+        <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-white/5">
+          {line.old_lineno ?? ""}
+        </td>
+        <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-white/5">
+          {line.new_lineno ?? ""}
+        </td>
+        <td className={`pl-2 pr-4 whitespace-pre ${text}`}>
+          <span className="select-none mr-1 opacity-70">{prefix}</span>
+          {line.content}
+        </td>
+      </tr>
+      {below && (
+        <tr>
+          <td colSpan={annotations ? 5 : 4} className="px-3 py-1.5 bg-black/30 border-y border-white/5 font-sans text-xs whitespace-normal">
+            {below}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

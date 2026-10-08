@@ -1,7 +1,7 @@
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type {
   BranchInfo, CommitDetails, CommitInfo, FileDiff, FileStatus, Identity, MergeResult,
-  InteractiveOutcome, LfsStatus, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit,
+  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit,
 } from "../types/git";
 import type { DeviceCode, ForgeAccount, Provider, SavedAccount } from "../types/forge";
 import { describeCommand } from "../lib/journal";
@@ -53,6 +53,11 @@ export const getCommitDetails = (path: string, hash: string) =>
   invoke<CommitDetails>("get_commit_details", { path, hash });
 export const getCommitFileDiff = (path: string, hash: string, filePath: string) =>
   invoke<FileDiff>("get_commit_file_diff", { path, hash, filePath });
+/** Changements de `head` depuis son ancêtre commun avec `base`, comme le diff d'une pull request. */
+export const compareRefs = (path: string, base: string, head: string) =>
+  invoke<RefComparison>("compare_refs", { path, base, head });
+export const getCompareFileDiff = (path: string, base: string, head: string, filePath: string) =>
+  invoke<FileDiff>("get_compare_file_diff", { path, base, head, filePath });
 
 // ---------------------------------------------------------------- Copie de travail
 
@@ -167,6 +172,10 @@ export const forgeApi = (accountId: string, path: string) => invoke<unknown>("fo
 /** POST / PUT / PATCH sur l'API GitHub / GitLab du compte (création de PR / MR…). */
 export const forgeApiSend = (accountId: string, method: "POST" | "PUT" | "PATCH", path: string, body?: unknown) =>
   invoke<unknown>("forge_api_send", { accountId, method, path, body: body ?? null });
+
+/** Requête GraphQL GitHub (opérations sans équivalent REST). */
+export const forgeGraphql = (accountId: string, query: string, variables: Record<string, unknown>) =>
+  invoke<unknown>("forge_graphql", { accountId, query, variables });
 
 // ---------------------------------------------------------------- OAuth (device flow)
 

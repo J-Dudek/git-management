@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Démo : graphe avec les auteurs, détail d'un commit, onglets de dépôts, terminal intégré, commit, journal des opérations et préférences d'affichage" width="960" />
+  <img src="docs/demo.gif" alt="Démo : graphe avec les auteurs, détail d'un commit et diff, onglets de dépôts, badge et détail d'une pull request (relecteurs, CI, conversation), revue des fichiers modifiés avec commentaire de ligne et approbation, terminal intégré, commit, journal des opérations et préférences d'affichage" width="960" />
 </p>
 
 ## Pourquoi « Merathon » ?
@@ -38,17 +38,31 @@ Les empreintes SHA-256 de tous les fichiers sont dans `SHA256SUMS.txt`. Une fois
 - **Journal des opérations** : à côté du terminal, chaque action de l'application (commit, pull, push, rebase, stash…) est affichée sous la forme de la commande `git` équivalente, avec son statut, sa durée et le message d'erreur complet en cas d'échec. Les identifiants contenus dans une URL ne sont jamais affichés.
 - **Historique** : graphe de toutes les branches (locales, distantes, tags), recherche, détail d'un commit (message, auteur, fichiers modifiés) et diff de chaque fichier. Chaque point du graphe porte les initiales de l'auteur, dont le nom s'affiche au survol. Sélection de plusieurs commits avec Ctrl+clic (ou Cmd+clic) et Maj+clic pour une plage, puis clic droit → **Squasher les commits sélectionnés** : ils sont fusionnés dans le plus ancien, avec un message modifiable (pré-rempli avec les messages d'origine).
 - **Copie de travail** : indexer / désindexer / annuler par fichier, par bloc (hunk) ou ligne par ligne depuis le diff (clic, Maj+clic pour une plage), commit avec résumé + description, amend.
-- **Branches** : création, checkout (y compris d'une branche distante avec suivi, ou d'un commit en HEAD détaché), renommage, suppression, branche suivie, ahead/behind. Un badge `local` signale, dans la barre latérale et sur le graphe, les branches qui n'existent sur aucun remote. Plusieurs branches locales peuvent être sélectionnées (Ctrl+clic, Maj+clic) et supprimées en une fois.
+- **Branches** : création, checkout (y compris d'une branche distante avec suivi, ou d'un commit en HEAD détaché), renommage, suppression, branche suivie, ahead/behind. Un badge `local` signale, dans la barre latérale et sur le graphe, les branches qui n'existent sur aucun remote, et un badge `PR #12` (ou `MR !12`) celles qui ont une pull / merge request ouverte. Plusieurs branches locales peuvent être sélectionnées (Ctrl+clic, Maj+clic) et supprimées en une fois.
 - **Intégration** : merge (fast-forward ou commit de merge), rebase, cherry-pick, revert, reset soft/mixed/hard, avec résolution de conflits et continuer / annuler.
 - **Rebase interactif** (clic droit sur un commit) : réordonner (glisser-déposer ou flèches), renommer, modifier (arrêt pour amender ou ajouter des commits), fusionner (squash / fixup) ou supprimer des commits. Avec des merges dans l'historique, au choix : *aplatir* (comme `git rebase -i`) ou *préserver les merges* (comme `--rebase-merges` : forme conservée, résolutions de conflits des merges gardées). Le rebase s'arrête sur un conflit à résoudre puis « Continuer », et peut être annulé à tout moment pour revenir exactement à l'état initial ; l'ancienne position reste accessible via `ORIG_HEAD`. Comme avec git, un commit devenu vide (ses changements sont déjà présents) est sauté.
 - **Sous-modules** : liste et état, initialisation / mise à jour récursive (avec les identifiants des comptes), récupération automatique après un clone, ouverture dans un nouvel onglet ou une nouvelle fenêtre.
 - **Git LFS** (nécessite [git-lfs](https://git-lfs.com)) : les fichiers LFS sont indexés via `git add` (pointeur, pas le binaire), les objets LFS sont envoyés avant chaque push et récupérés après clone / pull / checkout ; suivi de motifs, liste des fichiers non téléchargés.
 - **Remotes** : fetch, pull (merge ou rebase), push (forcé en option), suppression de branche distante, ajout / suppression de remotes.
 - **Tags et stash** : tags légers ou annotés (création, push, suppression), stash (avec fichiers non suivis), apply, pop, drop.
-- **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. Les PR/MR et issues du dépôt courant sont affichées, avec checkout de la branche d'une PR et lien de création de PR/MR.
+- **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. Les issues ouvertes du dépôt courant sont listées dans l'onglet **Comptes**.
 - **Identité Git** : nom et email, globaux ou propres au dépôt.
 - **Préférences** (Ctrl+,) : taille de toute l'interface de 80 à 200 % (Ctrl+= / Ctrl+- / Ctrl+0), taille du texte du terminal, densité du graphe (compacte, normale, aérée) et liste des raccourcis clavier. Les réglages s'appliquent immédiatement à toutes les fenêtres.
 - **Mises à jour automatiques** : au démarrage, l'application vérifie s'il existe une nouvelle release, propose de l'installer puis redémarre (aussi via le menu Merathon → « Rechercher des mises à jour… »). Les paquets sont signés et la signature est vérifiée avant toute installation (AppImage, `.deb`, `.exe`, `.msi`).
+
+### Pull requests et merge requests
+
+Avec un compte GitHub ou GitLab correspondant à un remote du dépôt, les PR (GitHub) et MR (GitLab) se gèrent sans quitter l'application :
+
+- **Liste** : dans la barre latérale du dépôt, sous les branches distantes (et dans l'onglet **Comptes**). Filtres par état (ouvertes, mergées, fermées, toutes) et par personne (les miennes, à relire par moi, assignées à moi). Clic droit : checkout de la branche, ouverture dans le navigateur.
+- **Création** : clic droit sur une branche → **Créer une pull request GitHub…** (ou **merge request GitLab…**) : branche cible, titre, description, relecteurs, assignés, labels, jalon, brouillon, squash et suppression de la branche source (GitLab), avec push préalable de la branche locale si besoin.
+- **Détail** (clic sur une PR ou sur le badge d'une branche) : description, relecteurs et leur avis, approbations requises (GitLab), statut de chaque job de CI, conversation.
+- **Actions** : commenter ; approuver, demander des changements (GitHub) ou retirer son approbation (GitLab) ; passer de brouillon à prête et inversement ; mettre à jour la branche avec la cible (merge sur GitHub, rebase sur GitLab) ; merger selon les modes autorisés par le dépôt (commit de merge, squash, rebase), après confirmation et seulement si la branche n'a pas bougé entre-temps ; fermer ou rouvrir. Quand le merge est bloqué, la raison est affichée (conflits, CI, approbations, brouillon, droits…).
+- **Fichiers modifiés** : diff de la PR calculé en local avec git, depuis l'ancêtre commun avec la branche cible (un fetch est lancé si des commits manquent). Les commentaires de ligne de la forge s'affichent sous leurs lignes, avec réponse et résolution des fils.
+- **Revue** : survoler une ligne puis **+** pour la commenter, tout de suite ou en attente. **Terminer la revue** publie les commentaires en attente avec un commentaire général et un avis (commentaire, approbation, demande de changements sur GitHub). Sur GitHub, la revue est publiée en une seule fois ; sur GitLab, commentaire par commentaire, ceux qui échouent restant en attente.
+- **Fichiers vus** : chaque fichier se coche « vu » au fil de la relecture (passage automatique au suivant), avec un compteur. Ce suivi est mémorisé localement et repart de zéro au push suivant.
+
+Limites : les PR venant d'un fork ne sont pas récupérées par le fetch du remote (leur diff est alors à consulter dans le navigateur), et la liste est limitée aux 50 PR les plus récentes, les fils de commentaires aux 100 premiers.
 
 ### Raccourcis clavier
 
@@ -91,7 +105,7 @@ Le code de l'application se trouve dans le dossier [`git-client/`](git-client/).
 
 ## Sécurité
 
-- **Tokens** : stockés dans le trousseau du système ; ils ne quittent jamais le backend Rust (les appels aux API GitHub / GitLab sont faits côté Rust, l'interface n'a pas accès aux tokens). Sans trousseau disponible, repli sur un fichier `tokens.json` (droits 600) avec un avertissement.
+- **Tokens** : stockés dans le trousseau du système ; ils ne quittent jamais le backend Rust (les appels aux API GitHub / GitLab, REST comme GraphQL, sont faits côté Rust, l'interface n'a pas accès aux tokens). L'interface ne peut demander que des lectures, créations et modifications : toute requête de suppression (`DELETE`) est refusée côté Rust, et les chemins d'API sont validés pour ne viser que le serveur du compte. Sans trousseau disponible, repli sur un fichier `tokens.json` (droits 600) avec un avertissement.
 - **Envoi des identifiants** : uniquement au serveur du compte et en HTTPS (pas après une redirection vers un autre hôte, pas à un serveur LFS tiers déclaré par un dépôt). Les instances doivent être en HTTPS (HTTP accepté seulement pour `localhost`).
 - **Dépôts non fiables** : libgit2 n'exécute aucune commande définie par un dépôt ; les rares appels à `git` (Git LFS) imposent leurs réglages (pas de hooks, fsmonitor, helpers ou filtres définis par la configuration locale du dépôt).
 - **Interface** : CSP stricte (scripts locaux uniquement, aucun accès réseau depuis le webview), `freezePrototype`, chemins de fichiers validés côté Rust (pas de sortie du dépôt).
@@ -185,21 +199,24 @@ git-client/
 ├── branding/            # Sources du logo et de l'icône (SVG) et signature J6N
 ├── src/                 # Frontend React
 │   ├── components/      # UI : Toolbar, TabBar, Sidebar, StagingPanel, BottomPanel (terminal / journal),
-│   │                    # PreferencesDialog, DiffViewer, ConflictViewer…
+│   │                    # PreferencesDialog, DiffViewer, ConflictViewer, PullRequest* (liste, création,
+│   │                    # revue, fichiers modifiés)…
 │   ├── graph/           # Rendu du graphe de commits
 │   ├── store/           # État global (Zustand) : dépôt affiché, onglets, journal, réglages d'affichage…
 │   ├── ipc/commands.ts  # Appels aux commandes Tauri (et inscription au journal)
-│   ├── lib/             # Actions git, terminaux (xterm.js), commandes du journal, plan de squash…
-│   └── api/             # Clients GitHub / GitLab
+│   ├── lib/             # Actions git, terminaux (xterm.js), commandes du journal, plan de squash,
+│   │                    # position des commentaires de revue, fichiers vus…
+│   └── api/             # Clients GitHub / GitLab (PR / MR, revues, CI) et interface commune
 └── src-tauri/           # Backend Rust
     └── src/
         ├── lib.rs       # Enregistrement des commandes Tauri
         ├── commands.rs  # Commandes exposées au frontend (réseau hors thread UI)
         ├── accounts.rs  # Comptes GitHub / GitLab et stockage des tokens
+        ├── forge.rs     # Appels aux API GitHub / GitLab (REST, GraphQL) avec le token du compte
         ├── oauth.rs     # Connexion OAuth (device flow) et renouvellement des tokens
         ├── terminal.rs  # Terminal intégré (pseudo-terminal, shell de l'utilisateur)
         ├── window.rs    # Gestion multi-fenêtres
-        └── git/         # Opérations Git (git2) : status, diff, patch (hunks), history, merge, rebase,
+        └── git/         # Opérations Git (git2) : status, diff (dont diff de PR), patch (hunks), history, merge, rebase,
                          # interactive (rebase -i), stash, submodule, lfs, remote, auth…
 ```
 

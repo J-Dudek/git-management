@@ -13,9 +13,12 @@ import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
 import { PullRequestDialog, type PullRequestTarget } from "./PullRequestDialog";
-import { branchTree, flattenTree, localOnlyBranches, type BranchNode } from "../lib/branches";
+import { PullRequestList, checkoutPullRequest, useLinkedForge, usePullRequests } from "./PullRequestList";
+import { PullRequestReviewDialog } from "./PullRequestReviewDialog";
+import { branchOnRemote, branchTree, flattenTree, localOnlyBranches, pullRequestsByBranch, type BranchNode } from "../lib/branches";
 import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo } from "../types/git";
+import type { ForgePR } from "../types/forge";
 
 const SUBMODULE_STATES: Record<SubmoduleInfo["state"], { label: string; color: string }> = {
   uninitialized: { label: "non initialisé", color: "text-amber-300" },
@@ -59,6 +62,10 @@ export function Sidebar() {
   const picked = selection.items;
   const clearPicked = () => setSelection((s) => ({ ...s, items: [] }));
   const [pullRequest, setPullRequest] = useState<PullRequestTarget | null>(null);
+  const forge = useLinkedForge();
+  const forgePrs = usePullRequests(forge);
+  /** PR ouverte depuis le badge d'une branche (le groupe des PR peut être replié). */
+  const [badgeReview, setBadgeReview] = useState<number | null>(null);
 
   // Les branches supprimées ou renommées sortent de la sélection.
   useEffect(() => {
@@ -74,6 +81,16 @@ export function Sidebar() {
   const remoteBranches = branches.filter((b) => b.is_remote);
   const localOnly = localOnlyBranches(branches);
   const head = info?.head_branch ?? "HEAD";
+  const prsByBranch = pullRequestsByBranch(forgePrs.openPrs);
+  const prsOf = (b: BranchInfo): ForgePR[] => {
+    const name = forge && branchOnRemote(b, forge.remoteName);
+    return name ? prsByBranch.get(name) ?? [] : [];
+  };
+  const prBadge = (b: BranchInfo) => {
+    const prs = prsOf(b);
+    if (!forge || !prs.length) return null;
+    return <PrBadge prs={prs} gitlab={forge.account.provider === "gitlab"} onOpen={setBadgeReview} />;
+  };
 
   function selectHash(hash: string) {
     const commit = commits.find((c) => c.hash === hash);
@@ -358,7 +375,12 @@ export function Sidebar() {
               onClick={(e) => handleLocalClick(e, b)}
               onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
               onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
-              trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
+              trailing={
+                <>
+                  {prBadge(b)}
+                  {localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
+                </>
+              }
             />
           )}
         />
@@ -385,12 +407,36 @@ export function Sidebar() {
                   onClick={() => selectHash(b.target_hash)}
                   onDoubleClick={() => !busy && runGit(() => checkoutRemoteBranch(path, b.name))}
                   onContextMenu={(e) => openMenu(e, remoteMenu(b))}
+                  trailing={prBadge(b)}
                 />
               )}
             />
           </SubGroup>
         ))}
       </Group>
+
+      {forge && (
+        <Group
+          title={forge.account.provider === "gitlab" ? "Merge requests" : "Pull requests"}
+          count={forgePrs.prs.length}
+          onAdd={forgePrs.reload}
+          addTitle={`Rafraîchir (${forge.projectPath})`}
+          addLabel="↻"
+        >
+          <li><PullRequestList forge={forge} list={forgePrs} indent={24} /></li>
+        </Group>
+      )}
+      {forge && badgeReview !== null && (
+        <PullRequestReviewDialog
+          account={forge.account}
+          projectPath={forge.projectPath}
+          remoteName={forge.remoteName}
+          number={badgeReview}
+          onCheckout={(pr) => checkoutPullRequest(forge.remoteName, pr)}
+          onChanged={forgePrs.reload}
+          onClose={() => setBadgeReview(null)}
+        />
+      )}
 
       <Group title="Tags" count={tags.length} defaultOpen={false}>
         {tags.map((t) => (
@@ -626,6 +672,28 @@ function Row({ icon, label, active, selected, depth = 0, title, trailing, onClic
         {trailing}
       </div>
     </li>
+  );
+}
+
+/** PR / MR ouvertes depuis la branche : clic pour ouvrir le détail de la première. */
+function PrBadge({ prs, gitlab, onOpen }: { prs: ForgePR[]; gitlab: boolean; onOpen: (n: number) => void }) {
+  const sign = gitlab ? "!" : "#";
+  const first = prs[0];
+  const title = prs.map((p) => `${sign}${p.number} ${p.title} → ${p.targetBranch}${p.draft ? " (brouillon)" : ""}`).join("\n");
+  return (
+    <button
+      className={`shrink-0 px-1 text-[9px] font-mono rounded border ${
+        first.draft ? "border-white/20 text-[var(--color-muted)]" : "border-green-500/50 text-green-300"
+      } hover:bg-white/10`}
+      title={`${title}\nClic : voir le détail`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(first.number);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      {gitlab ? "MR" : "PR"} {sign}{first.number}{prs.length > 1 ? ` +${prs.length - 1}` : ""}
+    </button>
   );
 }
 
