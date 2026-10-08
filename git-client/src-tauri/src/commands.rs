@@ -127,6 +127,17 @@ pub fn get_commit_file_diff(path: String, hash: String, file_path: String) -> Re
     with_repo(&path, |r| git::get_commit_file_diff(r, &hash, &file_path))
 }
 
+/// Fichiers modifiés par `head` depuis son ancêtre commun avec `base` (diff d'une pull request).
+#[tauri::command]
+pub fn compare_refs(path: String, base: String, head: String) -> Result<git::RefComparison, GitError> {
+    with_repo(&path, |r| git::compare_refs(r, &base, &head))
+}
+
+#[tauri::command]
+pub fn get_compare_file_diff(path: String, base: String, head: String, file_path: String) -> Result<git::FileDiff, GitError> {
+    with_repo(&path, |r| git::get_compare_file_diff(r, &base, &head, &file_path))
+}
+
 // ---------------------------------------------------------------- Copie de travail
 
 #[tauri::command]
@@ -607,6 +618,23 @@ pub async fn forge_api_send(
         let account = store.get(&account_id)?;
         let token = store.token(&account.id)?;
         crate::forge::request_json(&account, &token, &method, &path, body.as_ref())
+    })
+    .await
+}
+
+/// Requête GraphQL GitHub (opérations absentes de l'API REST, comme le passage brouillon ↔ prête).
+#[tauri::command]
+pub async fn forge_graphql(
+    app: AppHandle,
+    account_id: String,
+    query: String,
+    variables: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let store = account_store(&app)?;
+    blocking_str(move || {
+        let account = store.get(&account_id)?;
+        let token = store.token(&account.id)?;
+        crate::forge::graphql(&account, &token, &query, &variables)
     })
     .await
 }

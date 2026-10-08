@@ -25,7 +25,7 @@ interface AccountsStore {
 }
 
 function emptyData(): AccountData {
-  return { prs: [], issues: [], loading: false, error: null };
+  return { issues: [], loading: false, error: null };
 }
 
 export function defaultBaseUrl(provider: Provider): string {

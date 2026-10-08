@@ -97,3 +97,166 @@ describe("GitHubClient.createPullRequest", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("GitHubClient pull request review", () => {
+  const base = "/repos/o/r";
+  const pull = {
+    number: 7, title: "feat: x", state: "open", merged_at: null, user: { login: "alice" }, html_url: "u", created_at: "d",
+    labels: [], head: { ref: "feat/x", sha: "abc" }, base: { ref: "main" }, body: "desc",
+    requested_reviewers: [{ login: "carol" }], assignees: [{ login: "alice" }], mergeable: true, mergeable_state: "clean",
+  };
+  const reviews = [
+    { id: 1, user: { login: "bob" }, state: "CHANGES_REQUESTED", body: "fix", submitted_at: "2024-01-02" },
+    { id: 2, user: { login: "bob" }, state: "APPROVED", body: "", submitted_at: "2024-01-03" },
+    { id: 3, user: { login: "bob" }, state: "COMMENTED", body: "nit", submitted_at: "2024-01-04" },
+    { id: 4, user: { login: "dave" }, state: "CHANGES_REQUESTED", body: "no", submitted_at: "2024-01-05" },
+  ];
+  function detailsClient(overrides: Record<string, unknown> = {}) {
+    const responses: Record<string, unknown> = {
+      [`${base}/pulls/7`]: pull,
+      [base]: { allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true, permissions: { push: true } },
+      [`${base}/pulls/7/reviews?per_page=100`]: reviews,
+      [`${base}/commits/abc/check-runs?per_page=100`]: { check_runs: [
+        { name: "test", status: "completed", conclusion: "success", html_url: "t" },
+        { name: "lint", status: "in_progress", conclusion: null, html_url: null },
+      ] },
+      [`${base}/commits/abc/status`]: { statuses: [{ context: "ci/legacy", state: "error", target_url: null }] },
+      ...overrides,
+    };
+    return new GitHubClient(vi.fn((path: string) => Promise.resolve(responses[path])) as never);
+  }
+
+  it("keeps the latest verdict per reviewer, ignoring plain comments", async () => {
+    const d = await detailsClient().getPullRequestDetails("o", "r", 7, "bob");
+    expect(d.approvedBy).toEqual(["bob"]);
+    expect(d.changesRequestedBy).toEqual(["dave"]);
+    expect(d.approvedByMe).toBe(true);
+    expect(d.pr).toMatchObject({ reviewers: ["carol"], assignees: ["alice"] });
+  });
+
+  it("maps checks, statuses and allowed merge methods", async () => {
+    const d = await detailsClient().getPullRequestDetails("o", "r", 7, "me");
+    expect(d.checks.map((c) => [c.name, c.status])).toEqual([["test", "success"], ["lint", "pending"], ["ci/legacy", "failure"]]);
+    expect(d.mergeMethods).toEqual(["squash", "rebase"]);
+    expect(d.defaultMergeMethod).toBe("squash");
+    expect(d).toMatchObject({ mergeable: true, mergeStatus: "Prête à merger", headSha: "abc", description: "desc" });
+  });
+
+  it("is not mergeable while GitHub computes mergeability or when behind", async () => {
+    const computing = await detailsClient({ [`${base}/pulls/7`]: { ...pull, mergeable: null, mergeable_state: "unknown" } })
+      .getPullRequestDetails("o", "r", 7, "me");
+    expect(computing.mergeable).toBe(false);
+    const behind = await detailsClient({ [`${base}/pulls/7`]: { ...pull, mergeable_state: "behind" } })
+      .getPullRequestDetails("o", "r", 7, "me");
+    expect(behind).toMatchObject({ mergeable: false, canUpdateBranch: true });
+  });
+
+  it("tolerates a token without access to checks", async () => {
+    const responses: Record<string, unknown> = { [`${base}/pulls/7`]: pull, [base]: {}, [`${base}/pulls/7/reviews?per_page=100`]: [] };
+    const get = vi.fn((path: string) => path.includes("/commits/") ? Promise.reject(new Error("403")) : Promise.resolve(responses[path]));
+    const d = await new GitHubClient(get as never).getPullRequestDetails("o", "r", 7, "me");
+    expect(d.checks).toEqual([]);
+    expect(d.mergeMethods).toEqual(["merge", "squash", "rebase"]);
+  });
+
+  it("merges conversation comments and review bodies by date", async () => {
+    const responses: Record<string, unknown> = {
+      [`${base}/issues/7/comments?per_page=100`]: [{ id: 9, user: { login: "eve" }, body: "hello", created_at: "2024-01-01" }],
+      [`${base}/pulls/7/reviews?per_page=100`]: reviews,
+    };
+    const gh = new GitHubClient(vi.fn((path: string) => Promise.resolve(responses[path])) as never);
+    const comments = await gh.getComments("o", "r", 7);
+    expect(comments.map((c) => [c.id, c.review])).toEqual([
+      ["c9", undefined], ["r1", "changes_requested"], ["r2", "approved"], ["r3", undefined], ["r4", "changes_requested"],
+    ]);
+  });
+
+  it("filters merged and closed PRs from the closed list", async () => {
+    const closed = [{ ...pull, number: 1, state: "closed", merged_at: "x" }, { ...pull, number: 2, state: "closed", merged_at: null }];
+    const get = vi.fn().mockResolvedValue(closed);
+    const gh = new GitHubClient(get as never);
+    expect((await gh.getPullRequests("o", "r", "merged")).map((p) => p.number)).toEqual([1]);
+    expect((await gh.getPullRequests("o", "r", "closed")).map((p) => p.number)).toEqual([2]);
+    expect(get).toHaveBeenCalledWith(`${base}/pulls?state=closed&per_page=50`);
+  });
+
+  it("sends review, merge, state and branch update requests", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    const gh = new GitHubClient(vi.fn() as never, send as never);
+    await gh.addComment("o", "r", 7, "hi");
+    await gh.review("o", "r", 7, "request_changes", "please fix");
+    await gh.merge("o", "r", 7, { method: "squash", sha: "abc", removeSourceBranch: true });
+    await gh.setState("o", "r", 7, "closed");
+    await gh.updateBranch("o", "r", 7, "abc");
+    expect(send.mock.calls).toEqual([
+      ["POST", `${base}/issues/7/comments`, { body: "hi" }],
+      ["POST", `${base}/pulls/7/reviews`, { event: "REQUEST_CHANGES", body: "please fix" }],
+      ["PUT", `${base}/pulls/7/merge`, { merge_method: "squash", sha: "abc" }],
+      ["PATCH", `${base}/pulls/7`, { state: "closed" }],
+      ["PUT", `${base}/pulls/7/update-branch`, { expected_head_sha: "abc" }],
+    ]);
+    await expect(gh.review("o", "r", 7, "unapprove", "")).rejects.toThrow();
+  });
+});
+
+describe("GitHubClient.setDraft", () => {
+  it("uses the GraphQL mutation matching the requested state", async () => {
+    const get = vi.fn().mockResolvedValue({ number: 7, node_id: "PR_kw" });
+    const graphql = vi.fn().mockResolvedValue({});
+    const gh = new GitHubClient(get as never, vi.fn() as never, graphql as never);
+    await gh.setDraft("o", "r", 7, false);
+    await gh.setDraft("o", "r", 7, true);
+    expect(get).toHaveBeenCalledWith("/repos/o/r/pulls/7");
+    expect(graphql.mock.calls[0][0]).toContain("markPullRequestReadyForReview");
+    expect(graphql.mock.calls[1][0]).toContain("convertPullRequestToDraft");
+    expect(graphql.mock.calls[0][1]).toEqual({ id: "PR_kw" });
+  });
+});
+
+describe("GitHubClient inline review", () => {
+  const ctx = { headSha: "abc", diffRefs: null };
+  const added = { path: "src/a.ts", oldPath: "src/a.ts", side: "new" as const, line: 4, oldLine: null, newLine: 4 };
+  const removed = { path: "src/a.ts", oldPath: "src/a.ts", side: "old" as const, line: 3, oldLine: 3, newLine: null };
+
+  it("maps GraphQL review threads", async () => {
+    const graphql = vi.fn().mockResolvedValue({ repository: { pullRequest: { reviewThreads: { nodes: [{
+      id: "T_1", isResolved: true, path: "src/a.ts", line: null, diffSide: "LEFT",
+      comments: { nodes: [{ databaseId: 11, body: "why?", createdAt: "d", author: { login: "bob" } }] },
+    }] } } } });
+    const gh = new GitHubClient(vi.fn() as never, vi.fn() as never, graphql as never);
+    const [thread] = await gh.getReviewThreads("o", "r", 7);
+    expect(graphql.mock.calls[0][1]).toEqual({ owner: "o", name: "r", number: 7 });
+    expect(thread).toEqual({
+      id: "T_1", replyTo: "11", path: "src/a.ts", side: "old", line: null, resolved: true,
+      comments: [{ id: "11", author: "bob", body: "why?", createdAt: "d" }],
+    });
+  });
+
+  it("comments a line on the head commit, replies and resolves", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    const graphql = vi.fn().mockResolvedValue({});
+    const gh = new GitHubClient(vi.fn() as never, send as never, graphql as never);
+    await gh.addLineComment("o", "r", 7, ctx, removed, "gone?");
+    await gh.replyToThread("o", "r", 7, "11", "yes");
+    await gh.resolveThread("T_1", true);
+    expect(send.mock.calls).toEqual([
+      ["POST", "/repos/o/r/pulls/7/comments", { body: "gone?", commit_id: "abc", path: "src/a.ts", line: 3, side: "LEFT" }],
+      ["POST", "/repos/o/r/pulls/7/comments/11/replies", { body: "yes" }],
+    ]);
+    expect(graphql.mock.calls[0][0]).toContain("resolveReviewThread");
+    expect(graphql.mock.calls[0][1]).toEqual({ id: "T_1" });
+  });
+
+  it("submits the review and its line comments in one request", async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const gh = new GitHubClient(vi.fn() as never, send as never);
+    const result = await gh.submitReview("o", "r", 7, ctx, {
+      verdict: "request_changes", body: "see comments", comments: [{ id: "d1", position: added, body: "rename" }],
+    });
+    expect(send).toHaveBeenCalledWith("POST", "/repos/o/r/pulls/7/reviews", {
+      commit_id: "abc", event: "REQUEST_CHANGES", body: "see comments",
+      comments: [{ body: "rename", path: "src/a.ts", line: 4, side: "RIGHT" }],
+    });
+    expect(result).toEqual({ publishedIds: ["d1"], errors: [] });
+  });
+});

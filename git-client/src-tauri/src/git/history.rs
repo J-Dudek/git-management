@@ -165,7 +165,30 @@ pub fn get_commit_details(repo: &Repository, hash: &str) -> Result<CommitDetails
     let tree = commit.tree()?;
     let parent_tree = commit.parent(0).ok().map(|p| p.tree()).transpose()?;
 
-    let mut diff = repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?;
+    let files = tree_diff_files(repo, parent_tree.as_ref(), &tree)?;
+
+    let hash = commit.id().to_string();
+    let author = commit.author();
+    let committer = commit.committer();
+    Ok(CommitDetails {
+        short_hash: hash[..7].to_string(),
+        summary: commit.summary().ok().flatten().unwrap_or("").to_string(),
+        message: commit.message().unwrap_or("").trim_end().to_string(),
+        author: author.name().unwrap_or("").to_string(),
+        email: author.email().unwrap_or("").to_string(),
+        author_time: author.when().seconds(),
+        committer: committer.name().unwrap_or("").to_string(),
+        committer_email: committer.email().unwrap_or("").to_string(),
+        commit_time: commit.time().seconds(),
+        parents: commit.parent_ids().map(|id| id.to_string()).collect(),
+        files,
+        hash,
+    })
+}
+
+/// Fichiers modifiés entre deux arbres, avec détection des renommages et nombre de lignes ajoutées / supprimées.
+fn tree_diff_files(repo: &Repository, old: Option<&git2::Tree>, new: &git2::Tree) -> Result<Vec<CommitFile>, GitError> {
+    let mut diff = repo.diff_tree_to_tree(old, Some(new), None)?;
     diff.find_similar(Some(DiffFindOptions::new().renames(true)))?;
 
     let mut files = Vec::new();
@@ -194,23 +217,28 @@ pub fn get_commit_details(repo: &Repository, hash: &str) -> Result<CommitDetails
         });
     }
 
-    let hash = commit.id().to_string();
-    let author = commit.author();
-    let committer = commit.committer();
-    Ok(CommitDetails {
-        short_hash: hash[..7].to_string(),
-        summary: commit.summary().ok().flatten().unwrap_or("").to_string(),
-        message: commit.message().unwrap_or("").trim_end().to_string(),
-        author: author.name().unwrap_or("").to_string(),
-        email: author.email().unwrap_or("").to_string(),
-        author_time: author.when().seconds(),
-        committer: committer.name().unwrap_or("").to_string(),
-        committer_email: committer.email().unwrap_or("").to_string(),
-        commit_time: commit.time().seconds(),
-        parents: commit.parent_ids().map(|id| id.to_string()).collect(),
-        files,
-        hash,
-    })
+    Ok(files)
+}
+
+/// Changements d'une branche par rapport à une autre, comme dans une pull request :
+/// diff entre leur ancêtre commun et la tête, donc sans les commits arrivés depuis sur la base.
+#[derive(Debug, Serialize, Clone)]
+pub struct RefComparison {
+    pub merge_base: String,
+    pub head: String,
+    /// Commits de la tête absents de la base.
+    pub commits: usize,
+    pub files: Vec<CommitFile>,
+}
+
+pub fn compare_refs(repo: &Repository, base: &str, head: &str) -> Result<RefComparison, GitError> {
+    let base_commit = repo.revparse_single(base)?.peel_to_commit()?;
+    let head_commit = repo.revparse_single(head)?.peel_to_commit()?;
+    let merge_base = repo.merge_base(base_commit.id(), head_commit.id())?;
+    let base_tree = repo.find_commit(merge_base)?.tree()?;
+    let files = tree_diff_files(repo, Some(&base_tree), &head_commit.tree()?)?;
+    let (commits, _) = repo.graph_ahead_behind(head_commit.id(), merge_base)?;
+    Ok(RefComparison { merge_base: merge_base.to_string(), head: head_commit.id().to_string(), commits, files })
 }
 
 fn collect_refs(repo: &Repository) -> HashMap<Oid, Vec<RefLabel>> {
@@ -385,5 +413,27 @@ mod tests {
         assert_eq!(details.files[0].path, "a.txt");
         assert_eq!(details.files[0].status, ChangeKind::Added);
         assert_eq!(details.files[0].additions, 2);
+    }
+
+    #[test]
+    fn compare_refs_ignores_commits_added_to_the_base() {
+        let (dir, repo) = make_repo_with_commits();
+        let base = repo.head().unwrap().shorthand().unwrap().to_string();
+        let root = repo.head().unwrap().peel_to_commit().unwrap();
+        repo.branch("feature", &root, false).unwrap();
+        commit_file(&repo, &dir, "base.txt", "on base\n", "base work");
+
+        repo.set_head("refs/heads/feature").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force().remove_untracked(true))).unwrap();
+        let head = commit_file(&repo, &dir, "a.txt", "one\n", "feature work");
+
+        let cmp = compare_refs(&repo, &base, "feature").unwrap();
+        assert_eq!(cmp.merge_base, root.id().to_string());
+        assert_eq!(cmp.head, head.to_string());
+        assert_eq!(cmp.commits, 1);
+        assert_eq!(cmp.files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), vec!["a.txt"]);
+
+        let diff = crate::git::get_compare_file_diff(&repo, &cmp.merge_base, &cmp.head, "a.txt").unwrap();
+        assert_eq!(diff.hunks[0].lines[0].content, "one");
     }
 }

@@ -74,6 +74,16 @@ pub fn get_commit_file_diff(repo: &Repository, hash: &str, file_path: &str) -> R
     collect_file_diff(&diff, file_path)
 }
 
+/// Diff d'un fichier entre deux commits (base → tête d'une comparaison de branches).
+pub fn get_compare_file_diff(repo: &Repository, base: &str, head: &str, file_path: &str) -> Result<FileDiff, GitError> {
+    let base_tree = repo.revparse_single(base)?.peel_to_tree()?;
+    let head_tree = repo.revparse_single(head)?.peel_to_tree()?;
+    let mut opts = DiffOptions::new();
+    opts.pathspec(file_path);
+    let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut opts))?;
+    collect_file_diff(&diff, file_path)
+}
+
 fn collect_file_diff(diff: &Diff, file_path: &str) -> Result<FileDiff, GitError> {
     let hunks: RefCell<Vec<DiffHunk>> = RefCell::new(Vec::new());
     let is_binary: RefCell<bool> = RefCell::new(false);

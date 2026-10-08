@@ -106,6 +106,14 @@ export interface CommitDetails {
   files: CommitFile[];
 }
 
+/** Comparaison de deux refs : fichiers modifiés depuis leur ancêtre commun. */
+export interface RefComparison {
+  merge_base: string;
+  head: string;
+  commits: number;
+  files: CommitFile[];
+}
+
 /** Résultat d'un merge, rebase, cherry-pick, revert ou pull. */
 export interface MergeResult {
   conflicted_files: string[];

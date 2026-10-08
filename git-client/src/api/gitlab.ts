@@ -1,4 +1,9 @@
-import type { CreatedPullRequest, ForgeIssue, ForgePR, ForgeRepo, NewPullRequest, PullRequestOptions } from "../types/forge";
+import type {
+  CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeMethod, MergeOptions,
+  NewPullRequest, PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
+  ReviewThread, SubmittedReview,
+} from "../types/forge";
+import { errorMessage } from "../lib/actions";
 import type { ApiGet, ApiSend } from "./github";
 
 // Champs lus dans les réponses de l'API GitLab (le reste est ignoré).
@@ -11,6 +16,7 @@ interface RawUser {
 
 interface RawProjectSettings {
   default_branch: string;
+  merge_method?: "merge" | "rebase_merge" | "ff";
   squash_option?: "never" | "always" | "default_on" | "default_off";
   remove_source_branch_after_merge?: boolean;
 }
@@ -40,7 +46,76 @@ interface RawMergeRequest extends Omit<RawIssue, "state"> {
   draft?: boolean;
   source_branch?: string;
   target_branch?: string;
+  reviewers?: RawUser[];
+  assignees?: RawUser[];
 }
+
+interface RawMergeRequestDetails extends RawMergeRequest {
+  description: string | null;
+  sha: string;
+  /** GitLab ≥ 15.6 ; avant, seul `merge_status` existe. */
+  detailed_merge_status?: string;
+  merge_status?: string;
+  squash?: boolean;
+  force_remove_source_branch?: boolean | null;
+  head_pipeline?: { id: number; status: string; web_url: string } | null;
+  diff_refs?: { base_sha: string; start_sha: string; head_sha: string } | null;
+  user?: { can_merge?: boolean };
+}
+
+interface RawApprovals {
+  approved_by?: { user: RawUser }[];
+  approvals_left?: number;
+  user_has_approved?: boolean;
+}
+
+interface RawNote {
+  id: number;
+  author: RawUser | null;
+  body: string;
+  created_at: string;
+  system: boolean;
+  /** "DiffNote" pour un commentaire de ligne. */
+  type?: string | null;
+  position?: { position_type: string; new_path: string; old_path: string; new_line: number | null; old_line: number | null } | null;
+  resolvable?: boolean;
+  resolved?: boolean;
+}
+
+interface RawDiscussion {
+  id: string;
+  notes: RawNote[];
+}
+
+interface RawJob {
+  name: string;
+  status: string;
+  web_url: string;
+  allow_failure?: boolean;
+}
+
+/** Explication de `detailed_merge_status` (https://docs.gitlab.com/api/merge_requests/#merge-status). */
+const MERGE_STATUSES: Record<string, string> = {
+  mergeable: "Prête à merger",
+  can_be_merged: "Prête à merger",
+  checking: "Vérification de la mergeabilité en cours…",
+  unchecked: "Vérification de la mergeabilité en cours…",
+  preparing: "Vérification de la mergeabilité en cours…",
+  approvals_syncing: "Synchronisation des approbations…",
+  ci_must_pass: "Le pipeline doit réussir avant le merge",
+  ci_still_running: "Pipeline en cours",
+  discussions_not_resolved: "Des discussions ne sont pas résolues",
+  draft_status: "Brouillon : à passer en « prête » avant le merge",
+  not_approved: "Approbations requises manquantes",
+  requested_changes: "Des changements ont été demandés",
+  conflict: "Conflits avec la branche cible",
+  cannot_be_merged: "Conflits avec la branche cible",
+  need_rebase: "Rebase nécessaire sur la branche cible",
+  blocked_status: "Bloquée par une autre merge request",
+  not_open: "Merge request non ouverte",
+};
+
+const API_STATES: Record<PullRequestState, string> = { open: "opened", merged: "merged", closed: "closed", all: "all" };
 
 const MR_STATES: Record<RawMergeRequest["state"], ForgePR["state"]> = {
   opened: "open",
@@ -79,12 +154,189 @@ export class GitLabClient {
     }));
   }
 
-  async getMergeRequests(project: string, state: "opened" | "closed" | "merged" | "all" = "opened"): Promise<ForgePR[]> {
+  async getMergeRequests(project: string, state: PullRequestState = "open"): Promise<ForgePR[]> {
     const id = this.encodeProject(project);
     const data = await this.get<RawMergeRequest[]>(
-      `/projects/${id}/merge_requests?state=${state}&per_page=50`
+      `/projects/${id}/merge_requests?state=${API_STATES[state]}&per_page=50`
     );
     return data.map(parseMR);
+  }
+
+  /** Les jobs du pipeline sont facultatifs : à défaut, le statut global du pipeline est affiché. */
+  async getMergeRequestDetails(project: string, iid: number, me: string): Promise<PullRequestDetails> {
+    const id = this.encodeProject(project);
+    const mrPath = `/projects/${id}/merge_requests/${iid}`;
+    const [raw, settings, approvals] = await Promise.all([
+      this.get<RawMergeRequestDetails>(mrPath),
+      this.get<RawProjectSettings>(`/projects/${id}`),
+      this.get<RawApprovals>(`${mrPath}/approvals`).catch((): RawApprovals => ({})),
+    ]);
+    const pipeline = raw.head_pipeline;
+    let checks: ForgeCheck[] = [];
+    if (pipeline) {
+      checks = await this.get<RawJob[]>(`/projects/${id}/pipelines/${pipeline.id}/jobs?per_page=100`)
+        .then((jobs) => jobs.map(parseJob))
+        .catch(() => [parseJob({ name: "Pipeline", status: pipeline.status, web_url: pipeline.web_url })]);
+    }
+
+    const pr = parseMR(raw);
+    const status = raw.detailed_merge_status ?? raw.merge_status ?? "unchecked";
+    const canMerge = raw.user?.can_merge !== false;
+    let mergeStatus: string;
+    if (pr.state !== "open") mergeStatus = pr.state === "merged" ? "Déjà mergée" : "Fermée";
+    else if (!canMerge) mergeStatus = "Droits insuffisants pour merger";
+    else mergeStatus = MERGE_STATUSES[status] ?? `Merge impossible (${status})`;
+
+    const squashOption = settings.squash_option ?? "default_off";
+    let methods: MergeMethod[] = ["merge", "squash"];
+    if (squashOption === "never") methods = ["merge"];
+    if (squashOption === "always") methods = ["squash"];
+    const squashByDefault = raw.squash ?? (squashOption === "default_on" || squashOption === "always");
+    const approvedBy = (approvals.approved_by ?? []).map((a) => a.user.username);
+
+    return {
+      pr,
+      description: raw.description ?? "",
+      headSha: raw.sha,
+      approvedBy,
+      changesRequestedBy: [],
+      approvedByMe: approvals.user_has_approved ?? approvedBy.includes(me),
+      approvalsLeft: approvals.approvals_left ?? null,
+      checks,
+      mergeable: pr.state === "open" && canMerge && (status === "mergeable" || status === "can_be_merged"),
+      mergeStatus,
+      canUpdateBranch: pr.state === "open" && status === "need_rebase",
+      mergeMethods: methods,
+      defaultMergeMethod: squashByDefault && methods.includes("squash") ? "squash" : methods[0],
+      removeSourceBranchDefault: raw.force_remove_source_branch ?? settings.remove_source_branch_after_merge ?? false,
+      diffRefs: raw.diff_refs
+        ? { baseSha: raw.diff_refs.base_sha, startSha: raw.diff_refs.start_sha, headSha: raw.diff_refs.head_sha }
+        : null,
+    };
+  }
+
+  /** Notes de discussion générales, sans les notes système (« a ajouté 1 commit »…) ni les commentaires de ligne. */
+  async getComments(project: string, iid: number): Promise<ForgeComment[]> {
+    const id = this.encodeProject(project);
+    const notes = await this.get<RawNote[]>(
+      `/projects/${id}/merge_requests/${iid}/notes?sort=asc&order_by=created_at&per_page=100`
+    );
+    return notes
+      .filter((n) => !n.system && n.type !== "DiffNote")
+      .map((n) => ({ id: String(n.id), author: n.author?.username ?? "", body: n.body, createdAt: n.created_at }));
+  }
+
+  async addComment(project: string, iid: number, body: string): Promise<void> {
+    await this.send("POST", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/notes`, { body });
+  }
+
+  /** L'API REST ne permet que d'approuver ou de retirer son approbation ; un commentaire accompagne l'avis s'il y en a un. */
+  async review(project: string, iid: number, event: ReviewEvent, body: string): Promise<void> {
+    if (event === "request_changes") throw new Error("La demande de changements n'est pas disponible dans l'API GitLab");
+    const path = `/projects/${this.encodeProject(project)}/merge_requests/${iid}`;
+    await this.send("POST", `${path}/${event}`, null);
+    if (body.trim()) await this.addComment(project, iid, body);
+  }
+
+  async merge(project: string, iid: number, options: MergeOptions): Promise<void> {
+    await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/merge`, {
+      sha: options.sha,
+      squash: options.method === "squash",
+      should_remove_source_branch: options.removeSourceBranch,
+    });
+  }
+
+  async setState(project: string, iid: number, state: "open" | "closed"): Promise<void> {
+    await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}`, {
+      state_event: state === "open" ? "reopen" : "close",
+    });
+  }
+
+  async getReviewThreads(project: string, iid: number): Promise<ReviewThread[]> {
+    const discussions = await this.get<RawDiscussion[]>(
+      `/projects/${this.encodeProject(project)}/merge_requests/${iid}/discussions?per_page=100`
+    );
+    return discussions.flatMap((d): ReviewThread[] => {
+      const first = d.notes[0];
+      const pos = first?.position;
+      if (!pos || pos.position_type !== "text") return [];
+      const side = pos.new_line != null ? "new" : "old";
+      return [{
+        id: d.id,
+        replyTo: d.id,
+        path: pos.new_path,
+        side,
+        line: side === "new" ? pos.new_line : pos.old_line,
+        resolved: first.resolvable ? !!first.resolved : null,
+        comments: d.notes.map((n) => ({ id: String(n.id), author: n.author?.username ?? "", body: n.body, createdAt: n.created_at })),
+      }];
+    });
+  }
+
+  /** Les trois commits de `diff_refs` situent la ligne dans la version du diff commentée. */
+  async addLineComment(project: string, iid: number, ctx: ReviewContext, position: LinePosition, body: string): Promise<void> {
+    const refs = ctx.diffRefs;
+    if (!refs) throw new Error("Références du diff indisponibles : recharge la merge request");
+    await this.send("POST", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/discussions`, {
+      body,
+      position: {
+        position_type: "text",
+        base_sha: refs.baseSha,
+        start_sha: refs.startSha,
+        head_sha: refs.headSha,
+        old_path: position.oldPath,
+        new_path: position.path,
+        // Ligne ajoutée : new_line seul ; supprimée : old_line seul ; inchangée : les deux.
+        ...(position.newLine != null && { new_line: position.newLine }),
+        ...(position.oldLine != null && { old_line: position.oldLine }),
+      },
+    });
+  }
+
+  async replyToThread(project: string, iid: number, discussionId: string, body: string): Promise<void> {
+    await this.send("POST", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/discussions/${encodeURIComponent(discussionId)}/notes`, { body });
+  }
+
+  async resolveThread(project: string, iid: number, discussionId: string, resolved: boolean): Promise<void> {
+    await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/discussions/${encodeURIComponent(discussionId)}`, { resolved });
+  }
+
+  /**
+   * GitLab n'a pas d'équivalent REST d'une revue GitHub : les commentaires sont publiés un par un, puis le commentaire
+   * général et l'approbation. Un échec n'interrompt pas les suivants ; les brouillons non publiés sont conservés.
+   */
+  async submitReview(project: string, iid: number, ctx: ReviewContext, review: ReviewSubmission): Promise<SubmittedReview> {
+    if (review.verdict === "request_changes") throw new Error("La demande de changements n'est pas disponible dans l'API GitLab");
+    const publishedIds: string[] = [];
+    const errors: string[] = [];
+    for (const draft of review.comments) {
+      try {
+        await this.addLineComment(project, iid, ctx, draft.position, draft.body);
+        publishedIds.push(draft.id);
+      } catch (e) {
+        errors.push(`${draft.position.path}:${draft.position.line} : ${errorMessage(e)}`);
+      }
+    }
+    if (review.body.trim()) {
+      await this.addComment(project, iid, review.body).catch((e) => errors.push(`commentaire : ${errorMessage(e)}`));
+    }
+    if (review.verdict === "approve") {
+      await this.send("POST", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/approve`, null)
+        .catch((e) => errors.push(`approbation : ${errorMessage(e)}`));
+    }
+    return { publishedIds, errors };
+  }
+
+  /** Un brouillon GitLab est une MR dont le titre commence par « Draft: ». */
+  async setDraft(project: string, iid: number, draft: boolean): Promise<void> {
+    const path = `/projects/${this.encodeProject(project)}/merge_requests/${iid}`;
+    const raw = await this.get<RawMergeRequest>(path);
+    await this.send("PUT", path, { title: draftTitle(raw.title, draft) });
+  }
+
+  /** Lance un rebase de la branche source sur la cible, côté GitLab (asynchrone). */
+  async rebase(project: string, iid: number): Promise<void> {
+    await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/rebase`, null);
   }
 
   async getIssues(project: string, state: "opened" | "closed" | "all" = "opened"): Promise<ForgeIssue[]> {
@@ -121,7 +373,7 @@ export class GitLabClient {
     const raw = await this.send<RawMergeRequest>("POST", `/projects/${id}/merge_requests`, {
       source_branch: input.sourceBranch,
       target_branch: input.targetBranch,
-      title: input.draft && !/^(draft:|\[draft\]|\(draft\))/i.test(input.title) ? `Draft: ${input.title}` : input.title,
+      title: input.draft ? draftTitle(input.title, true) : input.title,
       description: input.description,
       assignee_ids: input.assignees.map((u) => u.id),
       reviewer_ids: input.reviewers.map((u) => u.id),
@@ -132,6 +384,14 @@ export class GitLabClient {
     });
     return { pr: parseMR(raw), warnings: [] };
   }
+}
+
+const DRAFT_PREFIX = /^\s*(draft:|\[draft\]|\(draft\)|draft\s+-|wip:|\[wip\])\s*/i;
+
+/** Ajoute ou retire le préfixe de brouillon reconnu par GitLab. */
+export function draftTitle(title: string, draft: boolean): string {
+  const bare = title.replace(DRAFT_PREFIX, "");
+  return draft ? `Draft: ${bare}` : bare;
 }
 
 function parseMR(raw: RawMergeRequest): ForgePR {
@@ -146,7 +406,18 @@ function parseMR(raw: RawMergeRequest): ForgePR {
     labels: raw.labels ?? [],
     sourceBranch: raw.source_branch ?? "",
     targetBranch: raw.target_branch ?? "",
+    reviewers: (raw.reviewers ?? []).map((u) => u.username),
+    assignees: (raw.assignees ?? []).map((u) => u.username),
   };
+}
+
+function parseJob(job: RawJob): ForgeCheck {
+  let status: ForgeCheck["status"];
+  if (job.status === "success") status = "success";
+  else if (job.status === "failed") status = job.allow_failure ? "skipped" : "failure";
+  else if (["canceled", "skipped", "manual"].includes(job.status)) status = "skipped";
+  else status = "pending";
+  return { name: job.name, status, url: job.web_url };
 }
 
 function parseIssue(raw: RawIssue): ForgeIssue {

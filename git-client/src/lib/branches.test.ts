@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { branchTree, flattenTree, localOnlyBranches, pullRequestTitle } from "./branches";
+import { branchOnRemote, branchTree, flattenTree, localOnlyBranches, pullRequestsByBranch, pullRequestTitle } from "./branches";
 import type { BranchInfo } from "../types/git";
 
 const branch = (name: string, extra: Partial<BranchInfo> = {}): BranchInfo => ({
@@ -37,5 +37,31 @@ describe("pullRequestTitle", () => {
     expect(pullRequestTitle("feat/login-page")).toBe("feat: login page");
     expect(pullRequestTitle("fix/ui/menu_overflow")).toBe("fix: menu overflow");
     expect(pullRequestTitle("hotfix")).toBe("hotfix");
+  });
+});
+
+describe("branchOnRemote", () => {
+  it("uses the tracked branch on the forge remote", () => {
+    expect(branchOnRemote(branch("local-name", { upstream: "origin/feat/x" }), "origin")).toBe("feat/x");
+    expect(branchOnRemote(branch("feat/x", { upstream: "fork/feat/x" }), "origin")).toBeNull();
+  });
+
+  it("falls back to the local name without upstream", () => {
+    expect(branchOnRemote(branch("feat/y"), "origin")).toBe("feat/y");
+  });
+
+  it("strips the remote prefix of remote branches", () => {
+    expect(branchOnRemote(branch("origin/feat/z", { is_remote: true }), "origin")).toBe("feat/z");
+    expect(branchOnRemote(branch("upstream/feat/z", { is_remote: true }), "origin")).toBeNull();
+  });
+});
+
+describe("pullRequestsByBranch", () => {
+  it("groups pull requests by source branch", () => {
+    const map = pullRequestsByBranch([
+      { number: 1, sourceBranch: "a" }, { number: 2, sourceBranch: "b" }, { number: 3, sourceBranch: "a" },
+    ]);
+    expect(map.get("a")?.map((p) => p.number)).toEqual([1, 3]);
+    expect(map.get("b")?.map((p) => p.number)).toEqual([2]);
   });
 });

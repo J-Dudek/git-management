@@ -15,6 +15,16 @@ pub fn api_base(provider: Provider, base_url: &str) -> String {
     }
 }
 
+/// Point d'entrée GraphQL de GitHub : hors de `/api/v3` sur GitHub Enterprise, d'où une route à part.
+pub fn graphql_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if url_host(base).as_deref() == Some("github.com") {
+        "https://api.github.com/graphql".into()
+    } else {
+        format!("{base}/api/graphql")
+    }
+}
+
 /// Chemin d'API relatif (avec éventuelle query string), sans possibilité de viser un autre hôte.
 pub fn validate_api_path(path: &str) -> Result<(), String> {
     let refused = || format!("Chemin d'API refusé : {path}");
@@ -89,9 +99,26 @@ pub fn request_json(account: &Account, token: &str, method: &str, path: &str, bo
     validate_method(method)?;
     validate_api_path(path)?;
     let url = format!("{}{}", api_base(account.provider, &account.base_url), path);
-    let host = url_host(&url).unwrap_or_default();
+    send_json(account, token, method, &url, body)
+}
+
+/// Requête GraphQL GitHub. Les erreurs GraphQL arrivent avec un statut 200 : elles sont converties en erreur.
+pub fn graphql(account: &Account, token: &str, query: &str, variables: &Value) -> Result<Value, String> {
+    if account.provider != Provider::Github {
+        return Err("GraphQL n'est utilisé que pour GitHub".into());
+    }
+    let body = serde_json::json!({ "query": query, "variables": variables });
+    let response = send_json(account, token, "POST", &graphql_url(&account.base_url), Some(&body))?;
+    if let Some(message) = response.get("errors").filter(|e| e.as_array().is_some_and(|a| !a.is_empty())).and_then(|_| api_error_message(&response)) {
+        return Err(format!("API GitHub : {message}"));
+    }
+    Ok(response.get("data").cloned().unwrap_or(Value::Null))
+}
+
+fn send_json(account: &Account, token: &str, method: &str, url: &str, body: Option<&Value>) -> Result<Value, String> {
+    let host = url_host(url).unwrap_or_default();
     let mut request = crate::http::agent()
-        .request(method, &url)
+        .request(method, url)
         .timeout(Duration::from_secs(30))
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", "Merathon");
@@ -122,6 +149,12 @@ mod tests {
         assert_eq!(api_base(Provider::Github, "https://github.com"), "https://api.github.com");
         assert_eq!(api_base(Provider::Github, "https://ghe.corp.io/"), "https://ghe.corp.io/api/v3");
         assert_eq!(api_base(Provider::Gitlab, "https://gitlab.com"), "https://gitlab.com/api/v4");
+    }
+
+    #[test]
+    fn graphql_endpoint_per_instance() {
+        assert_eq!(graphql_url("https://github.com"), "https://api.github.com/graphql");
+        assert_eq!(graphql_url("https://ghe.corp.io/"), "https://ghe.corp.io/api/graphql");
     }
 
     #[test]

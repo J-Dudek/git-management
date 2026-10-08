@@ -48,3 +48,22 @@ export function pullRequestTitle(branch: string): string {
   const type = branch.slice(0, slash).split("/")[0];
   return `${type}: ${subject}`;
 }
+
+/**
+ * Nom d'une branche sur le remote d'une forge, pour la rapprocher des branches source des PR / MR.
+ * Branche locale : sa branche suivie sur ce remote, ou son propre nom si elle n'en suit aucune.
+ * Renvoie null si la branche appartient à un autre remote.
+ */
+export function branchOnRemote(b: BranchInfo, remoteName: string): string | null {
+  const prefix = `${remoteName}/`;
+  if (b.is_remote) return b.name.startsWith(prefix) ? b.name.slice(prefix.length) : null;
+  if (!b.upstream) return b.name;
+  return b.upstream.startsWith(prefix) ? b.upstream.slice(prefix.length) : null;
+}
+
+/** PR / MR par branche source (une branche peut en avoir plusieurs, vers des cibles différentes). */
+export function pullRequestsByBranch<T extends { sourceBranch: string }>(prs: T[]): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const pr of prs) map.set(pr.sourceBranch, [...(map.get(pr.sourceBranch) ?? []), pr]);
+  return map;
+}

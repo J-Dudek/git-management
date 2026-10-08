@@ -3,14 +3,13 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { useAccountsStore, defaultBaseUrl } from "../store/useAccountsStore";
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore, confirmAction } from "../store/useUiStore";
-import {
-  checkoutRemoteBranch, fetchRemote, getIdentity, oauthCancel, oauthComplete, oauthDefaults, oauthStart, setIdentity,
-} from "../ipc/commands";
-import { errorMessage, runGit } from "../lib/actions";
-import { hostOf, instanceUrl, remoteForAccount } from "../lib/remoteUrl";
+import { getIdentity, oauthCancel, oauthComplete, oauthDefaults, oauthStart, setIdentity } from "../ipc/commands";
+import { errorMessage } from "../lib/actions";
+import { hostOf, instanceUrl } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { inputClass } from "./Modal";
-import type { DeviceCode, ForgeAccount, ForgeIssue, ForgePR, Provider } from "../types/forge";
+import { PullRequestList, useLinkedForge, usePullRequests } from "./PullRequestList";
+import type { DeviceCode, ForgeAccount, ForgeIssue, Provider } from "../types/forge";
 
 type Kind = "github" | "gitlab" | "gitlab-self";
 
@@ -514,42 +513,35 @@ function AccountRow({ account }: { account: ForgeAccount }) {
 function RepoForgeSection() {
   const repoPath = useRepoStore((s) => s.repoPath);
   const remotes = useRepoStore((s) => s.remotes);
-  const branches = useRepoStore((s) => s.branches);
-  const accounts = useAccountsStore((s) => s.accounts);
   const data = useAccountsStore((s) => s.data);
   const setData = useAccountsStore((s) => s.setData);
   const client = useAccountsStore((s) => s.client);
   const [tab, setTab] = useState<"pr" | "issues">("pr");
-  const { menu, open, close } = useContextMenu();
+  const forge = useLinkedForge();
+  const prs = usePullRequests(forge);
 
-  const linked = accounts
-    .map((account) => ({ account, match: remoteForAccount(remotes, account) }))
-    .find((l) => l.match !== null);
-
-  const account = linked?.account;
-  const projectPath = linked?.match?.path;
-  const remoteName = linked?.match?.remote.name;
+  const account = forge?.account;
+  const projectPath = forge?.projectPath;
   const accountData = account ? data[account.id] : undefined;
 
-  const load = useCallback(async () => {
+  const loadIssues = useCallback(async () => {
     if (!account || !projectPath) return;
     setData(account.id, { loading: true, error: null });
     try {
-      const c = await client(account);
-      const [prs, issues] = await Promise.all([c.getPullRequests(projectPath), c.getIssues(projectPath)]);
-      setData(account.id, { prs, issues, loading: false });
+      const issues = await (await client(account)).getIssues(projectPath);
+      setData(account.id, { issues, loading: false });
     } catch (e) {
       setData(account.id, { loading: false, error: errorMessage(e) });
     }
   }, [account, projectPath, client, setData]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadIssues();
+  }, [loadIssues]);
 
   if (!repoPath) return null;
 
-  if (!account || !projectPath) {
+  if (!forge) {
     return (
       <Section title="Pull / merge requests">
         <p className="px-3 pb-2 text-[11px] text-[var(--color-muted)]">
@@ -561,85 +553,42 @@ function RepoForgeSection() {
     );
   }
 
-  const prLabel = account.provider === "gitlab" ? "MR" : "PR";
-
-  async function checkoutPr(pr: ForgePR) {
-    const remoteBranch = `${remoteName}/${pr.sourceBranch}`;
-    const path = repoPath!;
-    if (!branches.some((b) => b.is_remote && b.name === remoteBranch)) {
-      await runGit(() => fetchRemote(path, remoteName ?? null), { busy: "Fetch…", refresh: false });
-    }
-    await runGit(() => checkoutRemoteBranch(path, remoteBranch), { success: `Checkout de ${pr.sourceBranch}` });
-  }
+  const prLabel = forge.account.provider === "gitlab" ? "MR" : "PR";
 
   return (
     <Section
-      title={`${projectPath}`}
+      title={forge.projectPath}
       action={
-        <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" onClick={load}>
+        <button
+          className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
+          title="Rafraîchir"
+          onClick={() => {
+            prs.reload();
+            loadIssues();
+          }}
+        >
           ↻
         </button>
       }
     >
       <div className="flex gap-1 px-2 pb-1">
-        <TabBtn active={tab === "pr"} onClick={() => setTab("pr")}>{prLabel}s ({accountData?.prs.length ?? 0})</TabBtn>
+        <TabBtn active={tab === "pr"} onClick={() => setTab("pr")}>{prLabel}s ({prs.prs.length})</TabBtn>
         <TabBtn active={tab === "issues"} onClick={() => setTab("issues")}>Issues ({accountData?.issues.length ?? 0})</TabBtn>
       </div>
-      {accountData?.loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
-      {accountData?.error && <p className="px-3 py-1 text-xs text-red-400 break-words">{accountData.error}</p>}
-      {!accountData?.loading && !accountData?.error && tab === "pr" && (
+      {tab === "pr" && <PullRequestList forge={forge} list={prs} />}
+      {tab === "issues" && (
         <>
-          {accountData?.prs.map((pr) => (
-            <PRRow
-              key={pr.number}
-              pr={pr}
-              typeLabel={prLabel}
-              onContextMenu={(e) => open(e, [
-                { label: `Checkout ${pr.sourceBranch}`, action: () => checkoutPr(pr) },
-                { label: "Ouvrir dans le navigateur", action: () => openUrl(pr.url) },
-              ])}
-            />
-          ))}
-          {accountData?.prs.length === 0 && <Empty text={`Aucune ${prLabel} ouverte`} />}
+          {accountData?.loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
+          {accountData?.error && <p className="px-3 py-1 text-xs text-red-400 break-words">{accountData.error}</p>}
+          {!accountData?.loading && !accountData?.error && (
+            <>
+              {accountData?.issues.map((issue) => <IssueRow key={issue.number} issue={issue} />)}
+              {accountData?.issues.length === 0 && <Empty text="Aucune issue ouverte" />}
+            </>
+          )}
         </>
       )}
-      {!accountData?.loading && !accountData?.error && tab === "issues" && (
-        <>
-          {accountData?.issues.map((issue) => <IssueRow key={issue.number} issue={issue} />)}
-          {accountData?.issues.length === 0 && <Empty text="Aucune issue ouverte" />}
-        </>
-      )}
-      {menu && <ContextMenu menu={menu} onClose={close} />}
     </Section>
-  );
-}
-
-const PR_STATE_COLORS: Record<ForgePR["state"], string> = {
-  open: "text-green-400",
-  merged: "text-purple-400",
-  closed: "text-red-400",
-};
-
-function PRRow({ pr, typeLabel, onContextMenu }: { pr: ForgePR; typeLabel: string; onContextMenu: (e: React.MouseEvent) => void }) {
-  const stateColor = PR_STATE_COLORS[pr.state];
-  return (
-    <div
-      className="px-3 py-1.5 hover:bg-white/5 cursor-pointer"
-      onClick={() => openUrl(pr.url)}
-      onContextMenu={onContextMenu}
-      title="Clic : ouvrir dans le navigateur · Clic droit : checkout"
-    >
-      <div className="flex items-start gap-2">
-        <span className={`${stateColor} shrink-0 text-xs`}>●</span>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs text-[var(--color-text)] truncate">{pr.title}</p>
-          <p className="text-[10px] text-[var(--color-muted)] truncate">
-            {typeLabel}#{pr.number} · {pr.author} · {pr.sourceBranch} → {pr.targetBranch}
-          </p>
-        </div>
-        {pr.draft && <span className="text-[9px] border border-white/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
-      </div>
-    </div>
   );
 }
 

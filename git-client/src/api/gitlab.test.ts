@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { GitLabClient } from "./gitlab";
+import { GitLabClient, draftTitle } from "./gitlab";
 
 function client(data: unknown) {
   const get = vi.fn().mockResolvedValue(data);
@@ -89,5 +89,181 @@ describe("GitLabClient merge request creation", () => {
       squashDefault: true,
       removeSourceBranchDefault: true,
     });
+  });
+});
+
+describe("GitLabClient merge request review", () => {
+  const mrPath = "/projects/group%2Fapp/merge_requests/12";
+  const details = {
+    ...rawMR, description: null, sha: "abc", detailed_merge_status: "mergeable", squash: false,
+    force_remove_source_branch: null, head_pipeline: { id: 5, status: "running", web_url: "p" }, user: { can_merge: true },
+    reviewers: [{ username: "bob" }], assignees: [{ username: "alice" }],
+  };
+  function detailsClient(overrides: Record<string, unknown> = {}) {
+    const responses: Record<string, unknown> = {
+      [mrPath]: details,
+      "/projects/group%2Fapp": { default_branch: "main", squash_option: "default_on", remove_source_branch_after_merge: true },
+      [`${mrPath}/approvals`]: { approved_by: [{ user: { username: "bob" } }], approvals_left: 1, user_has_approved: false },
+      "/projects/group%2Fapp/pipelines/5/jobs?per_page=100": [
+        { name: "build", status: "success", web_url: "b" },
+        { name: "flaky", status: "failed", allow_failure: true, web_url: "f" },
+        { name: "test", status: "running", web_url: "t" },
+        { name: "deploy", status: "manual", web_url: "d" },
+      ],
+      ...overrides,
+    };
+    return new GitLabClient(vi.fn((path: string) => Promise.resolve(responses[path])) as never);
+  }
+
+  it("maps approvals, pipeline jobs and project merge settings", async () => {
+    const d = await detailsClient().getMergeRequestDetails("group/app", 12, "bob");
+    expect(d).toMatchObject({
+      approvedBy: ["bob"], approvedByMe: false, approvalsLeft: 1, mergeable: true, mergeStatus: "Prête à merger",
+      mergeMethods: ["merge", "squash"], defaultMergeMethod: "merge", removeSourceBranchDefault: true, description: "",
+    });
+    expect(d.checks.map((c) => c.status)).toEqual(["success", "skipped", "pending", "skipped"]);
+    expect(d.pr).toMatchObject({ reviewers: ["bob"], assignees: ["alice"] });
+  });
+
+  it("explains why a merge request cannot be merged", async () => {
+    const rebase = await detailsClient({ [mrPath]: { ...details, detailed_merge_status: "need_rebase" } })
+      .getMergeRequestDetails("group/app", 12, "me");
+    expect(rebase).toMatchObject({ mergeable: false, canUpdateBranch: true, mergeStatus: "Rebase nécessaire sur la branche cible" });
+    const noRights = await detailsClient({ [mrPath]: { ...details, user: { can_merge: false } } })
+      .getMergeRequestDetails("group/app", 12, "me");
+    expect(noRights).toMatchObject({ mergeable: false, mergeStatus: "Droits insuffisants pour merger" });
+  });
+
+  it("falls back to the pipeline status when jobs are unavailable", async () => {
+    const responses: Record<string, unknown> = {
+      [mrPath]: details, "/projects/group%2Fapp": { default_branch: "main", squash_option: "always" }, [`${mrPath}/approvals`]: {},
+    };
+    const get = vi.fn((path: string) => path.includes("/jobs") ? Promise.reject(new Error("403")) : Promise.resolve(responses[path]));
+    const d = await new GitLabClient(get as never).getMergeRequestDetails("group/app", 12, "me");
+    expect(d.checks).toEqual([{ name: "Pipeline", status: "pending", url: "p" }]);
+    expect(d).toMatchObject({ mergeMethods: ["squash"], defaultMergeMethod: "squash" });
+  });
+
+  it("hides system notes", async () => {
+    const gl = new GitLabClient(vi.fn().mockResolvedValue([
+      { id: 1, author: { username: "bob" }, body: "added 1 commit", created_at: "d", system: true },
+      { id: 2, author: { username: "bob" }, body: "LGTM", created_at: "d", system: false },
+    ]) as never);
+    expect(await gl.getComments("group/app", 12)).toEqual([{ id: "2", author: "bob", body: "LGTM", createdAt: "d" }]);
+  });
+
+  it("sends approval, merge, state and rebase requests", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    const gl = new GitLabClient(vi.fn() as never, send as never);
+    await gl.review("group/app", 12, "approve", "ok");
+    await gl.review("group/app", 12, "unapprove", "");
+    await gl.merge("group/app", 12, { method: "squash", sha: "abc", removeSourceBranch: true });
+    await gl.setState("group/app", 12, "open");
+    await gl.rebase("group/app", 12);
+    expect(send.mock.calls).toEqual([
+      ["POST", `${mrPath}/approve`, null],
+      ["POST", `${mrPath}/notes`, { body: "ok" }],
+      ["POST", `${mrPath}/unapprove`, null],
+      ["PUT", `${mrPath}/merge`, { sha: "abc", squash: true, should_remove_source_branch: true }],
+      ["PUT", mrPath, { state_event: "reopen" }],
+      ["PUT", `${mrPath}/rebase`, null],
+    ]);
+    await expect(gl.review("group/app", 12, "request_changes", "x")).rejects.toThrow();
+  });
+
+  it("maps list filters to GitLab states", async () => {
+    const get = vi.fn().mockResolvedValue([]);
+    await new GitLabClient(get as never).getMergeRequests("group/app", "merged");
+    expect(get).toHaveBeenCalledWith("/projects/group%2Fapp/merge_requests?state=merged&per_page=50");
+  });
+});
+
+describe("GitLab draft titles", () => {
+  it("adds or removes the draft prefix without duplicating it", () => {
+    expect(draftTitle("feat: x", true)).toBe("Draft: feat: x");
+    expect(draftTitle("Draft: feat: x", true)).toBe("Draft: feat: x");
+    expect(draftTitle("[Draft] feat: x", false)).toBe("feat: x");
+    expect(draftTitle("WIP: feat: x", false)).toBe("feat: x");
+    expect(draftTitle("feat: draft mode", false)).toBe("feat: draft mode");
+  });
+
+  it("setDraft rewrites the merge request title", async () => {
+    const get = vi.fn().mockResolvedValue({ ...rawMR, title: "Draft: Add feature" });
+    const send = vi.fn().mockResolvedValue(null);
+    await new GitLabClient(get as never, send as never).setDraft("group/app", 12, false);
+    expect(send).toHaveBeenCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { title: "Add feature" });
+  });
+});
+
+describe("GitLabClient inline review", () => {
+  const mrPath = "/projects/group%2Fapp/merge_requests/12";
+  const ctx = { headSha: "h", diffRefs: { baseSha: "b", startSha: "s", headSha: "h" } };
+  const context = { path: "new.ts", oldPath: "old.ts", side: "new" as const, line: 5, oldLine: 2, newLine: 5 };
+  const added = { path: "a.ts", oldPath: "a.ts", side: "new" as const, line: 4, oldLine: null, newLine: 4 };
+
+  it("keeps only text-positioned discussions", async () => {
+    const get = vi.fn().mockResolvedValue([
+      { id: "d1", notes: [
+        { id: 1, author: { username: "bob" }, body: "hm", created_at: "d", system: false, type: "DiffNote", resolvable: true, resolved: false,
+          position: { position_type: "text", new_path: "a.ts", old_path: "a.ts", new_line: null, old_line: 3 } },
+        { id: 2, author: { username: "alice" }, body: "ok", created_at: "e", system: false, type: "DiffNote", resolvable: true, resolved: false },
+      ] },
+      { id: "d2", notes: [{ id: 3, author: null, body: "general", created_at: "d", system: false }] },
+    ]);
+    const threads = await new GitLabClient(get as never).getReviewThreads("group/app", 12);
+    expect(get).toHaveBeenCalledWith(`${mrPath}/discussions?per_page=100`);
+    expect(threads).toEqual([{
+      id: "d1", replyTo: "d1", path: "a.ts", side: "old", line: 3, resolved: false,
+      comments: [{ id: "1", author: "bob", body: "hm", createdAt: "d" }, { id: "2", author: "alice", body: "ok", createdAt: "e" }],
+    }]);
+  });
+
+  it("positions comments with diff refs, both line numbers for unchanged lines", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    const gl = new GitLabClient(vi.fn() as never, send as never);
+    await gl.addLineComment("group/app", 12, ctx, context, "nit");
+    await gl.addLineComment("group/app", 12, ctx, added, "new");
+    const position = { position_type: "text", base_sha: "b", start_sha: "s", head_sha: "h" };
+    expect(send.mock.calls).toEqual([
+      ["POST", `${mrPath}/discussions`, { body: "nit", position: { ...position, old_path: "old.ts", new_path: "new.ts", new_line: 5, old_line: 2 } }],
+      ["POST", `${mrPath}/discussions`, { body: "new", position: { ...position, old_path: "a.ts", new_path: "a.ts", new_line: 4 } }],
+    ]);
+    await expect(gl.addLineComment("group/app", 12, { headSha: "h", diffRefs: null }, added, "x")).rejects.toThrow();
+  });
+
+  it("replies to and resolves discussions", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    const gl = new GitLabClient(vi.fn() as never, send as never);
+    await gl.replyToThread("group/app", 12, "d1", "done");
+    await gl.resolveThread("group/app", 12, "d1", true);
+    expect(send.mock.calls).toEqual([
+      ["POST", `${mrPath}/discussions/d1/notes`, { body: "done" }],
+      ["PUT", `${mrPath}/discussions/d1`, { resolved: true }],
+    ]);
+  });
+
+  it("publishes a review comment by comment and keeps going after a failure", async () => {
+    const send = vi.fn()
+      .mockRejectedValueOnce(new Error("line not in diff"))
+      .mockResolvedValue(null);
+    const gl = new GitLabClient(vi.fn() as never, send as never);
+    const result = await gl.submitReview("group/app", 12, ctx, {
+      verdict: "approve", body: "LGTM",
+      comments: [{ id: "x", position: added, body: "a" }, { id: "y", position: context, body: "b" }],
+    });
+    expect(result.publishedIds).toEqual(["y"]);
+    expect(result.errors).toEqual(["a.ts:4 : line not in diff"]);
+    expect(send.mock.calls.slice(2)).toEqual([
+      ["POST", `${mrPath}/notes`, { body: "LGTM" }],
+      ["POST", `${mrPath}/approve`, null],
+    ]);
+  });
+
+  it("excludes line comments from the conversation", async () => {
+    const gl = new GitLabClient(vi.fn().mockResolvedValue([
+      { id: 1, author: { username: "bob" }, body: "inline", created_at: "d", system: false, type: "DiffNote" },
+      { id: 2, author: { username: "bob" }, body: "general", created_at: "d", system: false, type: null },
+    ]) as never);
+    expect((await gl.getComments("group/app", 12)).map((c) => c.body)).toEqual(["general"]);
   });
 });
