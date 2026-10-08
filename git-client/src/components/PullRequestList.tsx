@@ -326,8 +326,11 @@ export function FreshnessTags({ freshness }: { freshness: PrFreshness }) {
   );
 }
 
-/** Ligne d'une PR / MR. `subtitle` remplace la ligne de détail par défaut ; `children` : badges supplémentaires. */
-export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu, subtitle, hint, children }: {
+/**
+ * Ligne d'une PR / MR. `subtitle` remplace la ligne de détail par défaut ; `meta` s'affiche en dessous
+ * (dans la barre latérale étroite, des badges à droite écraseraient le titre).
+ */
+export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu, subtitle, hint, meta }: {
   pr: ForgePR;
   freshness: PrFreshness;
   typeLabel: string;
@@ -336,7 +339,7 @@ export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu
   onContextMenu: (e: React.MouseEvent) => void;
   subtitle?: string;
   hint?: string;
-  children?: React.ReactNode;
+  meta?: React.ReactNode;
 }) {
   return (
     <div
@@ -359,9 +362,9 @@ export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu
           <p className="text-[10px] text-[var(--color-muted)] truncate">
             {subtitle ?? `${typeLabel}#${pr.number} · ${pr.author} · ${pr.sourceBranch} → ${pr.targetBranch}`}
           </p>
+          {meta && <div className="mt-1 flex flex-wrap items-center gap-1">{meta}</div>}
         </div>
         <FreshnessTags freshness={freshness} />
-        {children}
         {pr.draft && <span className="text-[9px] border border-white/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
       </div>
     </div>

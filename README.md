@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Démo : graphe avec les auteurs, détail d'un commit et diff, onglets de dépôts, badge et détail d'une pull request (relecteurs, CI, conversation), revue des fichiers modifiés avec commentaire de ligne et approbation, terminal intégré, commit, journal des opérations et préférences d'affichage" width="960" />
+  <img src="docs/demo.gif" alt="Démo : graphe avec les auteurs, détail d'un commit et diff, onglets de dépôts, détail d'une pull request (relecteurs, CI, conversation), revue des fichiers modifiés avec commentaire de ligne et approbation, synchronisation qui signale les nouveaux commits et commentaires d'une PR déjà lue, création d'une PR pré-remplie avec le modèle du dépôt, PR de tous les projets dans l'onglet Comptes, commit, terminal intégré et journal des opérations" width="960" />
 </p>
 
 ## Pourquoi « Merathon » ?
@@ -44,25 +44,28 @@ Les empreintes SHA-256 de tous les fichiers sont dans `SHA256SUMS.txt`. Une fois
 - **Sous-modules** : liste et état, initialisation / mise à jour récursive (avec les identifiants des comptes), récupération automatique après un clone, ouverture dans un nouvel onglet ou une nouvelle fenêtre.
 - **Git LFS** (nécessite [git-lfs](https://git-lfs.com)) : les fichiers LFS sont indexés via `git add` (pointeur, pas le binaire), les objets LFS sont envoyés avant chaque push et récupérés après clone / pull / checkout ; suivi de motifs, liste des fichiers non téléchargés.
 - **Remotes** : fetch, pull (merge ou rebase), push (forcé en option), suppression de branche distante, ajout / suppression de remotes.
+- **Synchronisation automatique** : toutes les 5 minutes (intervalle réglable dans les préférences, ou désactivable), chaque dépôt ouvert dans un onglet est fetché et ses PR / MR ouvertes sont rechargées. Une notification résume ce qui a changé : branches distantes nouvelles, mises à jour ou supprimées, PR ouvertes ou fermées, nouveaux commits ou commentaires sur une PR déjà consultée. La synchronisation est silencieuse en cas d'erreur (hors ligne, accès refusé) et attend la fin d'une opération en cours (pull, push…).
 - **Tags et stash** : tags légers ou annotés (création, push, suppression), stash (avec fichiers non suivis), apply, pop, drop.
-- **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. Les issues ouvertes du dépôt courant sont listées dans l'onglet **Comptes**.
+- **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. L'onglet **Comptes** liste aussi les PR / MR de tous les projets (voir plus bas) et les issues ouvertes du dépôt courant.
 - **Identité Git** : nom et email, globaux ou propres au dépôt.
-- **Préférences** (Ctrl+,) : taille de toute l'interface de 80 à 200 % (Ctrl+= / Ctrl+- / Ctrl+0), taille du texte du terminal, densité du graphe (compacte, normale, aérée) et liste des raccourcis clavier. Les réglages s'appliquent immédiatement à toutes les fenêtres.
+- **Préférences** (Ctrl+,) : taille de toute l'interface de 80 à 200 % (Ctrl+= / Ctrl+- / Ctrl+0), taille du texte du terminal, densité du graphe (compacte, normale, aérée), intervalle de la synchronisation automatique (avec un bouton « Synchroniser maintenant ») et liste des raccourcis clavier. Les réglages s'appliquent immédiatement à toutes les fenêtres.
 - **Mises à jour automatiques** : au démarrage, l'application vérifie s'il existe une nouvelle release, propose de l'installer puis redémarre (aussi via le menu Merathon → « Rechercher des mises à jour… »). Les paquets sont signés et la signature est vérifiée avant toute installation (AppImage, `.deb`, `.exe`, `.msi`).
 
 ### Pull requests et merge requests
 
 Avec un compte GitHub ou GitLab correspondant à un remote du dépôt, les PR (GitHub) et MR (GitLab) se gèrent sans quitter l'application :
 
-- **Liste** : dans la barre latérale du dépôt, sous les branches distantes (et dans l'onglet **Comptes**). Filtres par état (ouvertes, mergées, fermées, toutes) et par personne (les miennes, à relire par moi, assignées à moi). Clic droit : checkout de la branche, ouverture dans le navigateur.
-- **Création** : clic droit sur une branche → **Créer une pull request GitHub…** (ou **merge request GitLab…**) : branche cible, titre, description, relecteurs, assignés, labels, jalon, brouillon, squash et suppression de la branche source (GitLab), avec push préalable de la branche locale si besoin.
+- **Liste** : dans la barre latérale du dépôt, sous les branches distantes. Filtres par état (ouvertes, mergées, fermées, toutes) et par personne (les miennes, à relire par moi, assignées à moi). Clic droit : checkout de la branche, ouverture dans le navigateur, marquer comme lue / non lue.
+- **Lues et non lues** : une PR jamais ouverte est en gras avec un point bleu ; une fois son détail consulté, elle est grisée. Si elle change ensuite, une étiquette l'indique : `commits` (nouveau push), `commentaires` ou `activité` (relecture, label…). Le badge de la branche porte aussi un point tant qu'une de ses PR n'est pas lue. Ce suivi est mémorisé localement, et oublié dès que la PR est mergée, fermée ou supprimée.
+- **Tous les projets** (onglet **Comptes**) : pour chaque compte, les PR / MR **à traiter** (assigné ou relecteur demandé), regroupées par projet, et **les miennes** avec leur état : brouillon, conflits, changements demandés, CI en échec, en attente de relecture ou approuvée, plus une pastille de CI. Elles s'ouvrent dans le même panneau de détail, y compris pour un projet qui n'est pas cloné (l'onglet des fichiers modifiés et le checkout demandent alors d'ouvrir le dépôt).
+- **Création** : clic droit sur une branche → **Créer une pull request GitHub…** (ou **merge request GitLab…**) : branche cible, titre, description, relecteurs, assignés, labels, jalon, brouillon, squash et suppression de la branche source (GitLab), avec push préalable de la branche locale si besoin. La description est pré-remplie avec le modèle du dépôt, comme sur la forge : `pull_request_template.md` (dans `.github/`, à la racine ou dans `docs/`) sur GitHub, le modèle « Default » de `.gitlab/merge_request_templates/` (ou celui des réglages du projet) sur GitLab. Les autres modèles se choisissent dans une liste.
 - **Détail** (clic sur une PR ou sur le badge d'une branche) : description, relecteurs et leur avis, approbations requises (GitLab), statut de chaque job de CI, conversation.
 - **Actions** : commenter ; approuver, demander des changements (GitHub) ou retirer son approbation (GitLab) ; passer de brouillon à prête et inversement ; mettre à jour la branche avec la cible (merge sur GitHub, rebase sur GitLab) ; merger selon les modes autorisés par le dépôt (commit de merge, squash, rebase), après confirmation et seulement si la branche n'a pas bougé entre-temps ; fermer ou rouvrir. Quand le merge est bloqué, la raison est affichée (conflits, CI, approbations, brouillon, droits…).
 - **Fichiers modifiés** : diff de la PR calculé en local avec git, depuis l'ancêtre commun avec la branche cible (un fetch est lancé si des commits manquent). Les commentaires de ligne de la forge s'affichent sous leurs lignes, avec réponse et résolution des fils.
 - **Revue** : survoler une ligne puis **+** pour la commenter, tout de suite ou en attente. **Terminer la revue** publie les commentaires en attente avec un commentaire général et un avis (commentaire, approbation, demande de changements sur GitHub). Sur GitHub, la revue est publiée en une seule fois ; sur GitLab, commentaire par commentaire, ceux qui échouent restant en attente.
 - **Fichiers vus** : chaque fichier se coche « vu » au fil de la relecture (passage automatique au suivant), avec un compteur. Ce suivi est mémorisé localement et repart de zéro au push suivant.
 
-Limites : les PR venant d'un fork ne sont pas récupérées par le fetch du remote (leur diff est alors à consulter dans le navigateur), et la liste est limitée aux 50 PR les plus récentes, les fils de commentaires aux 100 premiers.
+Limites : les PR venant d'un fork ne sont pas récupérées par le fetch du remote (leur diff est alors à consulter dans le navigateur), et la liste est limitée aux 50 PR les plus récentes (50 par catégorie dans l'onglet **Comptes**), les fils de commentaires aux 100 premiers. Sur GitHub, un avis de relecture sans commentaire de ligne compte comme `activité`, pas comme commentaire.
 
 ### Raccourcis clavier
 
@@ -143,6 +146,8 @@ npm run tauri dev
 
 > Le port 1420 doit être libre (`strictPort` est activé dans `vite.config.ts`).
 
+> Pour utiliser l'application sur son propre dépôt (rebase, merge…), passer par la version installée ou lancer le mode dev depuis un worktree séparé (`git worktree add ../git-management-dev main`) : un conflit écrit des marqueurs `<<<<<<<` dans les sources que Vite compile, et l'application en cours de développement ne démarre plus.
+
 ## Tests et vérifications
 
 Depuis `git-client/` :
@@ -188,6 +193,8 @@ La branche `main` étant protégée, le commit de version est poussé avec le se
 
 Vérifier localement la prochaine version : `node git-client/scripts/version.mjs next`.
 
+Les pull requests du dépôt partent du modèle [`.github/pull_request_template.md`](.github/pull_request_template.md) (type de changement, zone concernée, vérifications de la CI).
+
 Le mode de merge de la pull request compte : avec un **commit de merge** ou un **rebase**, tous les commits de la branche sont analysés ; avec un **squash**, seul le titre de la pull request l'est (le préfixer par `feat:` ou `fix:` pour déclencher une release).
 
 Les mises à jour automatiques reposent sur une clé de signature dédiée : la clé publique est dans `tauri.conf.json` (`plugins > updater > pubkey`), la clé privée et son mot de passe dans les secrets `TAURI_SIGNING_PRIVATE_KEY` et `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Le build signe chaque paquet et publie `latest.json`, le manifeste que l'application consulte. **Si la clé privée est perdue, les versions installées ne pourront plus être mises à jour** : la conserver dans un gestionnaire de mots de passe.
@@ -200,13 +207,13 @@ git-client/
 ├── src/                 # Frontend React
 │   ├── components/      # UI : Toolbar, TabBar, Sidebar, StagingPanel, BottomPanel (terminal / journal),
 │   │                    # PreferencesDialog, DiffViewer, ConflictViewer, PullRequest* (liste, création,
-│   │                    # revue, fichiers modifiés)…
+│   │                    # revue, fichiers modifiés), MyPullRequests (PR de tous les projets)…
 │   ├── graph/           # Rendu du graphe de commits
-│   ├── store/           # État global (Zustand) : dépôt affiché, onglets, journal, réglages d'affichage…
+│   ├── store/           # État global (Zustand) : dépôt affiché, onglets, journal, réglages, PR lues…
 │   ├── ipc/commands.ts  # Appels aux commandes Tauri (et inscription au journal)
-│   ├── lib/             # Actions git, terminaux (xterm.js), commandes du journal, plan de squash,
-│   │                    # position des commentaires de revue, fichiers vus…
-│   └── api/             # Clients GitHub / GitLab (PR / MR, revues, CI) et interface commune
+│   ├── lib/             # Actions git, synchronisation périodique, état des PR, terminaux (xterm.js),
+│   │                    # commandes du journal, plan de squash, commentaires de revue, fichiers vus…
+│   └── api/             # Clients GitHub / GitLab (PR / MR, revues, CI, modèles) et interface commune
 └── src-tauri/           # Backend Rust
     └── src/
         ├── lib.rs       # Enregistrement des commandes Tauri

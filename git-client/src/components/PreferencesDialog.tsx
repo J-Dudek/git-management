@@ -195,7 +195,8 @@ function syncLabel(minutes: number): string {
 
 function syncTick(minutes: number): string {
   if (minutes === 0) return "off";
-  return minutes === 60 ? "1 h" : `${minutes}`;
+  // Sans espace : les graduations sont des colonnes de largeur nulle, « 1 h » passerait sur deux lignes.
+  return minutes === 60 ? "1h" : `${minutes}`;
 }
 
 function SyncSection() {
