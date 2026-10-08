@@ -14,6 +14,7 @@ import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
 import { PullRequestDialog, type PullRequestTarget } from "./PullRequestDialog";
 import { PullRequestList, checkoutPullRequest, useLinkedForge, usePullRequests } from "./PullRequestList";
+import { prFreshness, seenKey, useSeenPrsStore } from "../store/useSeenPrsStore";
 import { PullRequestReviewDialog } from "./PullRequestReviewDialog";
 import { branchOnRemote, branchTree, flattenTree, localOnlyBranches, pullRequestsByBranch, type BranchNode } from "../lib/branches";
 import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
@@ -64,6 +65,7 @@ export function Sidebar() {
   const [pullRequest, setPullRequest] = useState<PullRequestTarget | null>(null);
   const forge = useLinkedForge();
   const forgePrs = usePullRequests(forge);
+  const seenPrs = useSeenPrsStore((s) => s.seen);
   /** PR ouverte depuis le badge d'une branche (le groupe des PR peut être replié). */
   const [badgeReview, setBadgeReview] = useState<number | null>(null);
 
@@ -89,7 +91,8 @@ export function Sidebar() {
   const prBadge = (b: BranchInfo) => {
     const prs = prsOf(b);
     if (!forge || !prs.length) return null;
-    return <PrBadge prs={prs} gitlab={forge.account.provider === "gitlab"} onOpen={setBadgeReview} />;
+    const fresh = prs.some((p) => prFreshness(seenPrs[seenKey(forge.account.id, forge.projectPath, p.number)], p).kind !== "read");
+    return <PrBadge prs={prs} gitlab={forge.account.provider === "gitlab"} fresh={fresh} onOpen={setBadgeReview} />;
   };
 
   function selectHash(hash: string) {
@@ -676,16 +679,17 @@ function Row({ icon, label, active, selected, depth = 0, title, trailing, onClic
 }
 
 /** PR / MR ouvertes depuis la branche : clic pour ouvrir le détail de la première. */
-function PrBadge({ prs, gitlab, onOpen }: { prs: ForgePR[]; gitlab: boolean; onOpen: (n: number) => void }) {
+/** `fresh` : une des PR n'a pas été lue ou a changé depuis sa consultation. */
+function PrBadge({ prs, gitlab, fresh, onOpen }: { prs: ForgePR[]; gitlab: boolean; fresh: boolean; onOpen: (n: number) => void }) {
   const sign = gitlab ? "!" : "#";
   const first = prs[0];
   const title = prs.map((p) => `${sign}${p.number} ${p.title} → ${p.targetBranch}${p.draft ? " (brouillon)" : ""}`).join("\n");
   return (
     <button
-      className={`shrink-0 px-1 text-[9px] font-mono rounded border ${
+      className={`relative shrink-0 px-1 text-[9px] font-mono rounded border ${
         first.draft ? "border-white/20 text-[var(--color-muted)]" : "border-green-500/50 text-green-300"
       } hover:bg-white/10`}
-      title={`${title}\nClic : voir le détail`}
+      title={`${title}${fresh ? "\nNon lue ou modifiée depuis ta dernière consultation" : ""}\nClic : voir le détail`}
       onClick={(e) => {
         e.stopPropagation();
         onOpen(first.number);
@@ -693,6 +697,7 @@ function PrBadge({ prs, gitlab, onOpen }: { prs: ForgePR[]; gitlab: boolean; onO
       onDoubleClick={(e) => e.stopPropagation()}
     >
       {gitlab ? "MR" : "PR"} {sign}{first.number}{prs.length > 1 ? ` +${prs.length - 1}` : ""}
+      {fresh && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-sky-400" />}
     </button>
   );
 }

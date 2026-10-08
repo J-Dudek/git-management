@@ -13,10 +13,10 @@ describe("stepZoom", () => {
 
 describe("sanitize", () => {
   it("keeps valid settings and repairs invalid ones", () => {
-    expect(sanitize({ zoom: 1.25, terminalFontSize: 14, density: "compact" })).toEqual({
-      zoom: 1.25, terminalFontSize: 14, density: "compact",
+    expect(sanitize({ zoom: 1.25, terminalFontSize: 14, density: "compact", syncInterval: 0 })).toEqual({
+      zoom: 1.25, terminalFontSize: 14, density: "compact", syncInterval: 0,
     });
-    expect(sanitize({ zoom: 9, terminalFontSize: 100, density: "énorme" })).toEqual({
+    expect(sanitize({ zoom: 9, terminalFontSize: 100, density: "énorme", syncInterval: 7 })).toEqual({
       ...defaultDisplay, terminalFontSize: 24,
     });
     expect(sanitize(null)).toEqual(defaultDisplay);

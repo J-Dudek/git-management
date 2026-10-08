@@ -8,6 +8,8 @@ export interface DisplaySettings {
   terminalFontSize: number;
   /** Hauteur des lignes du graphe des commits. */
   density: Density;
+  /** Minutes entre deux synchronisations des dépôts ouverts (fetch + PR) ; 0 : désactivée. */
+  syncInterval: number;
 }
 
 export type Density = "compact" | "normal" | "comfortable";
@@ -16,8 +18,10 @@ export const ROW_HEIGHTS: Record<Density, number> = { compact: 22, normal: 28, c
 export const ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 export const TERMINAL_FONT_MIN = 9;
 export const TERMINAL_FONT_MAX = 24;
+/** Intervalles de synchronisation proposés, en minutes (0 : désactivée). */
+export const SYNC_INTERVALS = [0, 1, 2, 5, 10, 15, 30, 60];
 
-export const defaultDisplay: DisplaySettings = { zoom: 1, terminalFontSize: 12, density: "normal" };
+export const defaultDisplay: DisplaySettings = { zoom: 1, terminalFontSize: 12, density: "normal", syncInterval: 5 };
 
 const KEY = "git-client.display";
 
@@ -36,6 +40,7 @@ export function sanitize(raw: unknown): DisplaySettings {
     zoom,
     terminalFontSize: Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, font)),
     density: r.density && r.density in ROW_HEIGHTS ? r.density : defaultDisplay.density,
+    syncInterval: SYNC_INTERVALS.includes(r.syncInterval as number) ? r.syncInterval! : defaultDisplay.syncInterval,
   };
 }
 
@@ -63,8 +68,8 @@ export const useDisplayStore = create<DisplayStore>((set, get) => {
     }
   }
   const current = (): DisplaySettings => {
-    const { zoom, terminalFontSize, density } = get();
-    return { zoom, terminalFontSize, density };
+    const { zoom, terminalFontSize, density, syncInterval } = get();
+    return { zoom, terminalFontSize, density, syncInterval };
   };
   return {
     ...load(),

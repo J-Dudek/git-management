@@ -36,6 +36,7 @@ export default function App() {
   const [leftTab, setLeftTab] = useState<LeftTab>("repo");
   const [showClone, setShowClone] = useState(false);
   const zoom = useDisplayStore((s) => s.zoom);
+  const syncInterval = useDisplayStore((s) => s.syncInterval);
   const repoPath = useRepoStore((s) => s.repoPath);
   const center = useRepoStore((s) => s.center);
   const selectedCommit = useRepoStore((s) => s.selectedCommit);
@@ -67,8 +68,8 @@ export default function App() {
     checkForUpdatesOnStartup();
   }, []);
 
-  // Fetch et PR de chaque dépôt ouvert toutes les 5 minutes : les changements sont notifiés.
-  useEffect(() => startAutoSync(), []);
+  // Fetch et PR de chaque dépôt ouvert à intervalle régulier (Préférences) : les changements sont notifiés.
+  useEffect(() => startAutoSync(syncInterval), [syncInterval]);
 
   // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
   useEffect(() => {

@@ -2,14 +2,12 @@ import { fetchAllQuietly, getBranches, listRemotes } from "../ipc/commands";
 import { linkedForge, refreshOpenPullRequests } from "../components/PullRequestList";
 import { useAccountsStore } from "../store/useAccountsStore";
 import { useRepoStore } from "../store/useRepoStore";
+import { prFreshness, seenKey, useSeenPrsStore, type SeenPr } from "../store/useSeenPrsStore";
 import { tabPath, useTabsStore } from "../store/useTabsStore";
 import { useUiStore } from "../store/useUiStore";
 import { trimEndChars } from "./strings";
 import type { ForgePR } from "../types/forge";
 import type { BranchInfo } from "../types/git";
-
-/** Intervalle entre deux synchronisations des dépôts ouverts. */
-export const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 export interface RepoChanges {
   newBranches: string[];
@@ -18,6 +16,14 @@ export interface RepoChanges {
   openedPrs: ForgePR[];
   /** PR qui ne sont plus ouvertes (mergées ou fermées). */
   closedPrs: ForgePR[];
+  /** PR déjà consultées qui ont changé depuis la synchronisation précédente. */
+  updatedPrs: UpdatedPr[];
+}
+
+export interface UpdatedPr {
+  pr: ForgePR;
+  commits: boolean;
+  comments: boolean;
 }
 
 /** Position des branches distantes, sans les `remote/HEAD` qui suivent la branche par défaut. */
@@ -39,15 +45,32 @@ export function remoteBranchChanges(before: BranchInfo[], after: BranchInfo[]) {
   return { newBranches, updatedBranches, deletedBranches };
 }
 
-/** PR ouvertes apparues ou disparues ; rien si la liste n'avait jamais été chargée. */
-export function pullRequestChanges(before: ForgePR[] | null, after: ForgePR[]) {
-  if (!before) return { openedPrs: [], closedPrs: [] };
-  const old = new Set(before.map((pr) => pr.number));
+/**
+ * PR ouvertes apparues ou disparues, et PR déjà consultées (`seenOf`) qui ont changé depuis la liste précédente.
+ * Rien si la liste n'avait jamais été chargée.
+ */
+export function pullRequestChanges(before: ForgePR[] | null, after: ForgePR[], seenOf: (pr: ForgePR) => SeenPr | undefined = () => undefined) {
+  if (!before) return { openedPrs: [], closedPrs: [], updatedPrs: [] };
+  const old = new Map(before.map((pr) => [pr.number, pr]));
   const now = new Set(after.map((pr) => pr.number));
+  const updatedPrs: UpdatedPr[] = [];
+  for (const pr of after) {
+    const prev = old.get(pr.number);
+    if (!prev || pr.updatedAt <= prev.updatedAt) continue;
+    const freshness = prFreshness(seenOf(pr), pr);
+    if (freshness.kind === "updated") updatedPrs.push({ pr, commits: freshness.commits, comments: freshness.comments });
+  }
   return {
     openedPrs: after.filter((pr) => !old.has(pr.number)),
     closedPrs: before.filter((pr) => !now.has(pr.number)),
+    updatedPrs,
   };
+}
+
+function updateLabel({ commits, comments }: UpdatedPr): string {
+  if (commits && comments) return "nouveaux commits et commentaires";
+  if (commits) return "nouveaux commits";
+  return comments ? "nouveaux commentaires" : "nouvelle activité";
 }
 
 function names(list: string[]): string {
@@ -64,6 +87,7 @@ export function describeChanges(repoName: string, c: RepoChanges, prLabel = "PR"
   if (c.deletedBranches.length) parts.push(`${plural(c.deletedBranches.length, "branche")} supprimée${c.deletedBranches.length > 1 ? "s" : ""}`);
   for (const pr of c.openedPrs) parts.push(`${prLabel} #${pr.number} ouverte « ${pr.title} »`);
   for (const pr of c.closedPrs) parts.push(`${prLabel} #${pr.number} fermée ou mergée`);
+  for (const u of c.updatedPrs) parts.push(`${prLabel} #${u.pr.number} : ${updateLabel(u)}`);
   return parts.length ? `${repoName} : ${parts.join(" · ")}` : null;
 }
 
@@ -86,11 +110,12 @@ async function syncRepo(path: string): Promise<{ changes: RepoChanges; prLabel: 
   const repo = useRepoStore.getState();
   if (repo.repoPath === path && !useUiStore.getState().busy) await repo.refresh();
 
-  let prs = { openedPrs: [] as ForgePR[], closedPrs: [] as ForgePR[] };
+  let prs: Pick<RepoChanges, "openedPrs" | "closedPrs" | "updatedPrs"> = { openedPrs: [], closedPrs: [], updatedPrs: [] };
   const forge = linkedForge(await listRemotes(path), useAccountsStore.getState().accounts);
   if (forge) {
     const { before: oldPrs, after: newPrs } = await refreshOpenPullRequests(forge.account, forge.projectPath);
-    prs = pullRequestChanges(oldPrs, newPrs);
+    const { seen } = useSeenPrsStore.getState();
+    prs = pullRequestChanges(oldPrs, newPrs, (pr) => seen[seenKey(forge.account.id, forge.projectPath, pr.number)]);
   }
   return {
     changes: { ...remoteBranchChanges(before, after), ...prs },
@@ -99,6 +124,15 @@ async function syncRepo(path: string): Promise<{ changes: RepoChanges; prLabel: 
 }
 
 let running = false;
+const syncedListeners = new Set<() => void>();
+
+/** Appelé à la fin de chaque synchronisation ; renvoie la fonction de désinscription. */
+export function onSynced(listener: () => void): () => void {
+  syncedListeners.add(listener);
+  return () => {
+    syncedListeners.delete(listener);
+  };
+}
 
 /** Synchronise chaque dépôt ouvert et notifie les changements. Silencieux en cas d'erreur (hors ligne, accès refusé…). */
 export async function syncOpenRepos() {
@@ -118,11 +152,13 @@ export async function syncOpenRepos() {
     }
   } finally {
     running = false;
+    syncedListeners.forEach((l) => l());
   }
 }
 
-/** Lance la synchronisation périodique ; renvoie la fonction qui l'arrête. */
-export function startAutoSync(): () => void {
-  const timer = setInterval(() => void syncOpenRepos(), AUTO_SYNC_INTERVAL_MS);
+/** Lance la synchronisation toutes les `minutes` (0 : aucune) ; renvoie la fonction qui l'arrête. */
+export function startAutoSync(minutes: number): () => void {
+  if (minutes <= 0) return () => {};
+  const timer = setInterval(() => void syncOpenRepos(), minutes * 60 * 1000);
   return () => clearInterval(timer);
 }

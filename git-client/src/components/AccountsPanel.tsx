@@ -8,7 +8,9 @@ import { errorMessage } from "../lib/actions";
 import { hostOf, instanceUrl } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { inputClass } from "./Modal";
-import { PullRequestList, useLinkedForge, usePullRequests } from "./PullRequestList";
+import { useLinkedForge } from "./PullRequestList";
+import { MyPullRequestsSection } from "./MyPullRequests";
+import { PanelSection as Section } from "./PanelSection";
 import type { DeviceCode, ForgeAccount, ForgeIssue, Provider } from "../types/forge";
 
 type Kind = "github" | "gitlab" | "gitlab-self";
@@ -38,19 +40,8 @@ export function AccountsPanel() {
         )}
       </Section>
 
-      <RepoForgeSection />
-    </div>
-  );
-}
-
-function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <div className="border-b border-white/10 pb-1">
-      <div className="flex items-center px-3 pt-2 pb-1">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">{title}</span>
-        <div className="ml-auto">{action}</div>
-      </div>
-      {children}
+      {accounts.map((a) => <MyPullRequestsSection key={a.id} account={a} showAccount={accounts.length > 1} />)}
+      <RepoIssuesSection />
     </div>
   );
 }
@@ -508,17 +499,16 @@ function AccountRow({ account }: { account: ForgeAccount }) {
   );
 }
 
-// ---------------------------------------------------------------- PR / MR / issues du dépôt courant
+// ---------------------------------------------------------------- Issues du dépôt courant
+// (ses PR / MR sont dans l'onglet Dépôt ; ici, celles de tous les projets : voir MyPullRequestsSection)
 
-function RepoForgeSection() {
+function RepoIssuesSection() {
   const repoPath = useRepoStore((s) => s.repoPath);
   const remotes = useRepoStore((s) => s.remotes);
   const data = useAccountsStore((s) => s.data);
   const setData = useAccountsStore((s) => s.setData);
   const client = useAccountsStore((s) => s.client);
-  const [tab, setTab] = useState<"pr" | "issues">("pr");
   const forge = useLinkedForge();
-  const prs = usePullRequests(forge);
 
   const account = forge?.account;
   const projectPath = forge?.projectPath;
@@ -543,7 +533,7 @@ function RepoForgeSection() {
 
   if (!forge) {
     return (
-      <Section title="Pull / merge requests">
+      <Section title="Issues du dépôt">
         <p className="px-3 pb-2 text-[11px] text-[var(--color-muted)]">
           {remotes.length === 0
             ? "Ce dépôt n'a aucun remote."
@@ -553,39 +543,21 @@ function RepoForgeSection() {
     );
   }
 
-  const prLabel = forge.account.provider === "gitlab" ? "MR" : "PR";
-
   return (
     <Section
-      title={forge.projectPath}
+      title={`Issues · ${forge.projectPath} (${accountData?.issues.length ?? 0})`}
       action={
-        <button
-          className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
-          title="Rafraîchir"
-          onClick={() => {
-            prs.reload();
-            loadIssues();
-          }}
-        >
+        <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" onClick={loadIssues}>
           ↻
         </button>
       }
     >
-      <div className="flex gap-1 px-2 pb-1">
-        <TabBtn active={tab === "pr"} onClick={() => setTab("pr")}>{prLabel}s ({prs.prs.length})</TabBtn>
-        <TabBtn active={tab === "issues"} onClick={() => setTab("issues")}>Issues ({accountData?.issues.length ?? 0})</TabBtn>
-      </div>
-      {tab === "pr" && <PullRequestList forge={forge} list={prs} />}
-      {tab === "issues" && (
+      {accountData?.loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
+      {accountData?.error && <p className="px-3 py-1 text-xs text-red-400 break-words">{accountData.error}</p>}
+      {!accountData?.loading && !accountData?.error && (
         <>
-          {accountData?.loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
-          {accountData?.error && <p className="px-3 py-1 text-xs text-red-400 break-words">{accountData.error}</p>}
-          {!accountData?.loading && !accountData?.error && (
-            <>
-              {accountData?.issues.map((issue) => <IssueRow key={issue.number} issue={issue} />)}
-              {accountData?.issues.length === 0 && <Empty text="Aucune issue ouverte" />}
-            </>
-          )}
+          {accountData?.issues.map((issue) => <IssueRow key={issue.number} issue={issue} />)}
+          {accountData?.issues.length === 0 && <Empty text="Aucune issue ouverte" />}
         </>
       )}
     </Section>
@@ -615,14 +587,6 @@ function ProviderIcon({ provider }: { provider: Provider }) {
     >
       {provider === "github" ? "GH" : "GL"}
     </span>
-  );
-}
-
-function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} className={`text-[10px] px-2 py-0.5 rounded ${active ? "bg-white/10 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"}`}>
-      {children}
-    </button>
   );
 }
 

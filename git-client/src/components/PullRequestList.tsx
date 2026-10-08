@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useReducer, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { GitCommitHorizontal, MessageSquare } from "lucide-react";
 import { useAccountsStore } from "../store/useAccountsStore";
 import { useRepoStore } from "../store/useRepoStore";
+import { prFreshness, seenKey, seenPrefix, useSeenPrsStore, type PrFreshness } from "../store/useSeenPrsStore";
 import { checkoutRemoteBranch, fetchRemote } from "../ipc/commands";
 import { errorMessage, runGit } from "../lib/actions";
 import { remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { PullRequestReviewDialog } from "./PullRequestReviewDialog";
-import type { ForgeAccount, ForgePR, PullRequestState } from "../types/forge";
+import { PR_PAGE_SIZE, type ForgeAccount, type ForgePR, type PullRequestState } from "../types/forge";
 import type { RemoteInfo } from "../types/git";
 
 /** Compte et projet de la forge qui hébergent un remote du dépôt courant. */
@@ -65,9 +67,59 @@ const cache = new Map<string, { open: ForgePR[]; filtered: ForgePR[] }>();
 /** Listes affichées à prévenir quand le cache est actualisé hors d'elles (synchronisation périodique). */
 const listeners = new Set<() => void>();
 
+/** Nombre de commentaires des PR GitHub par clé de consultation, valable tant que `updatedAt` ne change pas. */
+const commentCounts = new Map<string, { updatedAt: string; count: number }>();
+
 /** Vide le cache (tests). */
 export function clearPullRequestCache() {
   cache.clear();
+  commentCounts.clear();
+}
+
+/** PR avec son nombre de commentaires : la liste GitHub ne le donne pas, une requête par PR est nécessaire. */
+async function withCommentCount<T extends ForgePR>(account: ForgeAccount, projectPath: string, pr: T): Promise<T> {
+  if (pr.commentCount !== undefined) return pr;
+  const key = seenKey(account.id, projectPath, pr.number);
+  const known = commentCounts.get(key);
+  if (known?.updatedAt === pr.updatedAt) return { ...pr, commentCount: known.count };
+  const full = await (await useAccountsStore.getState().client(account)).getPullRequest(projectPath, pr.number);
+  if (full.commentCount !== undefined) commentCounts.set(key, { updatedAt: pr.updatedAt, count: full.commentCount });
+  return { ...pr, commentCount: full.commentCount };
+}
+
+/**
+ * Complète le nombre de commentaires des PR consultées qui ont changé depuis, pour distinguer un nouveau commentaire
+ * d'une autre activité. Les autres PR n'en ont pas besoin : pas de requête pour elles. Une erreur laisse la PR telle quelle.
+ */
+export async function withCommentCounts<T extends ForgePR>(account: ForgeAccount, prs: T[], projectOf: (pr: T) => string): Promise<T[]> {
+  if (account.provider !== "github") return prs;
+  const { seen } = useSeenPrsStore.getState();
+  return Promise.all(prs.map((pr) => {
+    const freshness = prFreshness(seen[seenKey(account.id, projectOf(pr), pr.number)], pr);
+    return freshness.kind === "updated" ? withCommentCount(account, projectOf(pr), pr).catch(() => pr) : pr;
+  }));
+}
+
+/**
+ * Liste des PR ouvertes à jour : complète leur nombre de commentaires et oublie les PR consultées qui ne sont plus
+ * ouvertes. Si la liste est tronquée (une page pleine), une PR absente peut être simplement au-delà : rien n'est oublié.
+ */
+async function openListLoaded(account: ForgeAccount, projectPath: string, listed: ForgePR[]): Promise<ForgePR[]> {
+  if (listed.length < PR_PAGE_SIZE) {
+    const open = new Set(listed.map((pr) => pr.number));
+    useSeenPrsStore.getState().forgetClosed(account.id, projectPath, [...open]);
+    const prefix = seenPrefix(account.id, projectPath);
+    for (const key of commentCounts.keys()) {
+      if (key.startsWith(prefix) && !open.has(Number(key.slice(prefix.length)))) commentCounts.delete(key);
+    }
+  }
+  return withCommentCounts(account, listed, () => projectPath);
+}
+
+/** Marque une PR comme lue ; sur GitHub, avec son nombre de commentaires pour repérer les prochains. */
+export async function markPullRequestRead(account: ForgeAccount, projectPath: string, pr: ForgePR) {
+  const full = account.provider === "github" ? await withCommentCount(account, projectPath, pr).catch(() => pr) : pr;
+  useSeenPrsStore.getState().markSeen(seenKey(account.id, projectPath, pr.number), full);
 }
 
 /**
@@ -77,7 +129,8 @@ export function clearPullRequestCache() {
 export async function refreshOpenPullRequests(account: ForgeAccount, projectPath: string) {
   const key = `${account.id}|${projectPath}|open`;
   const before = cache.get(key)?.open ?? null;
-  const open = await (await useAccountsStore.getState().client(account)).getPullRequests(projectPath, "open");
+  const listed = await (await useAccountsStore.getState().client(account)).getPullRequests(projectPath, "open");
+  const open = await openListLoaded(account, projectPath, listed);
   cache.set(key, { open, filtered: open });
   listeners.forEach((l) => l());
   return { before, after: open };
@@ -106,10 +159,11 @@ export function usePullRequests(forge: LinkedForge | null) {
     setError(null);
     try {
       const c = await client(account);
-      const [open, filtered] = await Promise.all([
+      const [listed, filtered] = await Promise.all([
         c.getPullRequests(projectPath, "open"),
         state === "open" ? null : c.getPullRequests(projectPath, state),
       ]);
+      const open = await openListLoaded(account, projectPath, listed);
       cache.set(key, { open, filtered: filtered ?? open });
       // Les badges lisent les PR ouvertes : le cache du filtre « ouvertes » suit aussi.
       cache.set(`${account.id}|${projectPath}|open`, { open, filtered: open });
@@ -156,8 +210,12 @@ const filterClass = "flex-1 min-w-0 bg-black/30 border border-white/10 rounded p
 export function PullRequestList({ forge, list, indent = 12 }: { forge: LinkedForge; list: PullRequestsState; indent?: number }) {
   const [reviewing, setReviewing] = useState<number | null>(null);
   const { menu, open, close } = useContextMenu();
+  const seen = useSeenPrsStore((s) => s.seen);
+  const { markUnread } = useSeenPrsStore.getState();
   const { account, projectPath, remoteName } = forge;
   const prLabel = account.provider === "gitlab" ? "MR" : "PR";
+  const keyOf = (pr: ForgePR) => seenKey(account.id, projectPath, pr.number);
+  const freshnessOf = (pr: ForgePR) => prFreshness(seen[keyOf(pr)], pr);
 
   const checkoutPr = (pr: ForgePR) => checkoutPullRequest(remoteName, pr);
 
@@ -191,20 +249,28 @@ export function PullRequestList({ forge, list, indent = 12 }: { forge: LinkedFor
       {list.error && <p className="pr-3 py-1 text-xs text-red-400 break-words" style={{ paddingLeft: indent }}>{list.error}</p>}
       {!list.loading && !list.error && (
         <>
-          {list.prs.map((pr) => (
-            <PRRow
-              key={pr.number}
-              pr={pr}
-              typeLabel={prLabel}
-              indent={indent}
-              onClick={() => setReviewing(pr.number)}
-              onContextMenu={(e) => open(e, [
-                { label: "Voir le détail…", action: () => setReviewing(pr.number) },
-                { label: `Checkout ${pr.sourceBranch}`, action: () => checkoutPr(pr) },
-                { label: "Ouvrir dans le navigateur", action: () => openUrl(pr.url) },
-              ])}
-            />
-          ))}
+          {list.prs.map((pr) => {
+            const freshness = freshnessOf(pr);
+            return (
+              <PRRow
+                key={pr.number}
+                pr={pr}
+                freshness={freshness}
+                typeLabel={prLabel}
+                indent={indent}
+                onClick={() => setReviewing(pr.number)}
+                onContextMenu={(e) => open(e, [
+                  { label: "Voir le détail…", action: () => setReviewing(pr.number) },
+                  { label: `Checkout ${pr.sourceBranch}`, action: () => checkoutPr(pr) },
+                  { label: "Ouvrir dans le navigateur", action: () => openUrl(pr.url) },
+                  freshness.kind === "read"
+                    ? { label: "Marquer comme non lue", action: () => markUnread(keyOf(pr)) }
+                    : { label: "Marquer comme lue", action: () => markPullRequestRead(account, projectPath, pr) },
+                  { label: "Tout marquer comme lu", action: () => list.prs.forEach((p) => markPullRequestRead(account, projectPath, p)) },
+                ])}
+              />
+            );
+          })}
           {list.prs.length === 0 && (
             <p className="py-1 text-xs text-[var(--color-muted)] italic" style={{ paddingLeft: indent }}>Aucune {prLabel} pour ce filtre</p>
           )}
@@ -232,12 +298,45 @@ const PR_STATE_COLORS: Record<ForgePR["state"], string> = {
   closed: "text-red-400",
 };
 
-function PRRow({ pr, typeLabel, indent, onClick, onContextMenu }: {
+/** Étiquettes des changements depuis la dernière consultation. */
+export function FreshnessTags({ freshness }: { freshness: PrFreshness }) {
+  if (freshness.kind === "unread") {
+    return <span className="w-1.5 h-1.5 mt-1 rounded-full bg-sky-400 shrink-0" title="Non lue" />;
+  }
+  if (freshness.kind !== "updated") return null;
+  const tag = "inline-flex items-center gap-0.5 text-[9px] px-1 rounded border border-amber-400/40 text-amber-300 shrink-0";
+  return (
+    <>
+      {freshness.commits && (
+        <span className={tag} title="Nouveaux commits depuis ta dernière consultation">
+          <GitCommitHorizontal size={10} /> commits
+        </span>
+      )}
+      {freshness.comments && (
+        <span className={tag} title="Nouveaux commentaires depuis ta dernière consultation">
+          <MessageSquare size={10} /> commentaires
+        </span>
+      )}
+      {!freshness.commits && !freshness.comments && (
+        <span className={tag} title="Nouvelle activité (commentaire, relecture, label…) depuis ta dernière consultation">
+          activité
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Ligne d'une PR / MR. `subtitle` remplace la ligne de détail par défaut ; `children` : badges supplémentaires. */
+export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu, subtitle, hint, children }: {
   pr: ForgePR;
+  freshness: PrFreshness;
   typeLabel: string;
   indent: number;
   onClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  subtitle?: string;
+  hint?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <div
@@ -245,16 +344,24 @@ function PRRow({ pr, typeLabel, indent, onClick, onContextMenu }: {
       style={{ paddingLeft: indent }}
       onClick={onClick}
       onContextMenu={onContextMenu}
-      title="Clic : voir le détail · Clic droit : checkout, navigateur"
+      title={hint ?? "Clic : voir le détail · Clic droit : checkout, navigateur"}
     >
       <div className="flex items-start gap-2">
         <span className={`${PR_STATE_COLORS[pr.state]} shrink-0 text-xs`}>●</span>
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-[var(--color-text)] truncate">{pr.title}</p>
+          <p
+            className={`text-xs truncate ${
+              freshness.kind === "read" ? "text-[var(--color-muted)]" : "text-[var(--color-text)] font-semibold"
+            }`}
+          >
+            {pr.title}
+          </p>
           <p className="text-[10px] text-[var(--color-muted)] truncate">
-            {typeLabel}#{pr.number} · {pr.author} · {pr.sourceBranch} → {pr.targetBranch}
+            {subtitle ?? `${typeLabel}#${pr.number} · ${pr.author} · ${pr.sourceBranch} → ${pr.targetBranch}`}
           </p>
         </div>
+        <FreshnessTags freshness={freshness} />
+        {children}
         {pr.draft && <span className="text-[9px] border border-white/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
       </div>
     </div>
