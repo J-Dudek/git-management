@@ -2,7 +2,7 @@ import { GitHubClient } from "./github";
 import { GitLabClient } from "./gitlab";
 import { forgeApi, forgeApiSend, forgeGraphql } from "../ipc/commands";
 import type {
-  CreatedPullRequest, ForgeAccount, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeOptions, NewPullRequest, PrTemplates,
+  CreatedPullRequest, ForgeAccount, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeOptions, MyPullRequests, NewPullRequest, PrTemplates,
   PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread,
   SubmittedReview,
 } from "../types/forge";
@@ -12,6 +12,10 @@ export interface ForgeClient {
   getCurrentUser(): Promise<string>;
   listRepos(): Promise<ForgeRepo[]>;
   getPullRequests(projectPath: string, state?: PullRequestState): Promise<ForgePR[]>;
+  /** PR / MR ouvertes de tous les projets : à traiter et ouvertes par moi. */
+  getMyPullRequests(): Promise<MyPullRequests>;
+  /** Une PR / MR ; sur GitHub, seule cette requête donne le nombre de commentaires. */
+  getPullRequest(projectPath: string, number: number): Promise<ForgePR>;
   getIssues(projectPath: string): Promise<ForgeIssue[]>;
   /** Branche par défaut, membres, labels, jalons du projet pour le formulaire de création. */
   getPullRequestOptions(projectPath: string): Promise<PullRequestOptions>;
@@ -58,6 +62,8 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
       getCurrentUser: () => client.getCurrentUser(),
       listRepos: () => client.listRepos(),
       getPullRequests: (path, state) => client.getPullRequests(...split(path), state),
+      getPullRequest: (path, n) => client.getPullRequest(...split(path), n),
+      getMyPullRequests: () => client.getMyPullRequests(),
       getIssues: (path) => client.getIssues(...split(path)),
       getPullRequestOptions: (path) => client.getPullRequestOptions(...split(path)),
       getPullRequestTemplates: (path) => client.getPullRequestTemplates(...split(path)),
@@ -82,6 +88,8 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
     getCurrentUser: () => client.getCurrentUser(),
     listRepos: () => client.listRepos(),
     getPullRequests: (path, state) => client.getMergeRequests(path, state),
+    getPullRequest: (path, n) => client.getMergeRequest(path, n),
+    getMyPullRequests: () => client.getMyMergeRequests(account.username),
     getIssues: (path) => client.getIssues(path),
     getPullRequestOptions: (path) => client.getMergeRequestOptions(path),
     getPullRequestTemplates: (path) => client.getMergeRequestTemplates(path),

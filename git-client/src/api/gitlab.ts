@@ -1,10 +1,11 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeMethod, MergeOptions,
-  NewPullRequest, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
+  MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
   ReviewThread, SubmittedReview,
 } from "../types/forge";
+import { PR_PAGE_SIZE } from "../types/forge";
 import { errorMessage } from "../lib/actions";
-import type { ApiGet, ApiSend } from "./github";
+import { uniquePrs, type ApiGet, type ApiSend } from "./github";
 
 // Champs lus dans les réponses de l'API GitLab (le reste est ignoré).
 interface RawUser {
@@ -38,6 +39,7 @@ interface RawIssue {
   author: RawUser | null;
   web_url: string;
   created_at: string;
+  updated_at?: string;
   labels?: string[];
 }
 
@@ -46,13 +48,18 @@ interface RawMergeRequest extends Omit<RawIssue, "state"> {
   draft?: boolean;
   source_branch?: string;
   target_branch?: string;
+  sha?: string;
+  user_notes_count?: number;
+  project_id?: number;
+  /** `full` : "group/sub/projet!12". */
+  references?: { full?: string };
+  has_conflicts?: boolean;
   reviewers?: RawUser[];
   assignees?: RawUser[];
 }
 
 interface RawMergeRequestDetails extends RawMergeRequest {
   description: string | null;
-  sha: string;
   /** GitLab ≥ 15.6 ; avant, seul `merge_status` existe. */
   detailed_merge_status?: string;
   merge_status?: string;
@@ -159,9 +166,35 @@ export class GitLabClient {
   async getMergeRequests(project: string, state: PullRequestState = "open"): Promise<ForgePR[]> {
     const id = this.encodeProject(project);
     const data = await this.get<RawMergeRequest[]>(
-      `/projects/${id}/merge_requests?state=${API_STATES[state]}&per_page=50`
+      `/projects/${id}/merge_requests?state=${API_STATES[state]}&per_page=${PR_PAGE_SIZE}`
     );
     return data.map(parseMR);
+  }
+
+  async getMergeRequest(project: string, iid: number): Promise<ForgePR> {
+    return parseMR(await this.get<RawMergeRequest>(`/projects/${this.encodeProject(project)}/merge_requests/${iid}`));
+  }
+
+  /**
+   * MR ouvertes de tous les projets : assignées, relecture demandée (fusionnées sans doublon) et ouvertes par moi.
+   * Pour les miennes, une requête de détail (pipeline) et une d'approbations par MR : la liste ne les donne pas.
+   */
+  async getMyMergeRequests(me: string): Promise<MyPullRequests> {
+    const open = `state=opened&per_page=${PR_PAGE_SIZE}`;
+    const [assigned, reviewing, authored] = await Promise.all([
+      this.get<RawMergeRequest[]>(`/merge_requests?scope=assigned_to_me&${open}`),
+      this.get<RawMergeRequest[]>(`/merge_requests?scope=all&reviewer_username=${encodeURIComponent(me)}&${open}`),
+      this.get<RawMergeRequest[]>(`/merge_requests?scope=created_by_me&${open}`),
+    ]);
+    const mine = await Promise.all(authored.map(async (raw) => {
+      const mrPath = `/projects/${raw.project_id}/merge_requests/${raw.iid}`;
+      const [details, approvals] = await Promise.all([
+        this.get<RawMergeRequestDetails>(mrPath).catch(() => null),
+        this.get<RawApprovals>(`${mrPath}/approvals`).catch((): RawApprovals => ({})),
+      ]);
+      return parseSummary(details ?? raw, approvals);
+    }));
+    return { assigned: uniquePrs([...assigned, ...reviewing].map((raw) => parseSummary(raw))), authored: mine };
   }
 
   /** Les jobs du pipeline sont facultatifs : à défaut, le statut global du pipeline est affiché. */
@@ -199,7 +232,7 @@ export class GitLabClient {
     return {
       pr,
       description: raw.description ?? "",
-      headSha: raw.sha,
+      headSha: pr.headSha,
       approvedBy,
       changesRequestedBy: [],
       approvedByMe: approvals.user_has_approved ?? approvedBy.includes(me),
@@ -428,12 +461,35 @@ function parseMR(raw: RawMergeRequest): ForgePR {
     author: raw.author?.username ?? "",
     url: raw.web_url,
     createdAt: raw.created_at,
+    updatedAt: raw.updated_at ?? raw.created_at,
+    headSha: raw.sha ?? "",
+    commentCount: raw.user_notes_count,
     draft: raw.draft ?? false,
     labels: raw.labels ?? [],
     sourceBranch: raw.source_branch ?? "",
     targetBranch: raw.target_branch ?? "",
     reviewers: (raw.reviewers ?? []).map((u) => u.username),
     assignees: (raw.assignees ?? []).map((u) => u.username),
+  };
+}
+
+const PIPELINE_STATES: Record<string, PrSummary["ci"]> = {
+  success: "success", failed: "failure",
+  created: "pending", waiting_for_resource: "pending", preparing: "pending", pending: "pending", running: "pending", scheduled: "pending",
+};
+
+/** MR d'un projet quelconque ; sans approbations ni détail, seul ce que donne la liste est connu. */
+function parseSummary(raw: RawMergeRequest & Partial<RawMergeRequestDetails>, approvals?: RawApprovals): PrSummary {
+  const full = raw.references?.full ?? "";
+  let review: PrSummary["review"] = "pending";
+  if (raw.detailed_merge_status === "requested_changes") review = "changes_requested";
+  else if (approvals?.approved_by?.length && !approvals.approvals_left) review = "approved";
+  return {
+    ...parseMR(raw),
+    projectPath: full.includes("!") ? full.slice(0, full.lastIndexOf("!")) : "",
+    review,
+    ci: raw.head_pipeline ? PIPELINE_STATES[raw.head_pipeline.status] ?? null : null,
+    conflicts: raw.has_conflicts ?? false,
   };
 }
 

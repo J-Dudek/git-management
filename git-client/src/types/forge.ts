@@ -45,6 +45,12 @@ export interface ForgePR {
   author: string;
   url: string;
   createdAt: string;
+  /** Dernière activité (commit, commentaire, relecture, label…). */
+  updatedAt: string;
+  /** Commit de tête de la branche source. */
+  headSha: string;
+  /** Nombre de commentaires, quand la forge le donne dans la liste (GitLab). */
+  commentCount?: number;
   draft: boolean;
   labels: string[];
   sourceBranch: string;
@@ -53,6 +59,25 @@ export interface ForgePR {
   reviewers: string[];
   assignees: string[];
 }
+
+/** PR / MR d'un projet quelconque, avec l'état de sa relecture, de sa CI et de sa mergeabilité. */
+export interface PrSummary extends ForgePR {
+  /** Projet hôte : "owner/repo" ou "group/sub/repo". */
+  projectPath: string;
+  review: "approved" | "changes_requested" | "pending";
+  /** null : pas de CI sur le dernier commit (ou état inconnu). */
+  ci: "success" | "failure" | "pending" | null;
+  conflicts: boolean;
+}
+
+/** PR / MR ouvertes, tous projets confondus : à traiter (assigné ou relecteur demandé) et ouvertes par moi. */
+export interface MyPullRequests {
+  assigned: PrSummary[];
+  authored: PrSummary[];
+}
+
+/** Nombre maximal de PR / MR renvoyées par une liste (une seule page). */
+export const PR_PAGE_SIZE = 50;
 
 /** Filtre d'état de la liste des PR / MR. */
 export type PullRequestState = "open" | "merged" | "closed" | "all";

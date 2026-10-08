@@ -1,16 +1,18 @@
 import { useState } from "react";
-import { Keyboard, Palette, RotateCcw, SquareTerminal, type LucideIcon } from "lucide-react";
+import { Keyboard, Palette, RefreshCw, RotateCcw, SquareTerminal, type LucideIcon } from "lucide-react";
 import { Modal } from "./Modal";
 import { Kbd } from "./Kbd";
 import {
-  ROW_HEIGHTS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, ZOOM_STEPS, defaultDisplay, useDisplayStore, type Density,
+  ROW_HEIGHTS, SYNC_INTERVALS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, ZOOM_STEPS, defaultDisplay, useDisplayStore, type Density,
 } from "../store/useDisplayStore";
+import { syncOpenRepos } from "../lib/autoSync";
 
-type Section = "appearance" | "terminal" | "shortcuts";
+type Section = "appearance" | "terminal" | "sync" | "shortcuts";
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "appearance", label: "Apparence", icon: Palette },
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
+  { id: "sync", label: "Synchronisation", icon: RefreshCw },
   { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
 ];
 
@@ -46,6 +48,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {section === "appearance" && <AppearanceSection />}
             {section === "terminal" && <TerminalSection />}
+            {section === "sync" && <SyncSection />}
             {section === "shortcuts" && <ShortcutsSection />}
           </div>
           {section !== "shortcuts" && (
@@ -179,6 +182,62 @@ function TerminalSection() {
       <p className="text-[10px] text-[var(--color-muted)] flex items-center gap-1.5">
         Dans le terminal : <Kbd keys="Ctrl+Maj+C" /> copier <span className="mx-1">·</span> <Kbd keys="Ctrl+Maj+V" /> coller
       </p>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- Synchronisation
+
+function syncLabel(minutes: number): string {
+  if (minutes === 0) return "Désactivée";
+  return minutes === 60 ? "1 h" : `${minutes} min`;
+}
+
+function syncTick(minutes: number): string {
+  if (minutes === 0) return "off";
+  return minutes === 60 ? "1 h" : `${minutes}`;
+}
+
+function SyncSection() {
+  const interval = useDisplayStore((s) => s.syncInterval);
+  const update = useDisplayStore((s) => s.update);
+  const [syncing, setSyncing] = useState(false);
+  const index = Math.max(0, SYNC_INTERVALS.indexOf(interval));
+
+  async function syncNow() {
+    setSyncing(true);
+    try {
+      await syncOpenRepos();
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <>
+      <SectionTitle title="Synchronisation" subtitle="Surveillance des dépôts ouverts dans les onglets." />
+      <Group
+        title="Intervalle"
+        description="Fetch de chaque dépôt ouvert et actualisation de ses PR / MR ; une notification résume les changements."
+        value={syncLabel(interval)}
+      >
+        <Slider
+          min={0}
+          max={SYNC_INTERVALS.length - 1}
+          value={index}
+          onChange={(i) => update({ syncInterval: SYNC_INTERVALS[i] })}
+          ticks={SYNC_INTERVALS.map(syncTick)}
+          defaultIndex={SYNC_INTERVALS.indexOf(defaultDisplay.syncInterval)}
+        />
+      </Group>
+      <button
+        onClick={syncNow}
+        disabled={syncing}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/10 hover:bg-white/10 disabled:opacity-50"
+      >
+        <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "animate-spin" : ""} />
+        {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
+      </button>
     </>
   );
 }

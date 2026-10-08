@@ -3,6 +3,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { Check, CircleDashed, CircleX, ExternalLink, MinusCircle } from "lucide-react";
 import { forgeClient } from "../api/forge";
 import { useUiStore, confirmAction } from "../store/useUiStore";
+import { seenKey, useSeenPrsStore } from "../store/useSeenPrsStore";
 import { errorMessage } from "../lib/actions";
 import type {
   DraftComment, ForgeAccount, ForgeCheck, ForgeComment, ForgePR, MergeMethod, PullRequestDetails, ReviewEvent,
@@ -31,10 +32,10 @@ const formatDate = (iso: string) => (iso ? dateFormat.format(new Date(iso)) : ""
 export function PullRequestReviewDialog({ account, projectPath, remoteName, number, onCheckout, onChanged, onClose }: {
   account: ForgeAccount;
   projectPath: string;
-  /** Remote local du projet : sert au calcul du diff. */
-  remoteName: string;
+  /** Remote local du projet : sert au calcul du diff. null : projet sans dépôt ouvert (pas de fichiers ni de checkout). */
+  remoteName: string | null;
   number: number;
-  onCheckout: (pr: ForgePR) => void;
+  onCheckout?: (pr: ForgePR) => void;
   /** La PR a changé d'état (merge, fermeture…) : la liste doit être rechargée. */
   onChanged: () => void;
   onClose: () => void;
@@ -67,6 +68,8 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
       ]);
       setDetails(d);
       setComments(c);
+      // Consultée dans l'état qu'on vient d'afficher (rechargé aussi après chaque action : son propre commentaire ne la rend pas « modifiée »).
+      useSeenPrsStore.getState().markSeen(seenKey(account.id, projectPath, number), d.pr);
       if (!initialized.current) {
         initialized.current = true;
         setMethod(d.defaultMergeMethod);
@@ -169,7 +172,7 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
       {!details && !loadError && <p className="p-4 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
       {details && (
         <div className="p-4 flex flex-col gap-4">
-          <Header details={details} account={account} forgeName={forgeName} onCheckout={() => onCheckout(details.pr)} />
+          <Header details={details} account={account} forgeName={forgeName} onCheckout={onCheckout && (() => onCheckout(details.pr))} />
 
 <div className="flex gap-1 border-b border-white/10 -mx-4 px-4">
             <TabButton active={tab === "conversation"} onClick={() => setTab("conversation")}>
@@ -180,7 +183,12 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
             </TabButton>
           </div>
 
-          {tab === "files" && (
+          {tab === "files" && !remoteName && (
+            <p className="text-xs text-[var(--color-muted)] italic">
+              Les fichiers modifiés se calculent dans le dépôt local : ouvre le dépôt de {projectPath} pour les voir.
+            </p>
+          )}
+          {tab === "files" && remoteName && (
             <div className="-mx-4 -mb-4">
               <PullRequestFiles
                 account={account}
@@ -275,7 +283,7 @@ function Header({ details, account, forgeName, onCheckout }: {
   details: PullRequestDetails;
   account: ForgeAccount;
   forgeName: string;
-  onCheckout: () => void;
+  onCheckout?: () => void;
 }) {
   const { pr } = details;
   const state = STATE_STYLES[pr.state];
@@ -293,7 +301,7 @@ function Header({ details, account, forgeName, onCheckout }: {
         <span className="text-[var(--color-muted)]">→</span>
         <span className="font-mono text-xs text-[var(--color-text)] truncate">{pr.targetBranch}</span>
         <div className="ml-auto flex gap-2 shrink-0">
-          {pr.state === "open" && <Button onClick={onCheckout}>Checkout</Button>}
+          {pr.state === "open" && onCheckout && <Button onClick={onCheckout}>Checkout</Button>}
           <Button onClick={() => openUrl(pr.url)} title={`Ouvrir sur ${forgeName}`}>
             <span className="inline-flex items-center gap-1"><ExternalLink size={12} /> {forgeName}</span>
           </Button>

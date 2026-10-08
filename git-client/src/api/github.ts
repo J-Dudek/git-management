@@ -1,8 +1,9 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgeLabel, ForgeMilestone, ForgePR, ForgeRepo, ForgeUser,
-  LinePosition, MergeMethod, MergeOptions, NewPullRequest, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState,
+  LinePosition, MergeMethod, MergeOptions, MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState,
   ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread, SubmittedReview,
 } from "../types/forge";
+import { PR_PAGE_SIZE } from "../types/forge";
 import { errorMessage } from "../lib/actions";
 
 /** GET sur l'API du compte (chemin relatif). La requête et le token sont gérés côté Rust. */
@@ -51,6 +52,7 @@ interface RawIssue {
   user: RawUser | null;
   html_url: string;
   created_at: string;
+  updated_at?: string;
   labels?: RawLabel[];
   /** Présent quand l'« issue » est en fait une pull request. */
   pull_request?: unknown;
@@ -69,6 +71,9 @@ interface RawPullRequest extends RawIssue {
   /** null tant que GitHub calcule la mergeabilité. */
   mergeable?: boolean | null;
   mergeable_state?: string;
+  /** Commentaires de conversation et de ligne : seulement dans le détail d'une PR, pas dans la liste. */
+  comments?: number;
+  review_comments?: number;
 }
 
 interface RawRepoSettings {
@@ -105,6 +110,48 @@ interface RawStatus {
   state: "pending" | "success" | "failure" | "error";
   target_url: string | null;
 }
+
+/** PR lue par la recherche GraphQL (les résultats qui ne sont pas des PR arrivent vides). */
+interface RawSearchPullRequest {
+  number?: number;
+  title: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  isDraft: boolean;
+  headRefName: string;
+  baseRefName: string;
+  headRefOid: string;
+  author: { login: string } | null;
+  repository: { nameWithOwner: string };
+  labels: { nodes: { name: string }[] };
+  assignees: { nodes: { login: string }[] };
+  reviewRequests: { nodes: { requestedReviewer: { login?: string } | null }[] };
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  latestOpinionatedReviews: { nodes: { state: string }[] };
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  commits: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] };
+}
+
+const SEARCH_FIELDS = `
+  ... on PullRequest {
+    number title url createdAt updatedAt isDraft headRefName baseRefName headRefOid
+    author { login }
+    repository { nameWithOwner }
+    labels(first: 20) { nodes { name } }
+    assignees(first: 20) { nodes { login } }
+    reviewRequests(first: 20) { nodes { requestedReviewer { ... on User { login } } } }
+    reviewDecision
+    latestOpinionatedReviews(first: 20) { nodes { state } }
+    mergeable
+    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+  }`;
+
+const MY_PRS_QUERY = `query($assigned: String!, $reviewing: String!, $authored: String!) {
+  assigned: search(query: $assigned, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
+  reviewing: search(query: $reviewing, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
+  authored: search(query: $authored, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
+}`;
 
 /** Explication de `mergeable_state` (https://docs.github.com/rest/pulls/pulls). */
 const MERGE_STATES: Record<string, string> = {
@@ -144,11 +191,28 @@ export class GitHubClient {
   /** GitHub ne filtre pas les PR mergées : elles sont extraites des PR fermées. */
   async getPullRequests(owner: string, repo: string, state: PullRequestState = "open"): Promise<ForgePR[]> {
     const query = state === "merged" ? "closed" : state;
-    const data = await this.get<RawPullRequest[]>(`/repos/${seg(owner)}/${seg(repo)}/pulls?state=${query}&per_page=50`);
+    const data = await this.get<RawPullRequest[]>(`/repos/${seg(owner)}/${seg(repo)}/pulls?state=${query}&per_page=${PR_PAGE_SIZE}`);
     const prs = data.map(parsePR);
     if (state === "merged") return prs.filter((p) => p.state === "merged");
     if (state === "closed") return prs.filter((p) => p.state === "closed");
     return prs;
+  }
+
+  async getPullRequest(owner: string, repo: string, number: number): Promise<ForgePR> {
+    return parsePR(await this.get<RawPullRequest>(`/repos/${seg(owner)}/${seg(repo)}/pulls/${number}`));
+  }
+
+  /** PR ouvertes de tous les dépôts : assignées, relecture demandée (fusionnées sans doublon) et ouvertes par moi. */
+  async getMyPullRequests(): Promise<MyPullRequests> {
+    const open = "is:pr is:open archived:false";
+    type Result = { nodes: RawSearchPullRequest[] };
+    const data = await this.graphql<{ assigned: Result; reviewing: Result; authored: Result }>(MY_PRS_QUERY, {
+      assigned: `${open} assignee:@me`,
+      reviewing: `${open} review-requested:@me`,
+      authored: `${open} author:@me`,
+    });
+    const parse = (r: Result) => r.nodes.filter((n) => n.number !== undefined).map(parseSearchPR);
+    return { assigned: uniquePrs([...parse(data.assigned), ...parse(data.reviewing)]), authored: parse(data.authored) };
   }
 
   /** Les checks sont facultatifs : un token sans accès aux checks n'empêche pas d'afficher la PR. */
@@ -408,6 +472,9 @@ function parsePR(raw: RawPullRequest): ForgePR {
     author: raw.user?.login ?? "",
     url: raw.html_url,
     createdAt: raw.created_at,
+    updatedAt: raw.updated_at ?? raw.created_at,
+    headSha: raw.head?.sha ?? "",
+    commentCount: raw.comments === undefined ? undefined : raw.comments + (raw.review_comments ?? 0),
     draft: raw.draft ?? false,
     labels: (raw.labels ?? []).map((l) => l.name),
     sourceBranch: raw.head?.ref ?? "",
@@ -427,6 +494,50 @@ interface RawContentEntry {
 export function decodeBase64(content: string): string {
   const binary = atob(content.replace(/\s/g, ""));
   return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
+}
+
+const CI_STATES: Record<string, PrSummary["ci"]> = {
+  SUCCESS: "success", FAILURE: "failure", ERROR: "failure", PENDING: "pending", EXPECTED: "pending",
+};
+
+function parseSearchPR(raw: RawSearchPullRequest): PrSummary {
+  const verdicts = raw.latestOpinionatedReviews.nodes.map((r) => r.state);
+  let review: PrSummary["review"] = "pending";
+  // Sans relecture obligatoire, GitHub ne donne pas de décision : on la déduit des derniers avis.
+  if (raw.reviewDecision === "CHANGES_REQUESTED" || (!raw.reviewDecision && verdicts.includes("CHANGES_REQUESTED"))) review = "changes_requested";
+  else if (raw.reviewDecision === "APPROVED" || (!raw.reviewDecision && verdicts.includes("APPROVED"))) review = "approved";
+  const rollup = raw.commits.nodes[0]?.commit.statusCheckRollup;
+  return {
+    number: raw.number!,
+    title: raw.title,
+    state: "open",
+    author: raw.author?.login ?? "",
+    url: raw.url,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+    headSha: raw.headRefOid,
+    draft: raw.isDraft,
+    labels: raw.labels.nodes.map((l) => l.name),
+    sourceBranch: raw.headRefName,
+    targetBranch: raw.baseRefName,
+    reviewers: raw.reviewRequests.nodes.flatMap((r) => (r.requestedReviewer?.login ? [r.requestedReviewer.login] : [])),
+    assignees: raw.assignees.nodes.map((u) => u.login),
+    projectPath: raw.repository.nameWithOwner,
+    review,
+    ci: rollup ? CI_STATES[rollup.state] ?? null : null,
+    conflicts: raw.mergeable === "CONFLICTING",
+  };
+}
+
+/** Sans doublon (même projet et même numéro), dans l'ordre d'arrivée. */
+export function uniquePrs<T extends { projectPath: string; number: number }>(prs: T[]): T[] {
+  const seen = new Set<string>();
+  return prs.filter((pr) => {
+    const key = `${pr.projectPath}#${pr.number}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 interface RawThread {

@@ -27,6 +27,7 @@ import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
+import { startAutoSync } from "./lib/autoSync";
 import { openDevtools } from "./ipc/commands";
 
 type LeftTab = "repo" | "accounts";
@@ -35,6 +36,7 @@ export default function App() {
   const [leftTab, setLeftTab] = useState<LeftTab>("repo");
   const [showClone, setShowClone] = useState(false);
   const zoom = useDisplayStore((s) => s.zoom);
+  const syncInterval = useDisplayStore((s) => s.syncInterval);
   const repoPath = useRepoStore((s) => s.repoPath);
   const center = useRepoStore((s) => s.center);
   const selectedCommit = useRepoStore((s) => s.selectedCommit);
@@ -65,6 +67,9 @@ export default function App() {
   useEffect(() => {
     checkForUpdatesOnStartup();
   }, []);
+
+  // Fetch et PR de chaque dépôt ouvert à intervalle régulier (Préférences) : les changements sont notifiés.
+  useEffect(() => startAutoSync(syncInterval), [syncInterval]);
 
   // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
   useEffect(() => {

@@ -22,6 +22,12 @@ describe("GitHubClient", () => {
     expect(prs[0]).toMatchObject({ number: 42, state: "open", author: "alice", sourceBranch: "feature/x", targetBranch: "main", labels: ["enhancement"] });
   });
 
+  it("getPullRequest counts conversation and line comments", async () => {
+    const { gh, get } = client({ number: 7, title: "t", state: "open", merged_at: null, updated_at: "2024-01-03", head: { ref: "x", sha: "abc" }, comments: 2, review_comments: 3 });
+    expect(await gh.getPullRequest("o", "r", 7)).toMatchObject({ updatedAt: "2024-01-03", headSha: "abc", commentCount: 5 });
+    expect(get).toHaveBeenCalledWith("/repos/o/r/pulls/7");
+  });
+
   it("marks merged PRs", async () => {
     const { gh } = client([{ number: 1, title: "t", state: "closed", merged_at: "2024-01-02", labels: [] }]);
     expect((await gh.getPullRequests("o", "r"))[0].state).toBe("merged");
@@ -287,5 +293,25 @@ describe("GitHubClient inline review", () => {
   it("getPullRequestTemplates returns nothing when the repository has no template", async () => {
     const get = vi.fn((path: string) => (path === "/repos/o/r/contents" ? Promise.resolve([]) : Promise.reject(new Error("404"))));
     expect(await new GitHubClient(get as never).getPullRequestTemplates("o", "r")).toEqual({ templates: [], defaultName: null });
+  });
+
+  it("getMyPullRequests merges assigned and review-requested PRs and derives their status", async () => {
+    const node = (number: number, extra: Record<string, unknown> = {}) => ({
+      number, title: `PR ${number}`, url: "u", createdAt: "c", updatedAt: "u", isDraft: false, headRefName: "x", baseRefName: "main",
+      headRefOid: "sha", author: { login: "me" }, repository: { nameWithOwner: "o/r" }, labels: { nodes: [] },
+      assignees: { nodes: [] }, reviewRequests: { nodes: [] }, reviewDecision: null, latestOpinionatedReviews: { nodes: [] },
+      mergeable: "MERGEABLE", commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] }, ...extra,
+    });
+    const graphql = vi.fn().mockResolvedValue({
+      assigned: { nodes: [node(1), {}] },
+      reviewing: { nodes: [node(1), node(2, { reviewDecision: "CHANGES_REQUESTED" })] },
+      authored: { nodes: [node(3, { latestOpinionatedReviews: { nodes: [{ state: "APPROVED" }] }, mergeable: "CONFLICTING" })] },
+    });
+    const gh = new GitHubClient(vi.fn() as never, undefined, graphql as never);
+    const mine = await gh.getMyPullRequests();
+
+    expect(graphql.mock.calls[0][1]).toMatchObject({ assigned: expect.stringContaining("assignee:@me"), authored: expect.stringContaining("author:@me") });
+    expect(mine.assigned.map((p) => [p.number, p.review])).toEqual([[1, "pending"], [2, "changes_requested"]]);
+    expect(mine.authored[0]).toMatchObject({ number: 3, projectPath: "o/r", review: "approved", ci: "success", conflicts: true, headSha: "sha" });
   });
 });
