@@ -12,7 +12,8 @@ import { errorMessage, reportMerge, runGit } from "../lib/actions";
 import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
-import { localOnlyBranches } from "../lib/branches";
+import { PullRequestDialog, type PullRequestTarget } from "./PullRequestDialog";
+import { branchTree, flattenTree, localOnlyBranches, type BranchNode } from "../lib/branches";
 import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo } from "../types/git";
 
@@ -57,6 +58,7 @@ export function Sidebar() {
   const [selection, setSelection] = useState<MultiSelection>(EMPTY_SELECTION);
   const picked = selection.items;
   const clearPicked = () => setSelection((s) => ({ ...s, items: [] }));
+  const [pullRequest, setPullRequest] = useState<PullRequestTarget | null>(null);
 
   // Les branches supprimées ou renommées sortent de la sélection.
   useEffect(() => {
@@ -68,6 +70,7 @@ export function Sidebar() {
   const path = repoPath;
 
   const local = branches.filter((b) => !b.is_remote);
+  const localTree = branchTree(local, (b) => b.name);
   const remoteBranches = branches.filter((b) => b.is_remote);
   const localOnly = localOnlyBranches(branches);
   const head = info?.head_branch ?? "HEAD";
@@ -77,16 +80,43 @@ export function Sidebar() {
     if (commit) setSelectedCommit(commit);
   }
 
-  /** Lien de création de PR/MR si un compte correspond à un remote du dépôt. */
-  function pullRequestEntry(branch: string): MenuEntry[] {
+  /**
+   * Création de PR (GitHub) / MR (GitLab) pour chaque compte dont l'instance héberge un remote du dépôt :
+   * formulaire complet dans l'application, ou page de création dans le navigateur.
+   * Branche locale : projet de sa branche suivie en priorité. Branche distante : projet de son remote.
+   */
+  function pullRequestEntries(b: BranchInfo): MenuEntry[] {
+    const [remoteName, remoteBranch] = b.is_remote ? [b.name.slice(0, b.name.indexOf("/")), b.name.slice(b.name.indexOf("/") + 1)] : [];
+    const upstreamRemote = b.upstream?.slice(0, b.upstream.indexOf("/"));
+    const entries: MenuEntry[] = [];
     for (const account of accounts) {
-      const match = remoteForAccount(remotes, account);
-      if (match) {
-        const label = account.provider === "github" ? "Créer une pull request" : "Créer une merge request";
-        return [{ label, hint: match.path, action: () => openUrl(newPullRequestUrl(account, match.path, branch)) }];
-      }
+      const candidates = b.is_remote ? remotes.filter((r) => r.name === remoteName) : remotes;
+      const match = remoteForAccount(candidates, account, upstreamRemote);
+      if (!match) continue;
+      const remote = match.remote.name;
+      // Nom de la branche sur le remote : celui de la branche suivie si elle est sur ce remote.
+      const source = remoteBranch
+        ?? (b.upstream?.startsWith(`${remote}/`) ? b.upstream.slice(remote.length + 1) : b.name);
+      const github = account.provider === "github";
+      const forge = github ? "GitHub" : "GitLab";
+      const noun = github ? "pull request" : "merge request";
+      entries.push(
+        {
+          label: `Créer une ${noun} ${forge}…`,
+          hint: match.path,
+          action: () => setPullRequest({
+            account,
+            projectPath: match.path,
+            remoteName: remote,
+            sourceBranch: source,
+            localBranch: b.is_remote ? undefined : b.name,
+            needsPush: !b.is_remote && (!b.upstream?.startsWith(`${remote}/`) || b.ahead > 0),
+          }),
+        },
+        { label: `Ouvrir la création de ${noun} sur ${forge}`, action: () => openUrl(newPullRequestUrl(account, match.path, source)) },
+      );
     }
-    return [];
+    return entries;
   }
 
   async function newBranchFrom(from: string) {
@@ -102,7 +132,8 @@ export function Sidebar() {
   }
 
   function handleLocalClick(e: React.MouseEvent, b: BranchInfo) {
-    const order = local.map((l) => l.name);
+    // Ordre visuel de l'arbre, pour que Maj + clic sélectionne la plage affichée.
+    const order = flattenTree(localTree).map((l) => l.name);
     // La branche courante ne peut pas être supprimée : elle n'entre pas dans la sélection.
     const selectable = (name: string) => name !== info?.head_branch;
     const next = clickSelection(order, selection, b.name, clickModifiers(e), { selectable });
@@ -158,7 +189,7 @@ export function Sidebar() {
         label: b.upstream ? `Push vers ${b.upstream}` : "Push (publier la branche)",
         action: () => runGit(() => push(path, { branch: b.name }), { busy: "Push…", success: `Push de ${b.name} terminé` }),
       },
-      ...pullRequestEntry(b.name),
+      ...pullRequestEntries(b),
       "separator",
       { label: `Créer une branche depuis ${b.name}…`, action: () => newBranchFrom(b.name) },
       {
@@ -210,6 +241,8 @@ export function Sidebar() {
         label: `Rebaser ${head} sur ${b.name}`,
         action: async () => reportMerge(await runGit(() => rebaseOnto(path, b.name)), `Rebase sur ${b.name} terminé`),
       },
+      ...pullRequestEntries(b),
+      "separator",
       { label: `Créer une branche depuis ${b.name}…`, action: () => newBranchFrom(b.name) },
       { label: "Copier le nom", action: () => navigator.clipboard.writeText(b.name) },
       "separator",
@@ -310,20 +343,25 @@ export function Sidebar() {
   return (
     <aside className="flex flex-col h-full bg-[var(--color-bg-secondary)] text-sm select-none overflow-y-auto py-1">
       <Group title="Local" count={local.length}>
-        {local.map((b) => (
-          <Row
-            key={b.name}
-            icon="⎇"
-            label={b.name}
-            active={b.is_head}
-            selected={picked.includes(b.name)}
-            title={branchTitle(b, localOnly.has(b.name))}
-            onClick={(e) => handleLocalClick(e, b)}
-            onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
-            onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
-            trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
-          />
-        ))}
+        <BranchTree
+          nodes={localTree}
+          depth={0}
+          renderBranch={(b, label, depth) => (
+            <Row
+              key={b.name}
+              icon="⎇"
+              label={label}
+              depth={depth}
+              active={b.is_head}
+              selected={picked.includes(b.name)}
+              title={`${b.name}\n${branchTitle(b, localOnly.has(b.name))}`}
+              onClick={(e) => handleLocalClick(e, b)}
+              onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
+              onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
+              trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
+            />
+          )}
+        />
       </Group>
 
       <Group
@@ -334,19 +372,22 @@ export function Sidebar() {
       >
         {remoteNames.map((name) => (
           <SubGroup key={name} title={name} onContextMenu={(e) => openMenu(e, remoteGroupMenu(name))}>
-            {remoteBranches
-              .filter((b) => b.name.startsWith(`${name}/`))
-              .map((b) => (
+            <BranchTree
+              nodes={branchTree(remoteBranches.filter((b) => b.name.startsWith(`${name}/`)), (b) => b.name.slice(name.length + 1))}
+              depth={1}
+              renderBranch={(b, label, depth) => (
                 <Row
                   key={b.name}
                   icon="⟳"
-                  label={b.name.slice(name.length + 1)}
-                  indent
+                  label={label}
+                  depth={depth}
+                  title={b.name}
                   onClick={() => selectHash(b.target_hash)}
                   onDoubleClick={() => !busy && runGit(() => checkoutRemoteBranch(path, b.name))}
                   onContextMenu={(e) => openMenu(e, remoteMenu(b))}
                 />
-              ))}
+              )}
+            />
           </SubGroup>
         ))}
       </Group>
@@ -448,6 +489,7 @@ export function Sidebar() {
       </Group>
 
       {menu && <ContextMenu menu={menu} onClose={closeMenu} />}
+      {pullRequest && <PullRequestDialog target={pullRequest} onClose={() => setPullRequest(null)} />}
     </aside>
   );
 }
@@ -510,13 +552,59 @@ function SubGroup({ title, children, onContextMenu }: {
   );
 }
 
-function Row({ icon, label, active, selected, indent, title, trailing, onClick, onDoubleClick, onContextMenu }: {
+/** Arbre de branches : un dossier pliable par préfixe « xxx/ », récursivement. */
+function BranchTree({ nodes, depth, renderBranch }: {
+  nodes: BranchNode<BranchInfo>[];
+  depth: number;
+  renderBranch: (branch: BranchInfo, label: string, depth: number) => React.ReactNode;
+}) {
+  return nodes.map((node) =>
+    node.kind === "branch" ? (
+      renderBranch(node.item, node.name, depth)
+    ) : (
+      <BranchFolder key={`folder:${node.path}`} name={node.name} count={node.count} depth={depth}>
+        <BranchTree nodes={node.children} depth={depth + 1} renderBranch={renderBranch} />
+      </BranchFolder>
+    ),
+  );
+}
+
+function BranchFolder({ name, count, depth, children }: {
+  name: string;
+  count: number;
+  depth: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <li>
+      <button
+        className="w-full flex items-center gap-1 pr-2 py-[3px] text-xs text-[var(--color-text)] hover:bg-white/5"
+        style={{ paddingLeft: rowPadding(depth) - 12 }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="w-2 text-[9px] text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
+        <span className="truncate">{name}</span>
+        <span className="ml-1 text-[10px] opacity-50">{count}</span>
+      </button>
+      {open && <ul>{children}</ul>}
+    </li>
+  );
+}
+
+/** Retrait gauche (px) d'une ligne selon sa profondeur dans l'arbre. */
+function rowPadding(depth: number): number {
+  return 24 + depth * 12;
+}
+
+function Row({ icon, label, active, selected, depth = 0, title, trailing, onClick, onDoubleClick, onContextMenu }: {
   icon: string;
   label: string;
   active?: boolean;
   /** Fait partie d'une sélection multiple. */
   selected?: boolean;
-  indent?: boolean;
+  /** Profondeur dans l'arbre (dossiers de branches, remotes). */
+  depth?: number;
   title?: string;
   trailing?: React.ReactNode;
   onClick?: (e: React.MouseEvent) => void;
@@ -527,7 +615,8 @@ function Row({ icon, label, active, selected, indent, title, trailing, onClick, 
     <li>
       <div
         title={title}
-        className={`flex items-center gap-2 ${indent ? "pl-9" : "pl-6"} pr-2 py-[3px] cursor-default ${rowTone(active, selected)}`}
+        className={`flex items-center gap-2 pr-2 py-[3px] cursor-default ${rowTone(active, selected)}`}
+        style={{ paddingLeft: rowPadding(depth) }}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}

@@ -55,3 +55,39 @@ describe("GitLabClient", () => {
     expect(repo).toMatchObject({ fullName: "team/app", cloneUrl: "https://gitlab.com/team/app.git", private: true });
   });
 });
+
+describe("GitLabClient merge request creation", () => {
+  it("sends every option in the creation request, draft as a title prefix", async () => {
+    const send = vi.fn().mockResolvedValue(rawMR);
+    const gl = new GitLabClient(vi.fn() as never, send as never);
+    const { pr } = await gl.createMergeRequest("group/app", {
+      sourceBranch: "feat/x", targetBranch: "main", title: "feat: x", description: "d", draft: true,
+      assignees: [{ id: 1, username: "alice", name: "Alice" }], reviewers: [{ id: 2, username: "bob", name: "Bob" }],
+      labels: ["a", "b"], milestone: { id: 9, title: "v2" }, removeSourceBranch: true, squash: false,
+    });
+    expect(send).toHaveBeenCalledWith("POST", "/projects/group%2Fapp/merge_requests", {
+      source_branch: "feat/x", target_branch: "main", title: "Draft: feat: x", description: "d",
+      assignee_ids: [1], reviewer_ids: [2], labels: "a,b", milestone_id: 9, remove_source_branch: true, squash: false,
+    });
+    expect(pr.number).toBe(12);
+  });
+
+  it("reads project defaults for squash and source branch removal", async () => {
+    const responses: Record<string, unknown> = {
+      "/projects/group%2Fapp": { default_branch: "develop", squash_option: "default_on", remove_source_branch_after_merge: true },
+      "/projects/group%2Fapp/members/all?per_page=100": [{ id: 1, username: "alice", name: "Alice" }, { id: 2, username: "old", state: "blocked" }],
+      "/projects/group%2Fapp/labels?per_page=100": [{ name: "bug", color: "#ff0000" }],
+      "/projects/group%2Fapp/milestones?state=active&per_page=100": [{ id: 4, title: "v2" }],
+    };
+    const get = vi.fn((path: string) => Promise.resolve(responses[path]));
+    const options = await new GitLabClient(get as never).getMergeRequestOptions("group/app");
+    expect(options).toEqual({
+      defaultBranch: "develop",
+      users: [{ id: 1, username: "alice", name: "Alice" }],
+      labels: [{ name: "bug", color: "#ff0000" }],
+      milestones: [{ id: 4, title: "v2" }],
+      squashDefault: true,
+      removeSourceBranchDefault: true,
+    });
+  });
+});

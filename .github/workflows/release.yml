@@ -3,7 +3,7 @@ name: Release
 # À chaque merge sur main :
 #   1. tests (workflow CI) ;
 #   2. calcul de la version d'après les commits depuis le dernier tag (Conventional Commits),
-#      mise à jour des fichiers applicatifs, commit sur main et tag vX.Y.Z ;
+#      mise à jour des fichiers applicatifs et du CHANGELOG.md, commit sur main et tag vX.Y.Z ;
 #   3. génération des paquets Linux / Windows dans une release GitHub ;
 #   4. publication de la release, une fois tous les paquets générés.
 # Si les commits ne justifient pas de release (docs, ci, test, chore, style), on s'arrête après les tests.
@@ -34,6 +34,7 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.next.outputs.version }}
+      changelog: ${{ steps.release.outputs.changelog }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,17 +60,24 @@ jobs:
             echo "Aucun changement applicatif depuis la dernière release : pas de nouvelle version." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Mise à jour des fichiers, commit et tag
+      - name: Mise à jour des fichiers et du changelog, commit et tag
+        id: release
         if: steps.next.outputs.version != ''
         env:
           VERSION: ${{ steps.next.outputs.version }}
         run: |
           node git-client/scripts/version.mjs apply "$VERSION"
+          # Section ajoutée en tête de CHANGELOG.md ; ses notes deviennent le corps de la release.
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            node git-client/scripts/version.mjs changelog "$VERSION"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add git-client/package.json git-client/package-lock.json \
             git-client/src-tauri/Cargo.toml git-client/src-tauri/Cargo.lock \
-            git-client/src-tauri/tauri.conf.json
+            git-client/src-tauri/tauri.conf.json CHANGELOG.md
           git commit -m "chore(release): v$VERSION [skip ci]"
           git tag -a "v$VERSION" -m "Merathon v$VERSION"
           # Commit et tag poussés ensemble : soit les deux, soit aucun.
@@ -141,6 +149,8 @@ jobs:
           releaseName: "Merathon ${{ env.TAG }}"
           releaseBody: |
             ## Merathon — Git Repository Manager ${{ env.TAG }}
+
+            ${{ needs.version.outputs.changelog }}
 
             ### Téléchargements
             - **Linux** : `.deb` (Debian/Ubuntu) · `.AppImage` (universel)

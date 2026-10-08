@@ -18,6 +18,7 @@ describe("parseRemoteUrl", () => {
   it("parses scp-like and ssh:// remotes", () => {
     expect(parseRemoteUrl("git@github.com:owner/repo.git")).toEqual({ host: "github.com", path: "owner/repo" });
     expect(parseRemoteUrl("ssh://git@git.corp.io:2222/team/app.git")).toEqual({ host: "git.corp.io", path: "team/app" });
+    expect(parseRemoteUrl("git@github.com:/owner/repo.git")).toEqual({ host: "github.com", path: "owner/repo" });
   });
 
   it("rejects local paths", () => {
@@ -34,6 +35,11 @@ describe("remoteForAccount", () => {
 
   it("prefers origin among remotes on the account host", () => {
     expect(remoteForAccount(remotes, github)?.path).toBe("upstream/repo");
+  });
+
+  it("prefers the requested remote when it is on the account host", () => {
+    expect(remoteForAccount(remotes, github, "fork")?.path).toBe("alice/repo");
+    expect(remoteForAccount(remotes, github, "corp")?.remote.name).toBe("origin");
   });
 
   it("matches self-hosted instances by host", () => {

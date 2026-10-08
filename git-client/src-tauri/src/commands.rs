@@ -593,6 +593,24 @@ pub async fn forge_api(app: AppHandle, account_id: String, path: String) -> Resu
     .await
 }
 
+/// Requête d'écriture (POST / PUT / PATCH) sur l'API du compte : création de pull / merge requests…
+#[tauri::command]
+pub async fn forge_api_send(
+    app: AppHandle,
+    account_id: String,
+    method: String,
+    path: String,
+    body: Option<serde_json::Value>,
+) -> Result<serde_json::Value, String> {
+    let store = account_store(&app)?;
+    blocking_str(move || {
+        let account = store.get(&account_id)?;
+        let token = store.token(&account.id)?;
+        crate::forge::request_json(&account, &token, &method, &path, body.as_ref())
+    })
+    .await
+}
+
 // ---------------------------------------------------------------- OAuth (device flow)
 
 #[derive(serde::Serialize)]

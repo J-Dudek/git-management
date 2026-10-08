@@ -30,6 +30,20 @@ export function Dialog() {
         }}
       >
         {dialog.message && <p className="text-xs text-[var(--color-muted)] whitespace-pre-line">{dialog.message}</p>}
+        {dialog.sections && dialog.sections.length > 0 && (
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-2 rounded border border-white/10 bg-black/20 p-3">
+            {dialog.sections.map((section) => (
+              <section key={section.title}>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)] mb-1">{section.title}</h3>
+                <ul className="list-disc pl-4 flex flex-col gap-0.5">
+                  {section.items.map((item, i) => (
+                    <li key={i} className="text-xs text-[var(--color-text)]">{item}</li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
         {dialog.input && (dialog.input.multiline ? (
           <textarea
             autoFocus

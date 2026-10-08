@@ -164,6 +164,9 @@ export const renameAccount = (id: string, label: string) => invoke<SavedAccount>
 export const removeAccount = (id: string) => invoke<void>("remove_account", { id });
 /** GET sur l'API GitHub / GitLab du compte ; le token ne quitte pas le backend. */
 export const forgeApi = (accountId: string, path: string) => invoke<unknown>("forge_api", { accountId, path });
+/** POST / PUT / PATCH sur l'API GitHub / GitLab du compte (création de PR / MR…). */
+export const forgeApiSend = (accountId: string, method: "POST" | "PUT" | "PATCH", path: string, body?: unknown) =>
+  invoke<unknown>("forge_api_send", { accountId, method, path, body: body ?? null });
 
 // ---------------------------------------------------------------- OAuth (device flow)
 

@@ -61,6 +61,58 @@ export interface ForgeIssue {
   labels: string[];
 }
 
+export interface ForgeUser {
+  /** Identifiant numérique (GitLab l'exige pour assigner) ; GitHub utilise le login. */
+  id: number;
+  username: string;
+  name: string;
+}
+
+export interface ForgeLabel {
+  name: string;
+  /** Couleur hexadécimale avec « # ». */
+  color: string;
+}
+
+export interface ForgeMilestone {
+  /** Numéro (GitHub) ou id (GitLab) attendu par l'API de création. */
+  id: number;
+  title: string;
+}
+
+/** Valeurs proposables dans le formulaire de création d'une PR / MR. */
+export interface PullRequestOptions {
+  defaultBranch: string;
+  users: ForgeUser[];
+  labels: ForgeLabel[];
+  milestones: ForgeMilestone[];
+  /** Réglages par défaut du projet GitLab (cases pré-cochées). */
+  squashDefault: boolean;
+  removeSourceBranchDefault: boolean;
+}
+
+export interface NewPullRequest {
+  sourceBranch: string;
+  targetBranch: string;
+  title: string;
+  description: string;
+  draft: boolean;
+  assignees: ForgeUser[];
+  reviewers: ForgeUser[];
+  labels: string[];
+  milestone: ForgeMilestone | null;
+  /** GitLab : supprimer la branche source après le merge. */
+  removeSourceBranch: boolean;
+  /** GitLab : squasher les commits au merge. */
+  squash: boolean;
+}
+
+export interface CreatedPullRequest {
+  pr: ForgePR;
+  /** Étapes secondaires échouées (relecteurs, labels…) : la PR existe quand même. */
+  warnings: string[];
+}
+
 export interface AccountData {
   prs: ForgePR[];
   issues: ForgeIssue[];
