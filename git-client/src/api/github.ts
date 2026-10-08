@@ -1,6 +1,6 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgeLabel, ForgeMilestone, ForgePR, ForgeRepo, ForgeUser,
-  LinePosition, MergeMethod, MergeOptions, NewPullRequest, PullRequestDetails, PullRequestOptions, PullRequestState,
+  LinePosition, MergeMethod, MergeOptions, NewPullRequest, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState,
   ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread, SubmittedReview,
 } from "../types/forge";
 import { errorMessage } from "../lib/actions";
@@ -326,6 +326,31 @@ export class GitHubClient {
     return data.filter((i) => !i.pull_request).map(parseIssue);
   }
 
+  /**
+   * Modèles de description, sur la branche par défaut : le fichier `pull_request_template.md` (dans .github/, à la racine
+   * ou dans docs/, casse indifférente), appliqué d'office par GitHub, et les modèles du dossier .github/PULL_REQUEST_TEMPLATE/.
+   */
+  async getPullRequestTemplates(owner: string, repo: string): Promise<PrTemplates> {
+    const base = `/repos/${seg(owner)}/${seg(repo)}/contents`;
+    const list = (dir: string) => this.get<RawContentEntry[]>(dir ? `${base}/${dir}` : base).catch((): RawContentEntry[] => []);
+    const [github, root, docs] = await Promise.all([list(".github"), list(""), list("docs")]);
+    const single = [...github, ...root, ...docs].find((e) => e.type === "file" && /^pull_request_template(\.(md|txt))?$/i.test(e.name));
+    const folder = github.find((e) => e.type === "dir" && e.name.toLowerCase() === "pull_request_template");
+    const extra = folder ? (await list(folder.path)).filter((e) => e.type === "file" && /\.(md|txt)$/i.test(e.name)) : [];
+
+    const read = async (entry: RawContentEntry, name: string): Promise<PrTemplate | null> => {
+      const file = await this.get<{ content?: string; encoding?: string }>(`${base}/${entry.path.split("/").map(seg).join("/")}`)
+        .catch(() => null);
+      return file?.content && file.encoding === "base64" ? { name, content: decodeBase64(file.content) } : null;
+    };
+    const [main, ...others] = await Promise.all([
+      single ? read(single, single.path) : null,
+      ...extra.map((e) => read(e, e.name.replace(/\.(md|txt)$/i, ""))),
+    ]);
+    const templates = [main, ...others].filter((t): t is PrTemplate => !!t);
+    return { templates, defaultName: main?.name ?? null };
+  }
+
   async getPullRequestOptions(owner: string, repo: string): Promise<PullRequestOptions> {
     const base = `/repos/${seg(owner)}/${seg(repo)}`;
     const [info, users, labels, milestones] = await Promise.all([
@@ -390,6 +415,18 @@ function parsePR(raw: RawPullRequest): ForgePR {
     reviewers: (raw.requested_reviewers ?? []).map((u) => u.login),
     assignees: (raw.assignees ?? []).map((u) => u.login),
   };
+}
+
+interface RawContentEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir" | "symlink" | "submodule";
+}
+
+/** Contenu base64 de l'API (découpé en lignes) vers du texte UTF-8. */
+export function decodeBase64(content: string): string {
+  const binary = atob(content.replace(/\s/g, ""));
+  return new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
 }
 
 interface RawThread {

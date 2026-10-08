@@ -1,6 +1,6 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeMethod, MergeOptions,
-  NewPullRequest, PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
+  NewPullRequest, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
   ReviewThread, SubmittedReview,
 } from "../types/forge";
 import { errorMessage } from "../lib/actions";
@@ -114,6 +114,8 @@ const MERGE_STATUSES: Record<string, string> = {
   blocked_status: "Bloquée par une autre merge request",
   not_open: "Merge request non ouverte",
 };
+
+const PROJECT_TEMPLATE = "Modèle du projet";
 
 const API_STATES: Record<PullRequestState, string> = { open: "opened", merged: "merged", closed: "closed", all: "all" };
 
@@ -345,6 +347,30 @@ export class GitLabClient {
       `/projects/${id}/issues?state=${state}&per_page=50`
     );
     return data.map(parseIssue);
+  }
+
+  /**
+   * Modèles de description de MR (.gitlab/merge_request_templates/, plus ceux hérités du groupe ou de l'instance).
+   * Appliqué d'office : celui saisi dans les réglages du projet, sinon celui nommé « Default ».
+   */
+  async getMergeRequestTemplates(project: string): Promise<PrTemplates> {
+    const id = this.encodeProject(project);
+    const [list, settings] = await Promise.all([
+      this.get<{ key?: string; name: string }[]>(`/projects/${id}/templates/merge_requests`).catch(() => []),
+      this.get<{ merge_requests_template?: string | null }>(`/projects/${id}`).catch(() => ({ merge_requests_template: null })),
+    ]);
+    const templates = (await Promise.all(list.map((t) =>
+      this.get<{ content: string }>(`/projects/${id}/templates/merge_requests/${encodeURIComponent(t.key ?? t.name)}`)
+        .then((full): PrTemplate => ({ name: t.name, content: full.content }))
+        .catch(() => null),
+    ))).filter((t): t is PrTemplate => !!t);
+    // Modèle saisi directement dans les réglages du projet (GitLab Premium) : prioritaire, proposé en premier.
+    const projectTemplate = settings.merge_requests_template;
+    if (projectTemplate?.trim()) {
+      templates.unshift({ name: PROJECT_TEMPLATE, content: projectTemplate });
+      return { templates, defaultName: PROJECT_TEMPLATE };
+    }
+    return { templates, defaultName: templates.find((t) => t.name.toLowerCase() === "default")?.name ?? null };
   }
 
   async getMergeRequestOptions(project: string): Promise<PullRequestOptions> {

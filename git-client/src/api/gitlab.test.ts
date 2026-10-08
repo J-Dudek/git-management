@@ -266,4 +266,19 @@ describe("GitLabClient inline review", () => {
     ]) as never);
     expect((await gl.getComments("group/app", 12)).map((c) => c.body)).toEqual(["general"]);
   });
+
+  it("getMergeRequestTemplates picks the « Default » template, or the project setting first", async () => {
+    const responses = (projectTemplate: string | null) => (path: string) => {
+      if (path === "/projects/g%2Fp/templates/merge_requests") return Promise.resolve([{ key: "Default", name: "Default" }, { key: "Bug", name: "Bug" }]);
+      if (path.startsWith("/projects/g%2Fp/templates/merge_requests/")) return Promise.resolve({ content: `# ${path.split("/").pop()}` });
+      if (path === "/projects/g%2Fp") return Promise.resolve({ merge_requests_template: projectTemplate });
+      return Promise.reject(new Error(path));
+    };
+    const plain = await new GitLabClient(vi.fn(responses(null)) as never).getMergeRequestTemplates("g/p");
+    expect(plain).toEqual({ templates: [{ name: "Default", content: "# Default" }, { name: "Bug", content: "# Bug" }], defaultName: "Default" });
+
+    const premium = await new GitLabClient(vi.fn(responses("Réglage")) as never).getMergeRequestTemplates("g/p");
+    expect(premium.defaultName).toBe("Modèle du projet");
+    expect(premium.templates[0]).toEqual({ name: "Modèle du projet", content: "Réglage" });
+  });
 });

@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRepoStore } from "../store/useRepoStore";
-import { useUiStore } from "../store/useUiStore";
+import { confirmAction, useUiStore } from "../store/useUiStore";
 import { forgeClient } from "../api/forge";
 import { push } from "../ipc/commands";
 import { errorMessage } from "../lib/actions";
 import { pullRequestTitle } from "../lib/branches";
-import type { ForgeAccount, ForgeMilestone, ForgeUser, PullRequestOptions } from "../types/forge";
+import type { ForgeAccount, ForgeMilestone, ForgeUser, PrTemplate, PullRequestOptions } from "../types/forge";
 import { Button, Modal, inputClass } from "./Modal";
 
 /** Pull request à préparer : branche source, projet visé et, pour une branche locale, de quoi la pousser avant. */
@@ -40,6 +40,14 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
   const [targetBranch, setTargetBranch] = useState("");
   const [title, setTitle] = useState(() => pullRequestTitle(sourceBranch));
   const [description, setDescription] = useState("");
+  const [templates, setTemplates] = useState<PrTemplate[]>([]);
+  /** Modèle choisi ("" : aucun). */
+  const [templateName, setTemplateName] = useState("");
+  /** Description à jour, lue à l'arrivée des modèles : on ne remplace pas ce qui a déjà été saisi. */
+  const descriptionRef = useRef(description);
+  useEffect(() => {
+    descriptionRef.current = description;
+  }, [description]);
   const [draft, setDraft] = useState(false);
   const [assignees, setAssignees] = useState<ForgeUser[]>([]);
   const [reviewers, setReviewers] = useState<ForgeUser[]>([]);
@@ -67,6 +75,37 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
       cancelled = true;
     };
   }, [account, projectPath]);
+
+  // Modèle de description du projet : celui que la forge applique d'office pré-remplit la description, si elle est vide.
+  useEffect(() => {
+    let cancelled = false;
+    forgeClient(account)
+      .getPullRequestTemplates(projectPath)
+      .then(({ templates: list, defaultName }) => {
+        if (cancelled) return;
+        setTemplates(list);
+        const initial = list.find((t) => t.name === defaultName);
+        if (!initial || descriptionRef.current.trim()) return;
+        setTemplateName(initial.name);
+        setDescription(initial.content);
+      })
+      .catch(() => {}); // sans modèle, la description reste libre
+    return () => {
+      cancelled = true;
+    };
+  }, [account, projectPath]);
+
+  /** Applique un modèle ; une description déjà modifiée n'est remplacée qu'après confirmation. */
+  async function chooseTemplate(name: string) {
+    const current = templates.find((t) => t.name === templateName)?.content ?? "";
+    if (description.trim() && description !== current && !(await confirmAction(
+      "Remplacer la description ?",
+      "La description saisie sera remplacée par le modèle choisi.",
+      true,
+    ))) return;
+    setTemplateName(name);
+    setDescription(templates.find((t) => t.name === name)?.content ?? "");
+  }
 
   // Branches cibles : celles du remote connues localement, plus la branche par défaut du projet.
   const targetBranches = useMemo(() => {
@@ -156,15 +195,30 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
           <input autoFocus className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
         </label>
 
-        <label className="flex flex-col gap-1">
-          <span className={labelClass}>Description (Markdown)</span>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className={labelClass}>Description (Markdown)</span>
+            {templates.length > 0 && (
+              <select
+                className={`${inputClass} ml-auto w-56 py-0.5 text-[11px]`}
+                value={templateName}
+                onChange={(e) => chooseTemplate(e.target.value)}
+                aria-label="Modèle de description"
+                title="Modèles de description définis dans le projet"
+              >
+                <option value="">Sans modèle</option>
+                {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+              </select>
+            )}
+          </div>
           <textarea
-            className={`${inputClass} h-28 resize-y font-mono`}
+            aria-label="Description"
+            className={`${inputClass} ${templateName ? "h-56" : "h-28"} resize-y font-mono`}
             placeholder="Contexte, changements, comment tester…"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
-        </label>
+        </div>
 
         {loadError && (
           <p className="text-[11px] text-amber-300 break-words">

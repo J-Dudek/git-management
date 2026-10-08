@@ -205,6 +205,18 @@ export interface ForgeMilestone {
   title: string;
 }
 
+/** Modèle de description de PR / MR défini dans le projet (ou hérité du groupe / de l'instance sur GitLab). */
+export interface PrTemplate {
+  name: string;
+  content: string;
+}
+
+export interface PrTemplates {
+  templates: PrTemplate[];
+  /** Modèle que la forge applique d'office à une nouvelle PR / MR, null si aucun. */
+  defaultName: string | null;
+}
+
 /** Valeurs proposables dans le formulaire de création d'une PR / MR. */
 export interface PullRequestOptions {
   defaultBranch: string;

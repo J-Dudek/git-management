@@ -2,7 +2,7 @@ import { GitHubClient } from "./github";
 import { GitLabClient } from "./gitlab";
 import { forgeApi, forgeApiSend, forgeGraphql } from "../ipc/commands";
 import type {
-  CreatedPullRequest, ForgeAccount, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeOptions, NewPullRequest,
+  CreatedPullRequest, ForgeAccount, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeOptions, NewPullRequest, PrTemplates,
   PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread,
   SubmittedReview,
 } from "../types/forge";
@@ -15,6 +15,8 @@ export interface ForgeClient {
   getIssues(projectPath: string): Promise<ForgeIssue[]>;
   /** Branche par défaut, membres, labels, jalons du projet pour le formulaire de création. */
   getPullRequestOptions(projectPath: string): Promise<PullRequestOptions>;
+  /** Modèles de description du projet, pour pré-remplir le formulaire de création. */
+  getPullRequestTemplates(projectPath: string): Promise<PrTemplates>;
   /** Crée une pull request (GitHub) / merge request (GitLab). */
   createPullRequest(projectPath: string, input: NewPullRequest): Promise<CreatedPullRequest>;
   /** Description, relectures, CI et mergeabilité d'une PR / MR. */
@@ -58,6 +60,7 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
       getPullRequests: (path, state) => client.getPullRequests(...split(path), state),
       getIssues: (path) => client.getIssues(...split(path)),
       getPullRequestOptions: (path) => client.getPullRequestOptions(...split(path)),
+      getPullRequestTemplates: (path) => client.getPullRequestTemplates(...split(path)),
       createPullRequest: (path, input) => client.createPullRequest(...split(path), input),
       getPullRequestDetails: (path, n) => client.getPullRequestDetails(...split(path), n, account.username),
       getComments: (path, n) => client.getComments(...split(path), n),
@@ -81,6 +84,7 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
     getPullRequests: (path, state) => client.getMergeRequests(path, state),
     getIssues: (path) => client.getIssues(path),
     getPullRequestOptions: (path) => client.getMergeRequestOptions(path),
+    getPullRequestTemplates: (path) => client.getMergeRequestTemplates(path),
     createPullRequest: (path, input) => client.createMergeRequest(path, input),
     getPullRequestDetails: (path, n) => client.getMergeRequestDetails(path, n, account.username),
     getComments: (path, n) => client.getComments(path, n),

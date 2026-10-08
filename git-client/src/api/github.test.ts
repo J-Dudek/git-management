@@ -259,4 +259,33 @@ describe("GitHubClient inline review", () => {
     });
     expect(result).toEqual({ publishedIds: ["d1"], errors: [] });
   });
+
+  it("getPullRequestTemplates reads the default template and the template folder", async () => {
+    const b64 = (text: string) => btoa(String.fromCharCode(...new TextEncoder().encode(text)));
+    const files: Record<string, unknown> = {
+      "/repos/o/r/contents/.github": [
+        { name: "PULL_REQUEST_TEMPLATE.md", path: ".github/PULL_REQUEST_TEMPLATE.md", type: "file" },
+        { name: "PULL_REQUEST_TEMPLATE", path: ".github/PULL_REQUEST_TEMPLATE", type: "dir" },
+      ],
+      "/repos/o/r/contents": [{ name: "README.md", path: "README.md", type: "file" }],
+      "/repos/o/r/contents/.github/PULL_REQUEST_TEMPLATE": [{ name: "bug.md", path: ".github/PULL_REQUEST_TEMPLATE/bug.md", type: "file" }],
+      "/repos/o/r/contents/.github/PULL_REQUEST_TEMPLATE.md": { encoding: "base64", content: b64("## Résumé\n") },
+      "/repos/o/r/contents/.github/PULL_REQUEST_TEMPLATE/bug.md": { encoding: "base64", content: b64("## Bug\n") },
+    };
+    const get = vi.fn((path: string) => (path in files ? Promise.resolve(files[path]) : Promise.reject(new Error("404"))));
+    const result = await new GitHubClient(get as never).getPullRequestTemplates("o", "r");
+
+    expect(result).toEqual({
+      templates: [
+        { name: ".github/PULL_REQUEST_TEMPLATE.md", content: "## Résumé\n" },
+        { name: "bug", content: "## Bug\n" },
+      ],
+      defaultName: ".github/PULL_REQUEST_TEMPLATE.md",
+    });
+  });
+
+  it("getPullRequestTemplates returns nothing when the repository has no template", async () => {
+    const get = vi.fn((path: string) => (path === "/repos/o/r/contents" ? Promise.resolve([]) : Promise.reject(new Error("404"))));
+    expect(await new GitHubClient(get as never).getPullRequestTemplates("o", "r")).toEqual({ templates: [], defaultName: null });
+  });
 });
