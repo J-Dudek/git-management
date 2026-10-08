@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.5.1](https://github.com/J-Dudek/git-management/compare/v1.5.0...v1.5.1) (2026-10-08)
+
+### Autres changements
+
+- docs update readme. fix: design ([9f3d386](https://github.com/J-Dudek/git-management/commit/9f3d38657069435a2a88555e9917b953b657ff1c))
+
 ## [1.5.0](https://github.com/J-Dudek/git-management/compare/v1.4.0...v1.5.0) (2026-10-08)
 
 ### Nouveautés
