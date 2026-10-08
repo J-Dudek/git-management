@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { localOnlyBranches } from "./branches";
+import { branchTree, flattenTree, localOnlyBranches } from "./branches";
 import type { BranchInfo } from "../types/git";
 
 const branch = (name: string, extra: Partial<BranchInfo> = {}): BranchInfo => ({
@@ -16,5 +16,18 @@ describe("localOnlyBranches", () => {
       branch("origin/feat/x", { is_remote: true }),
     ]);
     expect([...result]).toEqual(["essai"]);
+  });
+});
+
+describe("branchTree", () => {
+  it("groups branches into folders by slash", () => {
+    const tree = branchTree(["feat/design", "feat/test", "fix/login", "fix/ui/menu", "main"], (n) => n);
+    expect(tree.map((n) => [n.kind, n.name])).toEqual([["folder", "feat"], ["folder", "fix"], ["branch", "main"]]);
+    const fix = tree[1];
+    expect(fix.kind === "folder" && fix.count).toBe(2);
+    expect(fix.kind === "folder" && fix.children.map((n) => n.name)).toEqual(["login", "ui"]);
+    const ui = fix.kind === "folder" ? fix.children[1] : null;
+    expect(ui?.kind === "folder" && ui.path).toBe("fix/ui");
+    expect(flattenTree(tree)).toEqual(["feat/design", "feat/test", "fix/login", "fix/ui/menu", "main"]);
   });
 });

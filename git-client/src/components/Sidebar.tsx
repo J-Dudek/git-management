@@ -12,7 +12,7 @@ import { errorMessage, reportMerge, runGit } from "../lib/actions";
 import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
-import { localOnlyBranches } from "../lib/branches";
+import { branchTree, flattenTree, localOnlyBranches, type BranchNode } from "../lib/branches";
 import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo } from "../types/git";
 
@@ -68,6 +68,7 @@ export function Sidebar() {
   const path = repoPath;
 
   const local = branches.filter((b) => !b.is_remote);
+  const localTree = branchTree(local, (b) => b.name);
   const remoteBranches = branches.filter((b) => b.is_remote);
   const localOnly = localOnlyBranches(branches);
   const head = info?.head_branch ?? "HEAD";
@@ -102,7 +103,8 @@ export function Sidebar() {
   }
 
   function handleLocalClick(e: React.MouseEvent, b: BranchInfo) {
-    const order = local.map((l) => l.name);
+    // Ordre visuel de l'arbre, pour que Maj + clic sélectionne la plage affichée.
+    const order = flattenTree(localTree).map((l) => l.name);
     // La branche courante ne peut pas être supprimée : elle n'entre pas dans la sélection.
     const selectable = (name: string) => name !== info?.head_branch;
     const next = clickSelection(order, selection, b.name, clickModifiers(e), { selectable });
@@ -310,20 +312,25 @@ export function Sidebar() {
   return (
     <aside className="flex flex-col h-full bg-[var(--color-bg-secondary)] text-sm select-none overflow-y-auto py-1">
       <Group title="Local" count={local.length}>
-        {local.map((b) => (
-          <Row
-            key={b.name}
-            icon="⎇"
-            label={b.name}
-            active={b.is_head}
-            selected={picked.includes(b.name)}
-            title={branchTitle(b, localOnly.has(b.name))}
-            onClick={(e) => handleLocalClick(e, b)}
-            onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
-            onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
-            trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
-          />
-        ))}
+        <BranchTree
+          nodes={localTree}
+          depth={0}
+          renderBranch={(b, label, depth) => (
+            <Row
+              key={b.name}
+              icon="⎇"
+              label={label}
+              depth={depth}
+              active={b.is_head}
+              selected={picked.includes(b.name)}
+              title={`${b.name}\n${branchTitle(b, localOnly.has(b.name))}`}
+              onClick={(e) => handleLocalClick(e, b)}
+              onDoubleClick={() => !b.is_head && !busy && runGit(() => checkoutBranch(path, b.name))}
+              onContextMenu={(e) => openMenu(e, picked.length > 1 && picked.includes(b.name) ? pickedMenu(picked) : localMenu(b))}
+              trailing={localOnly.has(b.name) ? <LocalOnlyBadge /> : <AheadBehind ahead={b.ahead} behind={b.behind} />}
+            />
+          )}
+        />
       </Group>
 
       <Group
@@ -334,19 +341,22 @@ export function Sidebar() {
       >
         {remoteNames.map((name) => (
           <SubGroup key={name} title={name} onContextMenu={(e) => openMenu(e, remoteGroupMenu(name))}>
-            {remoteBranches
-              .filter((b) => b.name.startsWith(`${name}/`))
-              .map((b) => (
+            <BranchTree
+              nodes={branchTree(remoteBranches.filter((b) => b.name.startsWith(`${name}/`)), (b) => b.name.slice(name.length + 1))}
+              depth={1}
+              renderBranch={(b, label, depth) => (
                 <Row
                   key={b.name}
                   icon="⟳"
-                  label={b.name.slice(name.length + 1)}
-                  indent
+                  label={label}
+                  depth={depth}
+                  title={b.name}
                   onClick={() => selectHash(b.target_hash)}
                   onDoubleClick={() => !busy && runGit(() => checkoutRemoteBranch(path, b.name))}
                   onContextMenu={(e) => openMenu(e, remoteMenu(b))}
                 />
-              ))}
+              )}
+            />
           </SubGroup>
         ))}
       </Group>
@@ -510,13 +520,59 @@ function SubGroup({ title, children, onContextMenu }: {
   );
 }
 
-function Row({ icon, label, active, selected, indent, title, trailing, onClick, onDoubleClick, onContextMenu }: {
+/** Arbre de branches : un dossier pliable par préfixe « xxx/ », récursivement. */
+function BranchTree({ nodes, depth, renderBranch }: {
+  nodes: BranchNode<BranchInfo>[];
+  depth: number;
+  renderBranch: (branch: BranchInfo, label: string, depth: number) => React.ReactNode;
+}) {
+  return nodes.map((node) =>
+    node.kind === "branch" ? (
+      renderBranch(node.item, node.name, depth)
+    ) : (
+      <BranchFolder key={`folder:${node.path}`} name={node.name} count={node.count} depth={depth}>
+        <BranchTree nodes={node.children} depth={depth + 1} renderBranch={renderBranch} />
+      </BranchFolder>
+    ),
+  );
+}
+
+function BranchFolder({ name, count, depth, children }: {
+  name: string;
+  count: number;
+  depth: number;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <li>
+      <button
+        className="w-full flex items-center gap-1 pr-2 py-[3px] text-xs text-[var(--color-text)] hover:bg-white/5"
+        style={{ paddingLeft: rowPadding(depth) - 12 }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="w-2 text-[9px] text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
+        <span className="truncate">{name}</span>
+        <span className="ml-1 text-[10px] opacity-50">{count}</span>
+      </button>
+      {open && <ul>{children}</ul>}
+    </li>
+  );
+}
+
+/** Retrait gauche (px) d'une ligne selon sa profondeur dans l'arbre. */
+function rowPadding(depth: number): number {
+  return 24 + depth * 12;
+}
+
+function Row({ icon, label, active, selected, depth = 0, title, trailing, onClick, onDoubleClick, onContextMenu }: {
   icon: string;
   label: string;
   active?: boolean;
   /** Fait partie d'une sélection multiple. */
   selected?: boolean;
-  indent?: boolean;
+  /** Profondeur dans l'arbre (dossiers de branches, remotes). */
+  depth?: number;
   title?: string;
   trailing?: React.ReactNode;
   onClick?: (e: React.MouseEvent) => void;
@@ -527,7 +583,8 @@ function Row({ icon, label, active, selected, indent, title, trailing, onClick, 
     <li>
       <div
         title={title}
-        className={`flex items-center gap-2 ${indent ? "pl-9" : "pl-6"} pr-2 py-[3px] cursor-default ${rowTone(active, selected)}`}
+        className={`flex items-center gap-2 pr-2 py-[3px] cursor-default ${rowTone(active, selected)}`}
+        style={{ paddingLeft: rowPadding(depth) }}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
