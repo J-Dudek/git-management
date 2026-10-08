@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 // @ts-expect-error module JavaScript sans déclarations de types
-import { bumpForCommit, bumpForCommits, incrementVersion, maxVersion, setCargoVersion } from "./version.mjs";
+import {
+  bumpForCommit, bumpForCommits, changelogSection, incrementVersion, maxVersion, prependChangelog, releaseNotes, setCargoVersion,
+} from "./version.mjs";
 
 describe("bumpForCommit", () => {
   it("détecte les changements majeurs", () => {
@@ -59,5 +61,50 @@ describe("setCargoVersion", () => {
     const out = setCargoVersion(lock, "1.0.0", { lock: true });
     expect(out).toContain('name = "git2"\nversion = "0.21.0"');
     expect(out).toContain('name = "git-client"\nversion = "1.0.0"');
+  });
+});
+
+describe("releaseNotes", () => {
+  const commits = [
+    { hash: "a".repeat(40), message: "feat(sidebar): dossiers de branches" },
+    { hash: "b".repeat(40), message: "fix: crash au démarrage" },
+    { hash: "c".repeat(40), message: "docs: README" },
+    { hash: "d".repeat(40), message: "refactor!: nouvelle API\n\ndétails" },
+    { hash: "e".repeat(40), message: "Merge pull request #3 from x/y" },
+    { hash: "f".repeat(40), message: "message libre" },
+  ];
+
+  it("regroupe par rubrique et omet docs, chore, merges", () => {
+    expect(releaseNotes(commits, { repoUrl: "https://github.com/o/r" })).toBe(
+      [
+        "### ⚠ Changements incompatibles\n",
+        `- nouvelle API ([ddddddd](https://github.com/o/r/commit/${"d".repeat(40)}))\n`,
+        "### Nouveautés\n",
+        `- **sidebar :** dossiers de branches ([aaaaaaa](https://github.com/o/r/commit/${"a".repeat(40)}))\n`,
+        "### Corrections\n",
+        `- crash au démarrage ([bbbbbbb](https://github.com/o/r/commit/${"b".repeat(40)}))\n`,
+        "### Autres changements\n",
+        `- message libre ([fffffff](https://github.com/o/r/commit/${"f".repeat(40)}))\n`,
+      ].join("\n"),
+    );
+  });
+
+  it("signale une version sans changement visible", () => {
+    expect(releaseNotes([{ hash: "a".repeat(40), message: "chore: deps" }])).toBe("Maintenance interne, sans changement visible.\n");
+  });
+});
+
+describe("changelog", () => {
+  it("titre avec lien de comparaison quand le dépôt est connu", () => {
+    expect(changelogSection("1.3.0", "2026-10-08", "notes\n", { repoUrl: "https://github.com/o/r", previousTag: "v1.2.1" }))
+      .toBe("## [1.3.0](https://github.com/o/r/compare/v1.2.1...v1.3.0) (2026-10-08)\n\nnotes\n");
+    expect(changelogSection("1.0.0", "2026-01-01", "notes\n")).toBe("## 1.0.0 (2026-01-01)\n\nnotes\n");
+  });
+
+  it("insère la nouvelle section avant les précédentes", () => {
+    const first = prependChangelog("", "## 1.0.0 (d)\n\nA\n");
+    expect(first).toMatch(/^# Changelog\n\n.*\n\n## 1\.0\.0 \(d\)\n\nA\n$/);
+    const second = prependChangelog(first, "## 1.1.0 (d)\n\nB\n");
+    expect(second).toMatch(/^# Changelog\n\n.*\n\n## 1\.1\.0 \(d\)\n\nB\n\n## 1\.0\.0 \(d\)\n\nA\n$/);
   });
 });

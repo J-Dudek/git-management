@@ -15,6 +15,13 @@ export interface DialogOptions {
   checkbox?: { label: string; initial?: boolean };
   confirmLabel?: string;
   danger?: boolean;
+  /** Liste à rubriques sous le message (ex. notes de version), dans une zone défilante. */
+  sections?: DialogSection[];
+}
+
+export interface DialogSection {
+  title: string;
+  items: string[];
 }
 
 export interface DialogResult {

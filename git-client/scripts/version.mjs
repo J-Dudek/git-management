@@ -3,13 +3,15 @@
 //
 //   node scripts/version.mjs next    → affiche la prochaine version (rien si aucune release n'est nécessaire)
 //   node scripts/version.mjs apply X.Y.Z → écrit la version dans tous les fichiers applicatifs
+//   node scripts/version.mjs changelog X.Y.Z → ajoute la section de X.Y.Z en tête de CHANGELOG.md
+//                                              et affiche ses notes (corps de la release GitHub)
 //
 // Règles : « feat!: » / « BREAKING CHANGE » → majeure ; « feat: » → mineure ;
 // « fix: », « perf: », « refactor: », « build: », « revert: » ou message libre → correctif ;
 // uniquement « docs: », « ci: », « test: », « chore: », « style: » → pas de release.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +19,15 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
 const NO_RELEASE = new Set(["docs", "ci", "test", "chore", "style"]);
 const RANK = { patch: 1, minor: 2, major: 3 };
+const CHANGELOG_TITLE = "# Changelog\n\nToutes les évolutions notables de Merathon, générées à partir des messages de commit.\n";
+/** Rubriques du changelog, dans l'ordre d'affichage ; les autres types vont dans « Autres changements ». */
+const SECTIONS = [
+  ["breaking", "⚠ Changements incompatibles"],
+  ["feat", "Nouveautés"],
+  ["fix", "Corrections"],
+  ["perf", "Performances"],
+  ["other", "Autres changements"],
+];
 
 /** Type de version imposé par un message de commit (null : aucune release). */
 export function bumpForCommit(message) {
@@ -71,12 +82,60 @@ export function setCargoVersion(content, version, { lock = false } = {}) {
   return content.replace(re, `$1${version}$2`);
 }
 
+/** Décompose un message Conventional Commits : type, portée, sujet, changement incompatible. */
+export function parseCommit(message) {
+  const [header = "", ...body] = message.trim().split("\n");
+  const match = header.match(/^(\w+)(?:\(([^)]*)\))?(!)?:\s(.*)$/);
+  const breaking = /^BREAKING[ -]CHANGE:/m.test(body.join("\n")) || !!match?.[3];
+  if (!match) return { type: null, scope: null, subject: header.trim(), breaking };
+  return { type: match[1].toLowerCase(), scope: match[2] || null, subject: match[4].trim(), breaking };
+}
+
+/**
+ * Notes de version (Markdown, sans titre) : commits regroupés par rubrique.
+ * Les commits sans impact applicatif (docs, ci, chore…) et les merges sont omis.
+ * `commits` : [{ hash, message }] ; `repoUrl` (optionnel) ajoute un lien vers chaque commit.
+ */
+export function releaseNotes(commits, { repoUrl } = {}) {
+  const groups = new Map(SECTIONS.map(([key]) => [key, []]));
+  for (const { hash, message } of commits) {
+    if (/^Merge (pull request|branch|remote-tracking branch) /.test(message)) continue;
+    if (!bumpForCommit(message)) continue;
+    const commit = parseCommit(message);
+    const scope = commit.scope ? `**${commit.scope} :** ` : "";
+    const short = hash.slice(0, 7);
+    const ref = repoUrl ? `[${short}](${repoUrl}/commit/${hash})` : short;
+    let key = groups.has(commit.type) ? commit.type : "other";
+    if (commit.breaking) key = "breaking";
+    groups.get(key).push(`- ${scope}${commit.subject} (${ref})`);
+  }
+  const parts = SECTIONS.filter(([key]) => groups.get(key).length).map(
+    ([key, title]) => `### ${title}\n\n${groups.get(key).join("\n")}\n`,
+  );
+  return parts.length ? parts.join("\n") : "Maintenance interne, sans changement visible.\n";
+}
+
+/** Section complète d'une version : titre (avec lien de comparaison si possible), date, notes. */
+export function changelogSection(version, date, notes, { repoUrl, previousTag } = {}) {
+  const title = repoUrl && previousTag ? `[${version}](${repoUrl}/compare/${previousTag}...v${version})` : version;
+  return `## ${title} (${date})\n\n${notes}`;
+}
+
+/** Insère la section en tête du changelog (sous le titre), en créant le fichier s'il n'existe pas. */
+export function prependChangelog(content, section) {
+  // Sections déjà publiées : tout ce qui suit le premier titre de version.
+  const first = content.search(/^## /m);
+  const rest = first >= 0 ? content.slice(first) : "";
+  return [CHANGELOG_TITLE, section, rest].filter(Boolean).join("\n");
+}
+
 const files = {
   packageJson: join(ROOT, "package.json"),
   packageLock: join(ROOT, "package-lock.json"),
   cargoToml: join(ROOT, "src-tauri", "Cargo.toml"),
   cargoLock: join(ROOT, "src-tauri", "Cargo.lock"),
   tauriConf: join(ROOT, "src-tauri", "tauri.conf.json"),
+  changelog: join(ROOT, "..", "CHANGELOG.md"),
 };
 
 function updateJson(path, update) {
@@ -103,8 +162,8 @@ function git(...args) {
   return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 }
 
-/** Prochaine version d'après les commits depuis le dernier tag vX.Y.Z (chaîne vide si rien à publier). */
-export function nextVersion() {
+/** Dernier tag vX.Y.Z et commits depuis ce tag (tout l'historique s'il n'y en a pas). */
+function commitsSinceLastTag() {
   let lastTag = "";
   try {
     lastTag = git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*");
@@ -112,9 +171,39 @@ export function nextVersion() {
     // Aucun tag : tout l'historique compte.
   }
   const range = lastTag ? [`${lastTag}..HEAD`] : ["HEAD"];
-  const log = git("log", "--format=%B%x1e", ...range);
-  const messages = log.split("\x1e").map((m) => m.trim()).filter(Boolean);
-  const bump = bumpForCommits(messages);
+  const log = git("log", "--format=%H%x1f%B%x1e", ...range);
+  const commits = log
+    .split("\x1e")
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [hash, message = ""] = entry.split("\x1f");
+      return { hash, message: message.trim() };
+    });
+  return { lastTag, commits };
+}
+
+/** URL web du dépôt sur GitHub Actions (liens vers les commits), sinon rien. */
+function repoUrl() {
+  const { GITHUB_SERVER_URL: server, GITHUB_REPOSITORY: repo } = process.env;
+  return server && repo ? `${server}/${repo}` : undefined;
+}
+
+/** Écrit la section de `version` en tête de CHANGELOG.md et renvoie ses notes. */
+export function writeChangelog(version, date = new Date().toISOString().slice(0, 10)) {
+  const { lastTag, commits } = commitsSinceLastTag();
+  const url = repoUrl();
+  const notes = releaseNotes(commits, { repoUrl: url });
+  const section = changelogSection(version, date, notes, { repoUrl: url, previousTag: lastTag || undefined });
+  const current = existsSync(files.changelog) ? readFileSync(files.changelog, "utf8") : "";
+  writeFileSync(files.changelog, prependChangelog(current, section));
+  return notes;
+}
+
+/** Prochaine version d'après les commits depuis le dernier tag vX.Y.Z (chaîne vide si rien à publier). */
+export function nextVersion() {
+  const { lastTag, commits } = commitsSinceLastTag();
+  const bump = bumpForCommits(commits.map((c) => c.message));
   if (!bump) return "";
 
   const current = JSON.parse(readFileSync(files.packageJson, "utf8")).version;
@@ -130,8 +219,10 @@ if (isMain) {
   } else if (command === "apply" && arg) {
     applyVersion(arg);
     process.stdout.write(`Version ${arg} appliquée\n`);
+  } else if (command === "changelog" && arg) {
+    process.stdout.write(writeChangelog(arg));
   } else {
-    console.error("Usage : node scripts/version.mjs next | apply X.Y.Z");
+    console.error("Usage : node scripts/version.mjs next | apply X.Y.Z | changelog X.Y.Z");
     process.exit(1);
   }
 }
