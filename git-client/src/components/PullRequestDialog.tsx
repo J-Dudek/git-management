@@ -199,16 +199,18 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
           <div className="flex items-center gap-2">
             <span className={labelClass}>Description (Markdown)</span>
             {templates.length > 0 && (
-              <select
-                className={`${inputClass} ml-auto w-56 py-0.5 text-[11px]`}
-                value={templateName}
-                onChange={(e) => chooseTemplate(e.target.value)}
-                aria-label="Modèle de description"
-                title="Modèles de description définis dans le projet"
-              >
-                <option value="">Sans modèle</option>
-                {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
-              </select>
+              <div className="ml-auto w-56 shrink-0">
+                <select
+                  className={`${inputClass} text-[11px]`}
+                  value={templateName}
+                  onChange={(e) => chooseTemplate(e.target.value)}
+                  aria-label="Modèle de description"
+                  title="Modèles de description définis dans le projet"
+                >
+                  <option value="">Sans modèle</option>
+                  {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </select>
+              </div>
             )}
           </div>
           <textarea

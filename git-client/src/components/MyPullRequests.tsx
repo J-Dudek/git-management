@@ -69,7 +69,7 @@ export function MyPullRequestsSection({ account, showAccount }: {
   const localRemote = (pr: PrSummary) =>
     linked && linked.account.id === account.id && linked.projectPath === pr.projectPath ? linked.remoteName : null;
 
-  function row(pr: PrSummary, subtitle: string, badges?: React.ReactNode) {
+  function row(pr: PrSummary, subtitle: string, meta?: React.ReactNode) {
     const freshness = prFreshness(seen[keyOf(pr)], pr);
     return (
       <PRRow
@@ -88,9 +88,8 @@ export function MyPullRequestsSection({ account, showAccount }: {
             ? { label: "Marquer comme non lue", action: () => useSeenPrsStore.getState().markUnread(keyOf(pr)) }
             : { label: "Marquer comme lue", action: () => markPullRequestRead(account, pr.projectPath, pr) },
         ])}
-      >
-        {badges}
-      </PRRow>
+        meta={meta}
+      />
     );
   }
 
@@ -148,9 +147,9 @@ export function MyPullRequestsSection({ account, showAccount }: {
 }
 
 const CI_DOTS: Record<NonNullable<PrSummary["ci"]>, { className: string; label: string }> = {
-  success: { className: "bg-green-400", label: "CI réussie" },
-  failure: { className: "bg-red-400", label: "CI en échec" },
-  pending: { className: "bg-amber-300 animate-pulse", label: "CI en cours" },
+  success: { className: "bg-green-400", label: "réussie" },
+  failure: { className: "bg-red-400", label: "en échec" },
+  pending: { className: "bg-amber-300 animate-pulse", label: "en cours" },
 };
 
 /** État principal (brouillon, conflits, changements demandés…) et pastille de CI. Le brouillon est déjà signalé par la ligne. */
@@ -163,7 +162,12 @@ function StatusBadges({ pr }: { pr: PrSummary }) {
       {status !== "draft" && (
         <span className={`text-[9px] px-1 rounded border shrink-0 ${style.className}`}>{style.label}</span>
       )}
-      {ci && <span className={`w-1.5 h-1.5 mt-1 rounded-full shrink-0 ${ci.className}`} title={ci.label} />}
+      {ci && (
+        <span className="inline-flex items-center gap-1 text-[9px] text-[var(--color-muted)] shrink-0" title={`CI ${ci.label}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${ci.className}`} />
+          CI
+        </span>
+      )}
     </>
   );
 }
