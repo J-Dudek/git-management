@@ -86,6 +86,7 @@ pub fn run() {
             commands::rename_account,
             commands::remove_account,
             commands::forge_api,
+            commands::forge_api_send,
             commands::oauth_defaults,
             commands::oauth_start,
             commands::oauth_complete,

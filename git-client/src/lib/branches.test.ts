@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { branchTree, flattenTree, localOnlyBranches } from "./branches";
+import { branchTree, flattenTree, localOnlyBranches, pullRequestTitle } from "./branches";
 import type { BranchInfo } from "../types/git";
 
 const branch = (name: string, extra: Partial<BranchInfo> = {}): BranchInfo => ({
@@ -29,5 +29,13 @@ describe("branchTree", () => {
     const ui = fix.kind === "folder" ? fix.children[1] : null;
     expect(ui?.kind === "folder" && ui.path).toBe("fix/ui");
     expect(flattenTree(tree)).toEqual(["feat/design", "feat/test", "fix/login", "fix/ui/menu", "main"]);
+  });
+});
+
+describe("pullRequestTitle", () => {
+  it("turns the branch prefix into a conventional type", () => {
+    expect(pullRequestTitle("feat/login-page")).toBe("feat: login page");
+    expect(pullRequestTitle("fix/ui/menu_overflow")).toBe("fix: menu overflow");
+    expect(pullRequestTitle("hotfix")).toBe("hotfix");
   });
 });

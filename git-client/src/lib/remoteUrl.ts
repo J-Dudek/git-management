@@ -15,7 +15,8 @@ export function parseRemoteUrl(url: string): ParsedRemote | null {
   const scp = withScheme ? null : trimmed.match(/^(?:[^@/]+@)?([^:/]+):(?!\/\/)(.+)$/);
   const match = withScheme ?? scp;
   if (!match) return null;
-  const path = trimEndChars(match[2]).replace(/\.git$/, "");
+  // `git@github.com:/owner/repo.git` est accepté par git : le « / » de tête ne fait pas partie du chemin.
+  const path = trimEndChars(match[2]).replace(/\.git$/, "").replace(/^\/+/, "");
   if (!path) return null;
   return { host: match[1].toLowerCase(), path };
 }
@@ -45,17 +46,19 @@ export function instanceUrl(input: string): string | null {
   }
 }
 
-/** Remote du dépôt hébergé sur l'instance du compte (origin en priorité). */
+/** Remote du dépôt hébergé sur l'instance du compte (`preferred` puis origin en priorité). */
 export function remoteForAccount(
   remotes: RemoteInfo[],
   account: ForgeAccount,
+  preferred?: string,
 ): { remote: RemoteInfo; path: string } | null {
   const host = hostOf(account.base_url);
   if (!host) return null;
   const candidates = remotes
     .map((remote) => ({ remote, parsed: parseRemoteUrl(remote.url) }))
     .filter((c) => c.parsed?.host === host)
-    .sort((a, b) => Number(b.remote.name === "origin") - Number(a.remote.name === "origin"));
+    .sort((a, b) => Number(b.remote.name === "origin") - Number(a.remote.name === "origin"))
+    .sort((a, b) => Number(b.remote.name === preferred) - Number(a.remote.name === preferred));
   const first = candidates[0];
   return first ? { remote: first.remote, path: first.parsed!.path } : null;
 }

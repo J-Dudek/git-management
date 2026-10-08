@@ -12,6 +12,7 @@ import { errorMessage, reportMerge, runGit } from "../lib/actions";
 import { newPullRequestUrl, remoteForAccount } from "../lib/remoteUrl";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
+import { PullRequestDialog, type PullRequestTarget } from "./PullRequestDialog";
 import { branchTree, flattenTree, localOnlyBranches, type BranchNode } from "../lib/branches";
 import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import type { BranchInfo, StashInfo, SubmoduleInfo, TagInfo } from "../types/git";
@@ -57,6 +58,7 @@ export function Sidebar() {
   const [selection, setSelection] = useState<MultiSelection>(EMPTY_SELECTION);
   const picked = selection.items;
   const clearPicked = () => setSelection((s) => ({ ...s, items: [] }));
+  const [pullRequest, setPullRequest] = useState<PullRequestTarget | null>(null);
 
   // Les branches supprimées ou renommées sortent de la sélection.
   useEffect(() => {
@@ -78,16 +80,43 @@ export function Sidebar() {
     if (commit) setSelectedCommit(commit);
   }
 
-  /** Lien de création de PR/MR si un compte correspond à un remote du dépôt. */
-  function pullRequestEntry(branch: string): MenuEntry[] {
+  /**
+   * Création de PR (GitHub) / MR (GitLab) pour chaque compte dont l'instance héberge un remote du dépôt :
+   * formulaire complet dans l'application, ou page de création dans le navigateur.
+   * Branche locale : projet de sa branche suivie en priorité. Branche distante : projet de son remote.
+   */
+  function pullRequestEntries(b: BranchInfo): MenuEntry[] {
+    const [remoteName, remoteBranch] = b.is_remote ? [b.name.slice(0, b.name.indexOf("/")), b.name.slice(b.name.indexOf("/") + 1)] : [];
+    const upstreamRemote = b.upstream?.slice(0, b.upstream.indexOf("/"));
+    const entries: MenuEntry[] = [];
     for (const account of accounts) {
-      const match = remoteForAccount(remotes, account);
-      if (match) {
-        const label = account.provider === "github" ? "Créer une pull request" : "Créer une merge request";
-        return [{ label, hint: match.path, action: () => openUrl(newPullRequestUrl(account, match.path, branch)) }];
-      }
+      const candidates = b.is_remote ? remotes.filter((r) => r.name === remoteName) : remotes;
+      const match = remoteForAccount(candidates, account, upstreamRemote);
+      if (!match) continue;
+      const remote = match.remote.name;
+      // Nom de la branche sur le remote : celui de la branche suivie si elle est sur ce remote.
+      const source = remoteBranch
+        ?? (b.upstream?.startsWith(`${remote}/`) ? b.upstream.slice(remote.length + 1) : b.name);
+      const github = account.provider === "github";
+      const forge = github ? "GitHub" : "GitLab";
+      const noun = github ? "pull request" : "merge request";
+      entries.push(
+        {
+          label: `Créer une ${noun} ${forge}…`,
+          hint: match.path,
+          action: () => setPullRequest({
+            account,
+            projectPath: match.path,
+            remoteName: remote,
+            sourceBranch: source,
+            localBranch: b.is_remote ? undefined : b.name,
+            needsPush: !b.is_remote && (!b.upstream?.startsWith(`${remote}/`) || b.ahead > 0),
+          }),
+        },
+        { label: `Ouvrir la création de ${noun} sur ${forge}`, action: () => openUrl(newPullRequestUrl(account, match.path, source)) },
+      );
     }
-    return [];
+    return entries;
   }
 
   async function newBranchFrom(from: string) {
@@ -160,7 +189,7 @@ export function Sidebar() {
         label: b.upstream ? `Push vers ${b.upstream}` : "Push (publier la branche)",
         action: () => runGit(() => push(path, { branch: b.name }), { busy: "Push…", success: `Push de ${b.name} terminé` }),
       },
-      ...pullRequestEntry(b.name),
+      ...pullRequestEntries(b),
       "separator",
       { label: `Créer une branche depuis ${b.name}…`, action: () => newBranchFrom(b.name) },
       {
@@ -212,6 +241,8 @@ export function Sidebar() {
         label: `Rebaser ${head} sur ${b.name}`,
         action: async () => reportMerge(await runGit(() => rebaseOnto(path, b.name)), `Rebase sur ${b.name} terminé`),
       },
+      ...pullRequestEntries(b),
+      "separator",
       { label: `Créer une branche depuis ${b.name}…`, action: () => newBranchFrom(b.name) },
       { label: "Copier le nom", action: () => navigator.clipboard.writeText(b.name) },
       "separator",
@@ -458,6 +489,7 @@ export function Sidebar() {
       </Group>
 
       {menu && <ContextMenu menu={menu} onClose={closeMenu} />}
+      {pullRequest && <PullRequestDialog target={pullRequest} onClose={() => setPullRequest(null)} />}
     </aside>
   );
 }

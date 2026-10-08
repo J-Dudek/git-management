@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { GitHubClient } from "./github";
+import type { NewPullRequest } from "../types/forge";
 
 /** `get` simulé : enregistre les chemins demandés au backend et renvoie `data`. */
 function client(data: unknown) {
@@ -57,5 +58,42 @@ describe("GitHubClient", () => {
     const { gh } = client([{ name: "r", full_name: "o/r", clone_url: "https://github.com/o/r.git", ssh_url: "git@github.com:o/r.git", private: true, description: null, updated_at: "2024-01-01" }]);
     const repos = await gh.listRepos();
     expect(repos[0]).toMatchObject({ fullName: "o/r", cloneUrl: "https://github.com/o/r.git", private: true, description: "" });
+  });
+});
+
+describe("GitHubClient.createPullRequest", () => {
+  const input: NewPullRequest = {
+    sourceBranch: "feat/x", targetBranch: "main", title: "feat: x", description: "desc", draft: true,
+    assignees: [{ id: 1, username: "alice", name: "alice" }], reviewers: [{ id: 2, username: "bob", name: "bob" }],
+    labels: ["bug"], milestone: { id: 3, title: "v2" }, removeSourceBranch: true, squash: true,
+  };
+  const created = { number: 7, title: "feat: x", state: "open", merged_at: null, html_url: "https://github.com/o/r/pull/7", labels: [] };
+
+  it("creates the PR then requests reviewers and sets assignees, labels and milestone", async () => {
+    const send = vi.fn().mockResolvedValue(created);
+    const gh = new GitHubClient(vi.fn() as never, send as never);
+    const { pr, warnings } = await gh.createPullRequest("o", "r", input);
+
+    expect(send.mock.calls).toEqual([
+      ["POST", "/repos/o/r/pulls", { title: "feat: x", body: "desc", head: "feat/x", base: "main", draft: true }],
+      ["POST", "/repos/o/r/pulls/7/requested_reviewers", { reviewers: ["bob"] }],
+      ["PATCH", "/repos/o/r/issues/7", { assignees: ["alice"], labels: ["bug"], milestone: 3 }],
+    ]);
+    expect(pr).toMatchObject({ number: 7, url: "https://github.com/o/r/pull/7" });
+    expect(warnings).toEqual([]);
+  });
+
+  it("keeps the PR when a follow-up step fails", async () => {
+    const send = vi.fn().mockResolvedValueOnce(created).mockRejectedValueOnce("422 reviewer").mockResolvedValue({});
+    const { warnings } = await new GitHubClient(vi.fn() as never, send as never).createPullRequest("o", "r", input);
+    expect(warnings).toEqual(["relecteurs : 422 reviewer"]);
+  });
+
+  it("skips follow-up calls when nothing else is set", async () => {
+    const send = vi.fn().mockResolvedValue(created);
+    await new GitHubClient(vi.fn() as never, send as never).createPullRequest("o", "r", {
+      ...input, assignees: [], reviewers: [], labels: [], milestone: null,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

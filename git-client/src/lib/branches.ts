@@ -38,3 +38,13 @@ export function branchTree<T>(items: T[], nameOf: (item: T) => string): BranchNo
 export function flattenTree<T>(nodes: BranchNode<T>[]): T[] {
   return nodes.flatMap((n) => (n.kind === "branch" ? [n.item] : flattenTree(n.children)));
 }
+
+/** Titre proposé pour une PR : « feat/login-page » → « feat: login page ». */
+export function pullRequestTitle(branch: string): string {
+  const slash = branch.lastIndexOf("/");
+  const words = (s: string) => s.replace(/[-_]+/g, " ").trim();
+  const subject = words(branch.slice(slash + 1));
+  if (slash < 0) return subject;
+  const type = branch.slice(0, slash).split("/")[0];
+  return `${type}: ${subject}`;
+}

@@ -38,21 +38,60 @@ fn http_error(host: &str, e: ureq::Error) -> String {
             "Token refusé (401/403) : vérifie sa validité et ses droits, ou reconnecte le compte".into()
         }
         ureq::Error::Status(code, response) => {
-            let body: String = response.into_string().unwrap_or_default().chars().take(200).collect();
-            format!("API {host} : erreur {code} {body}")
+            let body = response.into_string().unwrap_or_default();
+            let detail = serde_json::from_str::<Value>(&body)
+                .ok()
+                .and_then(|json| api_error_message(&json))
+                .unwrap_or_else(|| body.chars().take(200).collect());
+            format!("API {host} : erreur {code} {detail}")
         }
         // Le détail distingue une URL erronée d'un certificat non reconnu ou d'un proxy.
         ureq::Error::Transport(t) => format!("Impossible de joindre {host} ({t}) : vérifie l'URL de l'instance et ta connexion"),
     }
 }
 
+/// Message lisible d'une erreur d'API : `message` + `errors[].message` (GitHub), `message` texte ou liste (GitLab).
+fn api_error_message(json: &Value) -> Option<String> {
+    let texts = |v: &Value| -> Vec<String> {
+        match v {
+            Value::String(s) => vec![s.clone()],
+            Value::Array(items) => items
+                .iter()
+                .filter_map(|i| i.as_str().map(str::to_string).or_else(|| i.get("message")?.as_str().map(str::to_string)))
+                .collect(),
+            Value::Object(map) => map.iter().map(|(k, v)| format!("{k} {v}")).collect(),
+            _ => Vec::new(),
+        }
+    };
+    let mut parts = json.get("message").map(texts).unwrap_or_default();
+    parts.extend(json.get("errors").map(texts).unwrap_or_default());
+    if parts.is_empty() {
+        parts.extend(json.get("error").map(texts).unwrap_or_default());
+    }
+    (!parts.is_empty()).then(|| parts.join(" — "))
+}
+
+/// Méthodes acceptées depuis l'interface : lecture et création / modification, jamais de suppression.
+fn validate_method(method: &str) -> Result<(), String> {
+    match method {
+        "GET" | "POST" | "PUT" | "PATCH" => Ok(()),
+        _ => Err(format!("Méthode d'API refusée : {method}")),
+    }
+}
+
 /// GET JSON authentifié sur l'API du compte.
 pub fn get_json(account: &Account, token: &str, path: &str) -> Result<Value, String> {
+    request_json(account, token, "GET", path, None)
+}
+
+/// Requête JSON authentifiée sur l'API du compte (corps JSON optionnel, réponse vide = `null`).
+pub fn request_json(account: &Account, token: &str, method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> {
+    validate_method(method)?;
     validate_api_path(path)?;
     let url = format!("{}{}", api_base(account.provider, &account.base_url), path);
     let host = url_host(&url).unwrap_or_default();
     let mut request = crate::http::agent()
-        .get(&url)
+        .request(method, &url)
         .timeout(Duration::from_secs(30))
         .set("Authorization", &format!("Bearer {token}"))
         .set("User-Agent", "Merathon");
@@ -62,11 +101,16 @@ pub fn get_json(account: &Account, token: &str, path: &str) -> Result<Value, Str
             .set("X-GitHub-Api-Version", "2022-11-28"),
         Provider::Gitlab => request.set("Accept", "application/json"),
     };
-    request
-        .call()
-        .map_err(|e| http_error(&host, e))?
-        .into_json()
-        .map_err(|e| format!("Réponse illisible de {host} : {e}"))
+    let response = match body {
+        Some(body) => request.send_json(body),
+        None => request.call(),
+    }
+    .map_err(|e| http_error(&host, e))?;
+    let text = response.into_string().map_err(|e| format!("Réponse illisible de {host} : {e}"))?;
+    if text.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_str(&text).map_err(|e| format!("Réponse illisible de {host} : {e}"))
 }
 
 #[cfg(test)]
@@ -78,6 +122,32 @@ mod tests {
         assert_eq!(api_base(Provider::Github, "https://github.com"), "https://api.github.com");
         assert_eq!(api_base(Provider::Github, "https://ghe.corp.io/"), "https://ghe.corp.io/api/v3");
         assert_eq!(api_base(Provider::Gitlab, "https://gitlab.com"), "https://gitlab.com/api/v4");
+    }
+
+    #[test]
+    fn only_non_destructive_methods() {
+        for ok in ["GET", "POST", "PUT", "PATCH"] {
+            assert!(validate_method(ok).is_ok(), "{ok}");
+        }
+        for bad in ["DELETE", "get", "CONNECT", ""] {
+            assert!(validate_method(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn readable_api_errors() {
+        let github = serde_json::json!({
+            "message": "Validation Failed",
+            "errors": [{"resource": "PullRequest", "message": "A pull request already exists for o:feat."}],
+        });
+        assert_eq!(
+            api_error_message(&github).unwrap(),
+            "Validation Failed — A pull request already exists for o:feat."
+        );
+        let gitlab = serde_json::json!({"message": ["Another open merge request already exists for this source branch: !3"]});
+        assert_eq!(api_error_message(&gitlab).unwrap(), "Another open merge request already exists for this source branch: !3");
+        assert_eq!(api_error_message(&serde_json::json!({"error": "insufficient_scope"})).unwrap(), "insufficient_scope");
+        assert!(api_error_message(&serde_json::json!({})).is_none());
     }
 
     #[test]

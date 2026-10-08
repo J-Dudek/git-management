@@ -1,9 +1,18 @@
-import type { ForgePR, ForgeIssue, ForgeRepo } from "../types/forge";
-import type { ApiGet } from "./github";
+import type { CreatedPullRequest, ForgeIssue, ForgePR, ForgeRepo, NewPullRequest, PullRequestOptions } from "../types/forge";
+import type { ApiGet, ApiSend } from "./github";
 
 // Champs lus dans les réponses de l'API GitLab (le reste est ignoré).
 interface RawUser {
+  id?: number;
   username: string;
+  name?: string;
+  state?: string;
+}
+
+interface RawProjectSettings {
+  default_branch: string;
+  squash_option?: "never" | "always" | "default_on" | "default_off";
+  remove_source_branch_after_merge?: boolean;
 }
 
 interface RawProject {
@@ -41,7 +50,7 @@ const MR_STATES: Record<RawMergeRequest["state"], ForgePR["state"]> = {
 };
 
 export class GitLabClient {
-  constructor(private get: ApiGet) {}
+  constructor(private get: ApiGet, private send: ApiSend = () => Promise.reject(new Error("Écriture non disponible"))) {}
 
   private encodeProject(project: string): string {
     // Numeric ID passé tel quel, sinon encode le chemin
@@ -84,6 +93,44 @@ export class GitLabClient {
       `/projects/${id}/issues?state=${state}&per_page=50`
     );
     return data.map(parseIssue);
+  }
+
+  async getMergeRequestOptions(project: string): Promise<PullRequestOptions> {
+    const id = this.encodeProject(project);
+    const [info, members, labels, milestones] = await Promise.all([
+      this.get<RawProjectSettings>(`/projects/${id}`),
+      this.get<RawUser[]>(`/projects/${id}/members/all?per_page=100`),
+      this.get<{ name: string; color: string }[]>(`/projects/${id}/labels?per_page=100`),
+      this.get<{ id: number; title: string }[]>(`/projects/${id}/milestones?state=active&per_page=100`),
+    ]);
+    return {
+      defaultBranch: info.default_branch,
+      users: members
+        .filter((m) => m.state !== "blocked")
+        .map((m) => ({ id: m.id ?? 0, username: m.username, name: m.name ?? m.username })),
+      labels: labels.map((l) => ({ name: l.name, color: l.color })),
+      milestones: milestones.map((m) => ({ id: m.id, title: m.title })),
+      squashDefault: info.squash_option === "always" || info.squash_option === "default_on",
+      removeSourceBranchDefault: info.remove_source_branch_after_merge ?? false,
+    };
+  }
+
+  /** Tout passe dans la requête de création ; un brouillon est marqué par le préfixe « Draft: ». */
+  async createMergeRequest(project: string, input: NewPullRequest): Promise<CreatedPullRequest> {
+    const id = this.encodeProject(project);
+    const raw = await this.send<RawMergeRequest>("POST", `/projects/${id}/merge_requests`, {
+      source_branch: input.sourceBranch,
+      target_branch: input.targetBranch,
+      title: input.draft && !/^(draft:|\[draft\]|\(draft\))/i.test(input.title) ? `Draft: ${input.title}` : input.title,
+      description: input.description,
+      assignee_ids: input.assignees.map((u) => u.id),
+      reviewer_ids: input.reviewers.map((u) => u.id),
+      labels: input.labels.join(","),
+      milestone_id: input.milestone?.id,
+      remove_source_branch: input.removeSourceBranch,
+      squash: input.squash,
+    });
+    return { pr: parseMR(raw), warnings: [] };
   }
 }
 
