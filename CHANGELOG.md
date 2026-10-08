@@ -2,6 +2,13 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.3.0](https://github.com/J-Dudek/git-management/compare/v1.2.1...v1.3.0) (2026-10-08)
+
+### Nouveautés
+
+- add pull request management ([3581a22](https://github.com/J-Dudek/git-management/commit/3581a225f083491e45eee59fe226d3ae6b916593))
+- ui branch management ([d7d80b3](https://github.com/J-Dudek/git-management/commit/d7d80b315a8a14fdd4d96b227b97f782223a355b))
+
 ## [1.2.1](https://github.com/J-Dudek/git-management/compare/v1.2.0...v1.2.1) (2026-10-06)
 
 ### Corrections
