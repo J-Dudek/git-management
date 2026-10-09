@@ -259,7 +259,7 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
   const viewedCount = files.filter((f) => viewed.has(f.path)).length;
 
   return (
-    <div className="flex flex-col h-[60vh]">
+    <div className="flex flex-col h-full min-h-[240px]">
       <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 text-[11px] text-[var(--color-muted)]">
         {loading && <span className="animate-pulse">Calcul du diff…</span>}
         {!loading && comparison && (

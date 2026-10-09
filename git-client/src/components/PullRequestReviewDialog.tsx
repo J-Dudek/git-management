@@ -167,11 +167,17 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
   const title = details ? `${details.pr.title} ${ref}` : `${noun} ${ref}`;
 
   return (
-    <Modal title={title} onClose={requestClose} width={tab === "files" ? "w-[1100px]" : "w-[760px]"}>
+    <Modal
+      title={title}
+      onClose={requestClose}
+      width={tab === "files" ? "w-[1100px]" : "w-[760px]"}
+      height={tab === "files" ? "h-[76vh]" : ""}
+      resizeKey="pull-request-review"
+    >
       {loadError && <p className="p-4 text-xs text-red-400 break-words">{loadError}</p>}
       {!details && !loadError && <p className="p-4 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
       {details && (
-        <div className="p-4 flex flex-col gap-4">
+        <div className={`p-4 flex flex-col gap-4 ${tab === "files" ? "h-full" : ""}`}>
           <Header details={details} account={account} forgeName={forgeName} onCheckout={onCheckout && (() => onCheckout(details.pr))} />
 
 <div className="flex gap-1 border-b border-white/10 -mx-4 px-4">
@@ -189,7 +195,7 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
             </p>
           )}
           {tab === "files" && remoteName && (
-            <div className="-mx-4 -mb-4">
+            <div className="-mx-4 -mb-4 flex-1 min-h-0">
               <PullRequestFiles
                 account={account}
                 projectPath={projectPath}
