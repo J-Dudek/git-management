@@ -1,6 +1,6 @@
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type {
-  BranchInfo, CommitDetails, CommitInfo, FileDiff, FileStatus, Identity, MergeResult,
+  BranchDivergence, BranchInfo, CommitDetails, PrPush, PrRebase, CommitInfo, FileDiff, FileStatus, Identity, MergeResult,
   InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit,
 } from "../types/git";
 import type { DeviceCode, ForgeAccount, Provider, SavedAccount } from "../types/forge";
@@ -58,6 +58,19 @@ export const compareRefs = (path: string, base: string, head: string) =>
   invoke<RefComparison>("compare_refs", { path, base, head });
 export const getCompareFileDiff = (path: string, base: string, head: string, filePath: string) =>
   invoke<FileDiff>("get_compare_file_diff", { path, base, head, filePath });
+
+// ---------------------------------------------------------------- Mise à jour d'une branche de PR
+
+export const branchDivergence = (path: string, base: string, head: string) =>
+  invoke<BranchDivergence>("branch_divergence", { path, base, head });
+/** Rebase en mémoire de `head` sur `onto` : la copie de travail ne bouge pas, le résultat attend le force push. */
+export const rebasePullRequest = (path: string, onto: string, head: string, branch: string) =>
+  invoke<PrRebase>("rebase_pull_request", { path, onto, head, branch });
+export const discardPullRequestRebase = (path: string, branch: string) =>
+  invoke<void>("discard_pull_request_rebase", { path, branch });
+/** Force push du rebase préparé, refusé si la branche distante n'est plus à `expected` (--force-with-lease). */
+export const forcePushPullRequest = (path: string, remote: string, branch: string, expected: string) =>
+  invoke<PrPush>("force_push_pull_request", { path, remote, branch, expected });
 
 // ---------------------------------------------------------------- Copie de travail
 
@@ -144,6 +157,8 @@ export const fetchRemote = (path: string, remote: string | null = null) =>
   invoke<void>("fetch_remote", { path, remote });
 /** Fetch de tous les remotes en arrière-plan (synchronisation périodique) : pas inscrit au journal. */
 export const fetchAllQuietly = (path: string) => tauriInvoke<void>("fetch_remote", { path, remote: null });
+/** Fetch d'un remote en arrière-plan (état d'une PR à l'ouverture) : pas inscrit au journal. */
+export const fetchRemoteQuietly = (path: string, remote: string) => tauriInvoke<void>("fetch_remote", { path, remote });
 export const pull = (path: string, rebase: boolean) => invoke<MergeResult>("pull", { path, rebase });
 export const push = (path: string, opts: { branch?: string; remote?: string; force?: boolean } = {}) =>
   invoke<void>("push", { path, branch: opts.branch ?? null, remote: opts.remote ?? null, force: opts.force ?? false });

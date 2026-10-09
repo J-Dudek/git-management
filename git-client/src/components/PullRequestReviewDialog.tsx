@@ -10,6 +10,7 @@ import type {
 } from "../types/forge";
 import { Button, Modal, inputClass } from "./Modal";
 import { PullRequestFiles } from "./PullRequestFiles";
+import { PullRequestBranchSync } from "./PullRequestBranchSync";
 
 const labelClass = "text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]";
 
@@ -242,6 +243,18 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
                 onReview={sendReview}
               />
             </section>
+
+            {details.pr.state === "open" && remoteName && (
+              <PullRequestBranchSync
+                details={details}
+                remoteName={remoteName}
+                onCheckout={onCheckout && (() => onCheckout(details.pr))}
+                onPushed={() => {
+                  onChanged();
+                  load();
+                }}
+              />
+            )}
 
             {details.pr.state === "open" && (
               <MergeBox

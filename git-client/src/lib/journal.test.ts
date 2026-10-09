@@ -19,10 +19,17 @@ describe("describeCommand", () => {
     expect(describeCommand("reset_to", { path: "/r", hash: "0123456789abcdef", mode: "hard" })).toBe("git reset --hard 0123456");
     expect(describeCommand("delete_remote_branch", { path: "/r", name: "origin/feat/x" })).toBe("git push origin --delete feat/x");
     expect(describeCommand("fetch_remote", { path: "/r", remote: null })).toBe("git fetch --all --prune");
+    expect(describeCommand("rebase_pull_request", { path: "/r", onto: "origin/main", head: "abc", branch: "feat/x" })).toBe(
+      "git rebase origin/main feat/x  # en mémoire, copie de travail intacte",
+    );
+    expect(
+      describeCommand("force_push_pull_request", { path: "/r", remote: "origin", branch: "feat/x", expected: "0123456789abcdef" }),
+    ).toBe("git push --force-with-lease=feat/x:0123456 origin feat/x");
   });
 
   it("ignores reads and account operations", () => {
     expect(describeCommand("get_status", { path: "/r" })).toBeNull();
+    expect(describeCommand("branch_divergence", { path: "/r", base: "origin/main", head: "origin/x" })).toBeNull();
     expect(describeCommand("add_pat_account", { token: "secret" })).toBeNull();
     expect(describeCommand("terminal_write", { id: 1, data: "ls" })).toBeNull();
   });
