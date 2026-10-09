@@ -85,6 +85,48 @@ Quand le terminal a le focus, les touches vont au shell (Ctrl+R, Ctrl+W, Échap�
 
 Le code de l'application se trouve dans le dossier [`git-client/`](git-client/).
 
+## Choix techniques
+
+Un client Git de bureau doit être **rapide sur de gros historiques**, **sûr** (il manipule des tokens et des dépôts qu'on ne connaît pas toujours), **léger** (il reste ouvert toute la journée, à côté de l'IDE) et **multiplateforme**. Chaque brique a été choisie pour l'une de ces contraintes.
+
+### Tauri 2 plutôt qu'Electron
+
+- **Léger** : Tauri utilise le moteur web du système (WebKitGTK sous Linux, WebView2 sous Windows) au lieu d'embarquer Chromium et Node.js. Le paquet `.deb` pèse environ 8 Mo, quand une application Electron dépasse souvent les 80 Mo. La mémoire consommée au repos est aussi bien plus faible, ce qui compte pour un outil qu'on ne ferme jamais.
+- **Sûr par construction** : le webview n'a aucun accès au système. Il ne peut appeler que les commandes Rust déclarées une à une, avec les permissions listées dans `capabilities/`. Une faille dans l'interface ne donne donc accès ni aux fichiers, ni au réseau, ni aux tokens (voir [Sécurité](#sécurité)).
+- **Livré clé en main** : installeurs Linux et Windows, mises à jour signées, multi-fenêtres et boîtes de dialogue natives sont fournis par Tauri et ses plugins, sans outillage maison.
+
+### Rust et libgit2 (`git2`) pour le moteur Git
+
+- **Pas d'analyse de la sortie de `git`** : beaucoup de clients lancent la commande `git` et lisent son texte, qui varie selon la version, la langue et la configuration. libgit2 donne un accès direct et typé aux objets, à l'index et aux références : statut, diff, graphe, rebase ou patch ligne par ligne sont calculés sans intermédiaire.
+- **Performance** : lire des milliers de commits ou calculer un diff se fait en Rust natif, hors du thread de l'interface (`spawn_blocking`). L'interface reste fluide pendant un fetch ou un rebase.
+- **Sécurité face aux dépôts inconnus** : libgit2 n'exécute ni hooks, ni filtres, ni commandes définies dans la configuration d'un dépôt. Cloner et ouvrir un dépôt malveillant ne lance donc rien. Le seul appel à `git` (pour Git LFS, qui n'existe pas dans libgit2) neutralise explicitement ces mécanismes.
+- **Fiabilité du code** : le typage strict de Rust et la gestion d'erreurs explicite (`Result`, `thiserror`) évitent les plantages au milieu d'une opération qui modifie le dépôt. Les opérations sensibles (rebase interactif, merge, patch) sont couvertes par des tests sur de vrais dépôts temporaires.
+- **Tokens côté Rust uniquement** : les appels aux API GitHub / GitLab (`ureq` + `rustls`) et le stockage dans le trousseau du système (`keyring`) sont faits dans le backend. Le token n'est jamais transmis à l'interface.
+
+### React 19, TypeScript et Vite pour l'interface
+
+- **Une interface très interactive** : graphe, diff, staging, revue de PR, menus contextuels, glisser-déposer du rebase interactif… React, avec ses composants et son rendu déclaratif, est fait pour ces écrans qui changent en permanence.
+- **TypeScript** : les données échangées avec Rust (commits, statut, PR…) sont typées des deux côtés (`src/types/`). Une incohérence se voit à la compilation, pas chez l'utilisateur.
+- **Vite** : rechargement à chaud instantané en développement et build optimisé pour la production.
+- **Graphe dessiné dans un `<canvas>`, et seulement sa partie visible** : les lignes et les points de l'historique ne créent pas un élément DOM chacun, le défilement reste fluide quelle que soit la taille du graphe affiché.
+
+### Zustand pour l'état, Tailwind pour le style
+
+- **Zustand** : un état global simple, sans le cérémonial de Redux. Chaque onglet de dépôt garde son état (sélection, diff, brouillon de commit) et chaque composant ne se réabonne qu'à ce qu'il affiche, ce qui limite les rendus inutiles.
+- **Tailwind CSS** : le style est écrit à côté du composant, avec des couleurs et des tailles cohérentes. Le CSS livré ne contient que les classes réellement utilisées.
+
+### Le reste de l'outillage
+
+- **xterm.js + `portable-pty`** : un vrai terminal (le même moteur que celui de VS Code) relié à un pseudo-terminal natif, sous Linux comme sous Windows.
+- **Vitest, ESLint (SonarJS), Clippy, `cargo test`, `npm audit` / `cargo audit`** : la même chaîne de vérification en local et en CI, à chaque push.
+- **Conventional Commits et releases automatiques** : la version, le changelog, les paquets signés et la mise à jour automatique découlent des messages de commit, sans étape manuelle.
+
+### Les compromis assumés
+
+- **Moteur web du système** : WebKitGTK et WebView2 ne rendent pas exactement pareil. L'interface évite donc les fonctionnalités web trop récentes, et la CI fait tourner les tests sous Linux et sous Windows.
+- **libgit2 ne couvre pas tout Git** : Git LFS passe par la commande `git` (qui doit alors être installée), et certaines options avancées de Git n'ont pas d'équivalent.
+- **Deux langages** : Rust et TypeScript demandent deux compétences. En échange, chacun fait ce qu'il fait le mieux : Rust la sécurité et la performance, TypeScript l'interface.
+
 ## Prérequis pour le développement
 
 - **Node.js** 22.12+ et npm
