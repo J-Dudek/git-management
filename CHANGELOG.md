@@ -2,6 +2,16 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.6.0](https://github.com/J-Dudek/git-management/compare/v1.5.1...v1.6.0) (2026-10-09)
+
+### Nouveautés
+
+- add rebase possibility when it's possible and force push on pr ([b859976](https://github.com/J-Dudek/git-management/commit/b85997611ee83b425fe71301533648b68ebb0d43))
+- add infobulles on menus ([0fd2f7c](https://github.com/J-Dudek/git-management/commit/0fd2f7c8c6ea8e1527234cedb7dd08bbdc7dcb23))
+- ajout thème sombre,light et systeme ([1b0ecc0](https://github.com/J-Dudek/git-management/commit/1b0ecc01f21b5629c1b646dea855147f00aa68d6))
+- resize on PR modale ([fa81930](https://github.com/J-Dudek/git-management/commit/fa8193058571fbf1d459e5fb5a83e79c1bf3d623))
+- update files opération ([afcbe48](https://github.com/J-Dudek/git-management/commit/afcbe48a7ce01f76a28c412262dd789b7b8f2148))
+
 ## [1.5.1](https://github.com/J-Dudek/git-management/compare/v1.5.0...v1.5.1) (2026-10-08)
 
 ### Autres changements
