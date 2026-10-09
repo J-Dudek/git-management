@@ -204,7 +204,7 @@ export function usePullRequests(forge: LinkedForge | null) {
 
 export type PullRequestsState = ReturnType<typeof usePullRequests>;
 
-const filterClass = "flex-1 min-w-0 bg-black/30 border border-white/10 rounded px-1 py-0.5 text-[10px] text-[var(--color-text)] outline-none";
+const filterClass = "flex-1 min-w-0 bg-shade/30 border border-overlay/10 rounded px-1 py-0.5 text-[10px] text-[var(--color-text)] outline-none";
 
 /** Filtres, lignes de PR / MR et panneau de revue. `indent` aligne les lignes sur celles de la barre latérale. */
 export function PullRequestList({ forge, list, indent = 12 }: { forge: LinkedForge; list: PullRequestsState; indent?: number }) {
@@ -343,7 +343,7 @@ export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu
 }) {
   return (
     <div
-      className="pr-3 py-1.5 hover:bg-white/5 cursor-pointer"
+      className="pr-3 py-1.5 hover:bg-overlay/5 cursor-pointer"
       style={{ paddingLeft: indent }}
       onClick={onClick}
       onContextMenu={onContextMenu}
@@ -365,7 +365,7 @@ export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu
           {meta && <div className="mt-1 flex flex-wrap items-center gap-1">{meta}</div>}
         </div>
         <FreshnessTags freshness={freshness} />
-        {pr.draft && <span className="text-[9px] border border-white/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
+        {pr.draft && <span className="text-[9px] border border-overlay/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
       </div>
     </div>
   );

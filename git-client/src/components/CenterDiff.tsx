@@ -77,7 +77,7 @@ export function CenterDiff({ view }: { view: DiffView }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-3 h-9 shrink-0 border-b border-white/10 bg-[var(--color-bg-secondary)]">
+      <div className="flex items-center gap-3 px-3 h-9 shrink-0 border-b border-overlay/10 bg-[var(--color-bg-secondary)]">
         <button
           className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
           onClick={() => setCenter({ kind: "graph" })}
@@ -86,7 +86,7 @@ export function CenterDiff({ view }: { view: DiffView }) {
           ← Graphe
         </button>
         <span className="text-xs font-mono text-[var(--color-text)] truncate select-text">{view.path}</span>
-        <span className="text-[10px] px-1.5 rounded bg-white/10 text-[var(--color-muted)] shrink-0">{sourceLabel}</span>
+        <span className="text-[10px] px-1.5 rounded bg-overlay/10 text-[var(--color-muted)] shrink-0">{sourceLabel}</span>
         {stats && (
           <span className="ml-auto text-[11px] font-mono shrink-0">
             <span className="text-green-400">+{stats.add}</span> <span className="text-red-400">−{stats.del}</span>

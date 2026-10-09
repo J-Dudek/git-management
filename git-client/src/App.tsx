@@ -140,8 +140,8 @@ export default function App() {
 
       {/* Remonté à chaque changement d'onglet : pas de sélection d'un dépôt appliquée à un autre. */}
       <div key={activeTab} className="flex flex-1 overflow-hidden">
-        <div className="w-60 shrink-0 flex flex-col overflow-hidden border-r border-white/10 bg-[var(--color-bg-secondary)]">
-          <div className="flex shrink-0 border-b border-white/10">
+        <div className="w-60 shrink-0 flex flex-col overflow-hidden border-r border-overlay/10 bg-[var(--color-bg-secondary)]">
+          <div className="flex shrink-0 border-b border-overlay/10">
             <LeftTabBtn active={leftTab === "repo"} onClick={() => setLeftTab("repo")}>Dépôt</LeftTabBtn>
             <LeftTabBtn active={leftTab === "accounts"} onClick={() => setLeftTab("accounts")}>Comptes</LeftTabBtn>
           </div>
@@ -154,7 +154,7 @@ export default function App() {
         </main>
 
         {repoPath && (
-          <div className="w-80 shrink-0 overflow-hidden border-l border-white/10">
+          <div className="w-80 shrink-0 overflow-hidden border-l border-overlay/10">
             {selectedCommit ? <CommitDetails commit={selectedCommit} /> : <StagingPanel />}
           </div>
         )}

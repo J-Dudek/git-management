@@ -227,8 +227,8 @@ export function CommitGraph() {
 
   const wipRow = status.length > 0 && (
     <button
-      className={`flex items-center gap-2 w-full shrink-0 px-3 h-7 text-xs border-b border-white/10 ${
-        selectedCommit ? "hover:bg-white/5 text-[var(--color-muted)]" : "bg-white/10 text-[var(--color-text)]"
+      className={`flex items-center gap-2 w-full shrink-0 px-3 h-7 text-xs border-b border-overlay/10 ${
+        selectedCommit ? "hover:bg-overlay/5 text-[var(--color-muted)]" : "bg-overlay/10 text-[var(--color-text)]"
       }`}
       onClick={() => selectOne(null)}
       title="Afficher les modifications en cours"
@@ -331,7 +331,7 @@ function CommitRow({ commit, row, rowHeight, graphWidth, isSelected, containerWi
   return (
     <div
       className={`absolute flex items-center gap-3 px-2 cursor-pointer transition-colors duration-100 ${
-        isSelected ? "bg-white/10" : "hover:bg-white/5"
+        isSelected ? "bg-overlay/10" : "hover:bg-overlay/5"
       }`}
       style={{
         top: row * rowHeight,

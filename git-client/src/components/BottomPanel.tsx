@@ -52,7 +52,7 @@ export function BottomPanel() {
 
   return (
     <div
-      className="flex flex-col shrink-0 border-t border-white/10 bg-[var(--color-bg-secondary)]"
+      className="flex flex-col shrink-0 border-t border-overlay/10 bg-[var(--color-bg-secondary)]"
       style={{ height: panel.open ? panel.height : HEADER_HEIGHT }}
     >
       <div className="flex items-center shrink-0 relative" style={{ height: HEADER_HEIGHT }}>
@@ -216,7 +216,7 @@ function HeaderBtn({ onClick, title, children }: { onClick: () => void; title: s
       onClick={onClick}
       title={title}
       aria-label={title}
-      className="w-6 h-6 rounded text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+      className="w-6 h-6 rounded text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
     >
       {children}
     </button>

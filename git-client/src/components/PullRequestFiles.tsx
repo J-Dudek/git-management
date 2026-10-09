@@ -260,7 +260,7 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
 
   return (
     <div className="flex flex-col h-full min-h-[240px]">
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 text-[11px] text-[var(--color-muted)]">
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-overlay/10 text-[11px] text-[var(--color-muted)]">
         {loading && <span className="animate-pulse">Calcul du diff…</span>}
         {!loading && comparison && (
           <span className="truncate">
@@ -326,7 +326,7 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
       {threadsError && <p className="px-4 py-1 text-xs text-amber-300 break-words">Commentaires de ligne indisponibles : {threadsError}</p>}
       {comparison && (
         <div className="flex flex-1 min-h-0">
-          <ul className="w-64 shrink-0 overflow-y-auto border-r border-white/10 py-1">
+          <ul className="w-64 shrink-0 overflow-y-auto border-r border-overlay/10 py-1">
             {files.length === 0 && <li className="px-3 py-1 text-xs text-[var(--color-muted)] italic">Aucun fichier modifié</li>}
             {files.map((f) => (
               <FileRow
@@ -342,7 +342,7 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
           </ul>
           <div className="flex-1 min-w-0 flex flex-col">
             {selectedFile && (
-              <div className="flex items-center gap-2 px-3 py-1 border-b border-white/5 text-[11px]">
+              <div className="flex items-center gap-2 px-3 py-1 border-b border-overlay/5 text-[11px]">
                 <span className="font-mono text-[var(--color-muted)] truncate">{selectedFile.path}</span>
                 <label className="ml-auto flex items-center gap-1 shrink-0 text-[var(--color-text)] cursor-pointer">
                   <input type="checkbox" checked={viewed.has(selectedFile.path)} onChange={() => toggleViewed(selectedFile.path)} />
@@ -351,7 +351,7 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
               </div>
             )}
             {index && index.outdated.length > 0 && (
-              <div className="px-3 py-2 border-b border-white/5 flex flex-col gap-2 max-h-48 overflow-y-auto">
+              <div className="px-3 py-2 border-b border-overlay/5 flex flex-col gap-2 max-h-48 overflow-y-auto">
                 <span className="text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
                   Commentaires sur une version précédente
                 </span>
@@ -389,7 +389,7 @@ function FileRow({ file, selected, viewed, comments, onSelect, onToggleViewed }:
     <li>
       <div
         className={`flex items-center gap-2 px-2 py-[3px] text-xs cursor-pointer ${
-          selected ? "bg-[var(--color-accent)]/20" : "hover:bg-white/5"
+          selected ? "bg-[var(--color-accent)]/20" : "hover:bg-overlay/5"
         } ${viewed ? "opacity-50" : ""}`}
         title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}
         onClick={onSelect}
@@ -450,7 +450,7 @@ function Thread({ thread, busy, onReply, onResolve }: {
   }
 
   return (
-    <div className="rounded border border-white/10 bg-[#1e2030] p-2 flex flex-col gap-2">
+    <div className="rounded border border-overlay/10 bg-[var(--color-bg-elevated)] p-2 flex flex-col gap-2">
       {thread.comments.map((c) => <CommentBody key={c.id} comment={c} />)}
       {reply !== null ? (
         <div className="flex flex-col gap-1">
@@ -497,7 +497,7 @@ function Thread({ thread, busy, onReply, onResolve }: {
 
 function DraftCard({ draft, onEdit, onDelete }: { draft: DraftComment; onEdit: () => void; onDelete: () => void }) {
   return (
-    <div className="rounded border border-dashed border-[var(--color-accent)]/50 bg-[#1e2030] p-2 flex flex-col gap-1">
+    <div className="rounded border border-dashed border-[var(--color-accent)]/50 bg-[var(--color-bg-elevated)] p-2 flex flex-col gap-1">
       <div className="flex items-center gap-2 text-[10px]">
         <span className="px-1 rounded bg-[var(--color-accent)]/30 text-[var(--color-text)]">en attente</span>
         <button className="ml-auto text-[var(--color-muted)] hover:text-[var(--color-text)]" onClick={onEdit}>Modifier</button>
@@ -566,7 +566,7 @@ function SubmitReview({ account, details, drafts, busy, onCancel, onSubmit }: {
   const empty = verdict === "comment" && !body.trim() && drafts.length === 0;
 
   return (
-    <div className="px-4 py-3 border-b border-white/10 bg-black/20 flex flex-col gap-2">
+    <div className="px-4 py-3 border-b border-overlay/10 bg-shade/20 flex flex-col gap-2">
       <textarea
         autoFocus
         className={`${inputClass} h-16 resize-y font-mono`}

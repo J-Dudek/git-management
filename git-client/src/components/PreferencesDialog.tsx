@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Keyboard, Palette, RefreshCw, RotateCcw, SquareTerminal, type LucideIcon } from "lucide-react";
+import { Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, SquareTerminal, Sun, type LucideIcon } from "lucide-react";
 import { Modal } from "./Modal";
 import { Kbd } from "./Kbd";
 import {
   ROW_HEIGHTS, SYNC_INTERVALS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, ZOOM_STEPS, defaultDisplay, useDisplayStore, type Density,
+  type ThemePreference,
 } from "../store/useDisplayStore";
 import { syncOpenRepos } from "../lib/autoSync";
 
@@ -24,7 +25,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal title="Préférences" onClose={onClose} width="w-[720px]">
       <div className="flex h-[460px] max-h-[64vh] text-xs text-[var(--color-text)]">
-        <nav className="w-48 shrink-0 p-2 border-r border-white/10 bg-black/10 flex flex-col gap-0.5">
+        <nav className="w-48 shrink-0 p-2 border-r border-overlay/10 bg-shade/10 flex flex-col gap-0.5">
           {SECTIONS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
@@ -32,7 +33,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
               className={`flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left transition-colors ${
                 section === id
                   ? "bg-[var(--color-accent)]/15 text-[var(--color-text)]"
-                  : "text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/5"
+                  : "text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/5"
               }`}
             >
               <Icon size={15} strokeWidth={1.75} className={section === id ? "text-[var(--color-accent)]" : ""} />
@@ -52,10 +53,10 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
             {section === "shortcuts" && <ShortcutsSection />}
           </div>
           {section !== "shortcuts" && (
-            <div className="flex justify-end px-6 py-3 border-t border-white/10">
+            <div className="flex justify-end px-6 py-3 border-t border-overlay/10">
               <button
                 onClick={reset}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
               >
                 <RotateCcw size={13} strokeWidth={1.75} />
                 Réinitialiser
@@ -76,7 +77,14 @@ const DENSITIES: { value: Density; label: string }[] = [
   { value: "comfortable", label: "Aérée" },
 ];
 
+const THEMES: { value: ThemePreference; label: string; icon: LucideIcon }[] = [
+  { value: "system", label: "Système", icon: Monitor },
+  { value: "dark", label: "Sombre", icon: Moon },
+  { value: "light", label: "Clair", icon: Sun },
+];
+
 function AppearanceSection() {
+  const theme = useDisplayStore((s) => s.theme);
   const zoom = useDisplayStore((s) => s.zoom);
   const density = useDisplayStore((s) => s.density);
   const update = useDisplayStore((s) => s.update);
@@ -84,7 +92,26 @@ function AppearanceSection() {
 
   return (
     <>
-      <SectionTitle title="Apparence" subtitle="Taille et densité de l'interface." />
+      <SectionTitle title="Apparence" subtitle="Thème, taille et densité de l'interface." />
+
+      <Group title="Thème" description="« Système » suit le réglage clair / sombre du système, y compris quand il change.">
+        <div className="grid grid-cols-3 gap-2.5">
+          {THEMES.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => update({ theme: value })}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                theme === value
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/40"
+                  : "border-overlay/10 hover:border-overlay/25 hover:bg-overlay/5"
+              }`}
+            >
+              <Icon size={15} strokeWidth={1.75} className={theme === value ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"} />
+              <span className="font-medium">{label}</span>
+            </button>
+          ))}
+        </div>
+      </Group>
 
       <Group
         title="Taille de l'interface"
@@ -115,7 +142,7 @@ function AppearanceSection() {
               className={`rounded-lg border p-2.5 text-left transition-colors ${
                 density === d.value
                   ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/40"
-                  : "border-white/10 hover:border-white/25 hover:bg-white/5"
+                  : "border-overlay/10 hover:border-overlay/25 hover:bg-overlay/5"
               }`}
             >
               <DensityPreview rowHeight={ROW_HEIGHTS[d.value]} />
@@ -136,12 +163,12 @@ function DensityPreview({ rowHeight }: { rowHeight: number }) {
   const gap = rowHeight * 0.55;
   const ys = [10, 10 + gap, 10 + gap * 2];
   return (
-    <svg viewBox="0 0 120 64" className="w-full h-14 rounded bg-black/25">
-      <line x1="16" y1={ys[0]} x2="16" y2={ys[2]} stroke="#e94560" strokeWidth="2" />
+    <svg viewBox="0 0 120 64" className="w-full h-14 rounded bg-shade/25">
+      <line x1="16" y1={ys[0]} x2="16" y2={ys[2]} stroke="var(--color-accent)" strokeWidth="2" />
       {ys.map((y, i) => (
         <g key={i}>
-          <circle cx="16" cy={y} r="4" fill="#1a1b26" stroke="#e94560" strokeWidth="2" />
-          <rect x="28" y={y - 2.5} width={i === 1 ? 60 : 78} height="5" rx="2.5" fill="#ffffff" opacity="0.18" />
+          <circle cx="16" cy={y} r="4" fill="var(--color-bg-primary)" stroke="var(--color-accent)" strokeWidth="2" />
+          <rect x="28" y={y - 2.5} width={i === 1 ? 60 : 78} height="5" rx="2.5" fill="var(--overlay)" opacity="0.18" />
         </g>
       ))}
     </svg>
@@ -169,7 +196,7 @@ function TerminalSection() {
       </Group>
       <Group title="Aperçu">
         <div
-          className="rounded-lg border border-white/10 bg-[var(--color-bg-primary)] px-3 py-2.5 overflow-hidden"
+          className="rounded-lg border border-overlay/10 bg-[var(--color-bg-primary)] px-3 py-2.5 overflow-hidden"
           style={{ fontFamily: "ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, Consolas, monospace", fontSize, lineHeight: 1.35 }}
         >
           <div className="whitespace-nowrap">
@@ -234,7 +261,7 @@ function SyncSection() {
       <button
         onClick={syncNow}
         disabled={syncing}
-        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/10 hover:bg-white/10 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10 disabled:opacity-50"
       >
         <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "animate-spin" : ""} />
         {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
@@ -290,7 +317,7 @@ function ShortcutsSection() {
       {SHORTCUTS.map(({ group, items }) => (
         <div key={group} className="mb-5">
           <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{group}</p>
-          <div className="rounded-lg border border-white/10 divide-y divide-white/5">
+          <div className="rounded-lg border border-overlay/10 divide-y divide-overlay/5">
             {items.map(([label, keys]) => (
               <div key={label} className="flex items-center justify-between px-3 py-2">
                 <span>{label}</span>
@@ -329,7 +356,7 @@ function Group({ title, description, value, children }: {
           {description && <p className="mt-0.5 text-[11px] text-[var(--color-muted)]">{description}</p>}
         </div>
         {value && (
-          <span className="shrink-0 px-2 py-0.5 rounded-md bg-white/[0.07] font-mono text-[11px] tabular-nums">{value}</span>
+          <span className="shrink-0 px-2 py-0.5 rounded-md bg-overlay/[0.07] font-mono text-[11px] tabular-nums">{value}</span>
         )}
       </div>
       {children}

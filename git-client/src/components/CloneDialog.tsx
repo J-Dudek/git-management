@@ -94,19 +94,19 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
               </select>
               <input className={inputClass} placeholder="Filtrer…" value={filter} onChange={(e) => setFilter(e.target.value)} />
             </div>
-            <div className="h-44 overflow-y-auto border border-white/10 rounded">
+            <div className="h-44 overflow-y-auto border border-overlay/10 rounded">
               {reposLoading && <p className="p-2 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
               {reposError && <p className="p-2 text-xs text-red-400 break-words">{reposError}</p>}
               {!reposLoading && !reposError && visibleRepos.map((r) => (
                 <button
                   key={r.fullName}
                   onClick={() => setUrl(r.cloneUrl)}
-                  className={`w-full text-left px-2 py-1 text-xs flex items-center gap-2 hover:bg-white/5 ${
-                    url === r.cloneUrl ? "bg-white/10" : ""
+                  className={`w-full text-left px-2 py-1 text-xs flex items-center gap-2 hover:bg-overlay/5 ${
+                    url === r.cloneUrl ? "bg-overlay/10" : ""
                   }`}
                 >
                   <span className="font-mono text-[var(--color-text)] truncate">{r.fullName}</span>
-                  {r.private && <span className="text-[9px] px-1 rounded border border-white/20 text-[var(--color-muted)]">privé</span>}
+                  {r.private && <span className="text-[9px] px-1 rounded border border-overlay/20 text-[var(--color-muted)]">privé</span>}
                   <span className="ml-auto text-[10px] text-[var(--color-muted)] truncate max-w-[45%]">{r.description}</span>
                 </button>
               ))}

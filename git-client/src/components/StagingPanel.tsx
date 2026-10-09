@@ -446,7 +446,7 @@ export function StagingPanel() {
         )}
       </div>
 
-      <div className="p-2 border-t border-white/10 flex flex-col gap-1.5 shrink-0">
+      <div className="p-2 border-t border-overlay/10 flex flex-col gap-1.5 shrink-0">
         <input
           className={commitInput}
           placeholder="Résumé du commit"
@@ -521,7 +521,7 @@ function InteractiveBanner({ stop, conflicts, onContinue, onAbort }: {
 }
 
 const commitInput =
-  "w-full bg-black/30 border border-white/10 rounded px-2 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-[var(--color-muted)]";
+  "w-full bg-shade/30 border border-overlay/10 rounded px-2 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/50 placeholder:text-[var(--color-muted)]";
 
 function FileSection({ title, count, actions, children }: {
   title: string;
@@ -553,7 +553,7 @@ const STATUS_BADGE: Record<FileStatus["status"], { letter: string; color: string
 
 function rowTone(shown: boolean, picked: boolean): string {
   if (picked) return "bg-[var(--color-accent)]/20";
-  return shown ? "bg-white/10" : "hover:bg-white/5";
+  return shown ? "bg-overlay/10" : "hover:bg-overlay/5";
 }
 
 /** Actions de l'en-tête d'une section quand plusieurs de ses fichiers sont sélectionnés, sinon `fallback`. */
@@ -591,7 +591,7 @@ function FileTree({ nodes, depth, isOpen, onToggle, row, folderActions }: {
     return (
       <div key={`folder:${node.path}`}>
         <div
-          className="flex items-center gap-1 pr-3 py-[3px] cursor-pointer group hover:bg-white/5"
+          className="flex items-center gap-1 pr-3 py-[3px] cursor-pointer group hover:bg-overlay/5"
           style={{ paddingLeft: treePadding(depth) }}
           onClick={() => onToggle(node.path)}
           title={node.path}
@@ -648,7 +648,7 @@ function RowBtn({ title, onClick, children }: { title: string; onClick: () => vo
   return (
     <button
       title={title}
-      className="text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10 rounded w-5 h-5 flex items-center justify-center text-sm font-bold"
+      className="text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10 rounded w-5 h-5 flex items-center justify-center text-sm font-bold"
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -663,7 +663,7 @@ function HeaderBtn({ title, onClick, children }: { title: string; onClick: () =>
   return (
     <button
       title={title}
-      className="text-[10px] px-1.5 py-0.5 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+      className="text-[10px] px-1.5 py-0.5 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
       onClick={onClick}
     >
       {children}

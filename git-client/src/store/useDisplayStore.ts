@@ -10,7 +10,12 @@ export interface DisplaySettings {
   density: Density;
   /** Minutes entre deux synchronisations des dépôts ouverts (fetch + PR) ; 0 : désactivée. */
   syncInterval: number;
+  /** Thème de couleurs ; « system » suit le réglage clair / sombre du système. */
+  theme: ThemePreference;
 }
+
+export type ThemePreference = "system" | "dark" | "light";
+const THEMES: ThemePreference[] = ["system", "dark", "light"];
 
 export type Density = "compact" | "normal" | "comfortable";
 
@@ -21,7 +26,7 @@ export const TERMINAL_FONT_MAX = 24;
 /** Intervalles de synchronisation proposés, en minutes (0 : désactivée). */
 export const SYNC_INTERVALS = [0, 1, 2, 5, 10, 15, 30, 60];
 
-export const defaultDisplay: DisplaySettings = { zoom: 1, terminalFontSize: 12, density: "normal", syncInterval: 5 };
+export const defaultDisplay: DisplaySettings = { zoom: 1, terminalFontSize: 12, density: "normal", syncInterval: 5, theme: "system" };
 
 const KEY = "git-client.display";
 
@@ -41,6 +46,7 @@ export function sanitize(raw: unknown): DisplaySettings {
     terminalFontSize: Math.min(TERMINAL_FONT_MAX, Math.max(TERMINAL_FONT_MIN, font)),
     density: r.density && r.density in ROW_HEIGHTS ? r.density : defaultDisplay.density,
     syncInterval: SYNC_INTERVALS.includes(r.syncInterval as number) ? r.syncInterval! : defaultDisplay.syncInterval,
+    theme: THEMES.includes(r.theme as ThemePreference) ? r.theme! : defaultDisplay.theme,
   };
 }
 
@@ -68,8 +74,8 @@ export const useDisplayStore = create<DisplayStore>((set, get) => {
     }
   }
   const current = (): DisplaySettings => {
-    const { zoom, terminalFontSize, density, syncInterval } = get();
-    return { zoom, terminalFontSize, density, syncInterval };
+    const { zoom, terminalFontSize, density, syncInterval, theme } = get();
+    return { zoom, terminalFontSize, density, syncInterval, theme };
   };
   return {
     ...load(),

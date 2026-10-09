@@ -180,7 +180,7 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
         <div className={`p-4 flex flex-col gap-4 ${tab === "files" ? "h-full" : ""}`}>
           <Header details={details} account={account} forgeName={forgeName} onCheckout={onCheckout && (() => onCheckout(details.pr))} />
 
-<div className="flex gap-1 border-b border-white/10 -mx-4 px-4">
+<div className="flex gap-1 border-b border-overlay/10 -mx-4 px-4">
             <TabButton active={tab === "conversation"} onClick={() => setTab("conversation")}>
               Conversation ({comments.length})
             </TabButton>
@@ -217,7 +217,7 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
             <section className="flex flex-col gap-1">
               <span className={labelClass}>Description</span>
               {details.description.trim()
-                ? <p className="text-xs text-[var(--color-text)] whitespace-pre-wrap break-words font-mono bg-black/20 rounded p-2">{details.description}</p>
+                ? <p className="text-xs text-[var(--color-text)] whitespace-pre-wrap break-words font-mono bg-shade/20 rounded p-2">{details.description}</p>
                 : <p className="text-xs text-[var(--color-muted)] italic">Aucune description</p>}
             </section>
 
@@ -297,7 +297,7 @@ function Header({ details, account, forgeName, onCheckout }: {
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-xs text-[var(--color-muted)] min-w-0">
         <span className={`px-1.5 py-0.5 rounded font-semibold ${state.className}`}>{state.label}</span>
-        {pr.draft && <span className="px-1.5 py-0.5 rounded border border-white/20">brouillon</span>}
+        {pr.draft && <span className="px-1.5 py-0.5 rounded border border-overlay/20">brouillon</span>}
         <span className="truncate">
           {pr.author} · {formatDate(pr.createdAt)} · {account.label}
         </span>
@@ -316,7 +316,7 @@ function Header({ details, account, forgeName, onCheckout }: {
       {pr.labels.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {pr.labels.map((l) => (
-            <span key={l} className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] text-[var(--color-text)]">{l}</span>
+            <span key={l} className="px-1.5 py-0.5 rounded bg-overlay/10 text-[10px] text-[var(--color-text)]">{l}</span>
           ))}
         </div>
       )}
@@ -370,11 +370,11 @@ function Checks({ checks }: { checks: ForgeCheck[] }) {
   return (
     <section className="flex flex-col gap-1">
       <span className={labelClass}>CI · {summary || "aucun résultat"}</span>
-      <div className="flex flex-col max-h-36 overflow-y-auto rounded bg-black/20 py-1">
+      <div className="flex flex-col max-h-36 overflow-y-auto rounded bg-shade/20 py-1">
         {checks.map((c, i) => (
           <button
             key={`${c.name}-${i}`}
-            className="flex items-center gap-2 px-2 py-0.5 text-left text-xs text-[var(--color-text)] hover:bg-white/5 disabled:cursor-default"
+            className="flex items-center gap-2 px-2 py-0.5 text-left text-xs text-[var(--color-text)] hover:bg-overlay/5 disabled:cursor-default"
             disabled={!c.url}
             onClick={() => c.url && openUrl(c.url)}
             title={c.url ? "Ouvrir le détail dans le navigateur" : undefined}
@@ -390,8 +390,8 @@ function Checks({ checks }: { checks: ForgeCheck[] }) {
 
 function Comment({ comment }: { comment: ForgeComment }) {
   return (
-    <div className="rounded border border-white/10 bg-black/20">
-      <div className="flex items-center gap-2 px-2 py-1 border-b border-white/5 text-[10px] text-[var(--color-muted)]">
+    <div className="rounded border border-overlay/10 bg-shade/20">
+      <div className="flex items-center gap-2 px-2 py-1 border-b border-overlay/5 text-[10px] text-[var(--color-muted)]">
         <span className="font-semibold text-[var(--color-text)]">{comment.author}</span>
         {comment.review === "approved" && <span className="text-green-400">a approuvé</span>}
         {comment.review === "changes_requested" && <span className="text-amber-400">demande des changements</span>}
@@ -458,7 +458,7 @@ function MergeBox({ details, isGitHub, method, onMethod, removeSource, onRemoveS
 }) {
   const updateLabel = isGitHub ? "Mettre à jour la branche" : "Rebaser";
   return (
-    <section className="flex flex-col gap-2 rounded border border-white/10 p-3">
+    <section className="flex flex-col gap-2 rounded border border-overlay/10 p-3">
       <div className="flex items-center gap-2">
         <span className={`text-xs ${details.mergeable ? "text-green-300" : "text-amber-300"}`}>{details.mergeStatus}</span>
         <button

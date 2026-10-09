@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CommitNode, GraphEdge, GraphLayout } from "./layout";
 import { authorInitials } from "../lib/initials";
+import { themeColor, useThemeStore } from "../lib/theme";
 
 export const LANE_WIDTH = 24;
 /** Assez grand pour contenir les initiales de l'auteur. */
@@ -27,6 +28,7 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
   const height = Math.max(viewportHeight, 1);
   // Auteur du point survolé, affiché dans une infobulle près du curseur.
   const [hover, setHover] = useState<{ author: string; x: number; y: number } | null>(null);
+  const theme = useThemeStore((s) => s.theme);
 
   // Au défilement, le point sous le curseur change : l'infobulle reviendra au prochain mouvement.
   useEffect(() => setHover(null), [scrollTop]);
@@ -47,13 +49,15 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
     const bottom = scrollTop + height + rowHeight;
     for (const edge of layout.edges) drawEdge(ctx, edge, top, bottom, rowHeight);
 
+    // Point de HEAD évidé : couleur du fond, relue à chaque changement de thème.
+    const background = themeColor("--color-bg-primary", "#1a1b26");
     const firstRow = Math.max(0, Math.floor(top / rowHeight));
     const lastRow = Math.min(layout.nodes.length - 1, Math.ceil(bottom / rowHeight));
     for (let row = firstRow; row <= lastRow; row++) {
       const node = layout.nodes[row];
-      drawNode(ctx, node, { selected: node.commit.hash === selectedHash, head: node.commit.hash === headHash }, rowHeight);
+      drawNode(ctx, node, { selected: node.commit.hash === selectedHash, head: node.commit.hash === headHash }, rowHeight, background);
     }
-  }, [layout, selectedHash, headHash, width, height, scrollTop, rowHeight]);
+  }, [layout, selectedHash, headHash, width, height, scrollTop, rowHeight, theme]);
 
   /** Commit dont le point est sous le curseur. */
   function nodeAt(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -91,7 +95,7 @@ export function GraphCanvas({ layout, selectedHash, headHash, onSelectRow, width
       />
       {hover && (
         <div
-          className="fixed z-50 pointer-events-none px-1.5 py-0.5 rounded text-[11px] bg-black/85 text-white border border-white/10 whitespace-nowrap"
+          className="fixed z-50 pointer-events-none px-1.5 py-0.5 rounded text-[11px] bg-black/85 text-white border border-overlay/10 whitespace-nowrap"
           style={{ left: hover.x + 12, top: hover.y + 12 }}
         >
           {hover.author}
@@ -131,14 +135,20 @@ function drawEdge(ctx: CanvasRenderingContext2D, edge: GraphEdge, top: number, b
   ctx.stroke();
 }
 
-/** Remplissage d'un point : blanc s'il est sélectionné, sombre pour HEAD, couleur de la branche sinon. */
-function nodeFill(color: string, { selected, head }: { selected: boolean; head: boolean }): string {
+/** Remplissage d'un point : blanc s'il est sélectionné, couleur du fond pour HEAD, couleur de la branche sinon. */
+function nodeFill(color: string, { selected, head }: { selected: boolean; head: boolean }, background: string): string {
   if (selected) return "#ffffff";
-  if (head) return "#1a1b26";
+  if (head) return background;
   return color;
 }
 
-function drawNode(ctx: CanvasRenderingContext2D, node: CommitNode, state: { selected: boolean; head: boolean }, rowHeight: number) {
+function drawNode(
+  ctx: CanvasRenderingContext2D,
+  node: CommitNode,
+  state: { selected: boolean; head: boolean },
+  rowHeight: number,
+  background: string,
+) {
   const nx = laneX(node.lane);
   const ny = centerY(node.row, rowHeight);
   const highlighted = state.selected || state.head;
@@ -148,7 +158,7 @@ function drawNode(ctx: CanvasRenderingContext2D, node: CommitNode, state: { sele
 
   ctx.beginPath();
   ctx.arc(nx, ny, isMerge ? mergeRadius : NODE_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = nodeFill(node.color, state);
+  ctx.fillStyle = nodeFill(node.color, state, background);
   ctx.fill();
   if (highlighted) {
     ctx.strokeStyle = node.color;

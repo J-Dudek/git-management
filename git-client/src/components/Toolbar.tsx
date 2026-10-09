@@ -1,7 +1,9 @@
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
 import { useTabsStore } from "../store/useTabsStore";
-import { AppWindow, CloudDownload, FolderOpen, FolderPlus, History, RefreshCw, Settings, SquarePlus, X } from "lucide-react";
+import {
+  AppWindow, CloudDownload, FolderOpen, FolderPlus, History, Monitor, Moon, RefreshCw, Settings, SquarePlus, Sun, X, type LucideIcon,
+} from "lucide-react";
 import {
   createBranch, fetchRemote, openNewWindow, pull, push, stashApply, stashSave,
 } from "../ipc/commands";
@@ -10,6 +12,8 @@ import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "../lib/repoAct
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { SearchBar } from "./SearchBar";
 import { checkForUpdates } from "../lib/updater";
+import { useThemeStore } from "../lib/theme";
+import { useDisplayStore, type ThemePreference } from "../store/useDisplayStore";
 import logoMark from "../assets/logo-mark.webp";
 import type { RepoInfo } from "../types/git";
 
@@ -126,9 +130,9 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
   const disabled = !repoPath || !!busy;
 
   return (
-    <header className="flex items-center gap-1.5 px-3 h-11 shrink-0 bg-[var(--color-bg-secondary)] border-b border-white/10">
+    <header className="flex items-center gap-1.5 px-3 h-11 shrink-0 bg-[var(--color-bg-secondary)] border-b border-overlay/10">
       <button
-        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-white/10 max-w-60"
+        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-overlay/10 max-w-60"
         onClick={(e) => openMenu(e, repoMenu())}
         title={repoPath ?? undefined}
       >
@@ -138,7 +142,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
           width={24}
           height={24}
           draggable={false}
-          className="w-6 h-6 rounded-md ring-1 ring-white/10 shrink-0 select-none"
+          className="w-6 h-6 rounded-md ring-1 ring-overlay/10 shrink-0 select-none"
         />
         <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</span>
         <span className="text-[10px] text-[var(--color-muted)]">▾</span>
@@ -149,7 +153,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
         </span>
       )}
 
-      <div className="w-px h-5 bg-white/10 mx-1" />
+      <div className="w-px h-5 bg-overlay/10 mx-1" />
 
       <ToolBtn
         label="Pull"
@@ -181,9 +185,10 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       {busy && <span className="text-xs text-[var(--color-muted)] animate-pulse ml-2">{busy}</span>}
 
       <div className="ml-auto flex items-center gap-2">
+        <ThemeButton onOpen={openMenu} />
         <SearchBar />
         <button
-          className="text-xs px-2 py-1 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+          className="text-xs px-2 py-1 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
           onClick={() => openNewWindow()}
           title="Ouvrir une nouvelle fenêtre"
         >
@@ -193,6 +198,44 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
 
       {menu && <ContextMenu menu={menu} onClose={closeMenu} />}
     </header>
+  );
+}
+
+const THEMES: Record<ThemePreference, { label: string; icon: LucideIcon }> = {
+  system: { label: "Système", icon: Monitor },
+  dark: { label: "Sombre", icon: Moon },
+  light: { label: "Clair", icon: Sun },
+};
+
+/** Choix du thème : l'icône montre le réglage actuel, un clic ouvre la liste (aussi dans les préférences). */
+function ThemeButton({ onOpen }: { onOpen: (e: React.MouseEvent, items: MenuEntry[]) => void }) {
+  const preference = useDisplayStore((s) => s.theme);
+  const update = useDisplayStore((s) => s.update);
+  const shown = useThemeStore((s) => s.theme);
+  const { label, icon: Icon } = THEMES[preference];
+  const resolved = shown === "dark" ? "sombre" : "clair";
+  const title = preference === "system" ? `Thème : ${label} (${resolved})` : `Thème : ${label}`;
+  const items: MenuEntry[] = [
+    { header: "Thème de couleurs" },
+    ...(Object.keys(THEMES) as ThemePreference[]).map((value) => ({
+      label: THEMES[value].label,
+      icon: THEMES[value].icon,
+      hint: value === "system" ? "Suit le réglage clair / sombre du système" : undefined,
+      checked: value === preference,
+      action: () => update({ theme: value }),
+    })),
+  ];
+
+  return (
+    <button
+      className="flex items-center gap-1.5 text-xs px-2 py-1 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
+      onClick={(e) => onOpen(e, items)}
+      title={`${title} — cliquer pour changer`}
+    >
+      <Icon size={14} strokeWidth={1.75} />
+      {label}
+      <span className="text-[9px]">▾</span>
+    </button>
   );
 }
 
@@ -207,7 +250,7 @@ function ToolBtn({ label, icon, badge, disabled, onClick, onMenu }: {
   return (
     <div className="flex items-stretch">
       <button
-        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-l rounded-r-none hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-transparent text-[var(--color-text)]"
+        className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-l rounded-r-none hover:bg-overlay/10 disabled:opacity-40 disabled:hover:bg-transparent text-[var(--color-text)]"
         style={onMenu ? undefined : { borderRadius: 4 }}
         onClick={onClick}
         disabled={disabled}
@@ -221,7 +264,7 @@ function ToolBtn({ label, icon, badge, disabled, onClick, onMenu }: {
       </button>
       {onMenu && (
         <button
-          className="text-[9px] px-1 rounded-r hover:bg-white/10 disabled:opacity-40 text-[var(--color-muted)]"
+          className="text-[9px] px-1 rounded-r hover:bg-overlay/10 disabled:opacity-40 text-[var(--color-muted)]"
           disabled={disabled}
           onClick={onMenu}
           aria-label={`Options ${label}`}

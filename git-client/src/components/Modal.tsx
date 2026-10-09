@@ -116,11 +116,11 @@ export function Modal({ title, onClose, children, width = "w-[420px]", height = 
     >
       <div
         ref={boxRef}
-        className={`${boxClass} relative flex flex-col bg-[#1e2030] border border-white/10 rounded-lg shadow-2xl`}
+        className={`${boxClass} relative flex flex-col bg-[var(--color-bg-elevated)] border border-overlay/10 rounded-lg shadow-2xl`}
         style={boxStyle}
       >
         <div
-          className="flex items-center justify-between gap-2 pl-4 pr-2 py-2 border-b border-white/10"
+          className="flex items-center justify-between gap-2 pl-4 pr-2 py-2 border-b border-overlay/10"
           onDoubleClick={resizeKey ? toggleMaximized : undefined}
         >
           <span className="text-sm font-semibold text-[var(--color-text)] truncate">{title}</span>
@@ -167,7 +167,7 @@ function HeaderIcon({ onClick, label, title, children }: {
       onDoubleClick={(e) => e.stopPropagation()}
       aria-label={label}
       title={title}
-      className="w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-white/10"
+      className="w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
     >
       {children}
     </button>
@@ -175,7 +175,7 @@ function HeaderIcon({ onClick, label, title, children }: {
 }
 
 export const inputClass =
-  "bg-black/30 border border-white/10 rounded px-2 py-1.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60 placeholder:text-[var(--color-muted)] w-full";
+  "bg-shade/30 border border-overlay/10 rounded px-2 py-1.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60 placeholder:text-[var(--color-muted)] w-full";
 
 export function Button({ onClick, disabled, variant = "default", children, title, type = "button" }: {
   onClick?: () => void;
@@ -186,7 +186,7 @@ export function Button({ onClick, disabled, variant = "default", children, title
   type?: "button" | "submit";
 }) {
   const styles = {
-    default: "bg-white/10 hover:bg-white/15 text-[var(--color-text)]",
+    default: "bg-overlay/10 hover:bg-overlay/15 text-[var(--color-text)]",
     primary: "bg-[var(--color-accent)] hover:opacity-90 text-white font-semibold",
     danger: "bg-red-700/80 hover:bg-red-700 text-white font-semibold",
   }[variant];

@@ -46,7 +46,7 @@ export function CommitDetails({ commit }: { commit: CommitInfo }) {
 
   return (
     <div className="flex flex-col h-full bg-[var(--color-bg-secondary)] text-sm">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-overlay/10 shrink-0">
         <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">Commit</span>
         <button
           className="font-mono text-[11px] text-[var(--color-accent)] hover:underline"
@@ -72,7 +72,7 @@ export function CommitDetails({ commit }: { commit: CommitInfo }) {
 
       {details && (
         <div className="flex-1 overflow-y-auto">
-          <div className="p-3 border-b border-white/10 flex flex-col gap-2">
+          <div className="p-3 border-b border-overlay/10 flex flex-col gap-2">
             <p className="text-sm text-[var(--color-text)] font-medium break-words select-text">{details.summary}</p>
             {body && <pre className="text-xs text-[var(--color-muted)] whitespace-pre-wrap break-words font-sans select-text">{body}</pre>}
 
@@ -120,7 +120,7 @@ export function CommitDetails({ commit }: { commit: CommitInfo }) {
               <div
                 key={f.path}
                 className={`flex items-center gap-2 px-3 py-[3px] cursor-pointer ${
-                  selectedPath === f.path ? "bg-white/10" : "hover:bg-white/5"
+                  selectedPath === f.path ? "bg-overlay/10" : "hover:bg-overlay/5"
                 }`}
                 title={f.old_path ? `${f.old_path} → ${f.path}` : f.path}
                 onClick={() => setCenter({ kind: "diff", path: f.path, source: { type: "commit", hash: commit.hash } })}

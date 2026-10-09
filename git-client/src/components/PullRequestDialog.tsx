@@ -168,7 +168,7 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
     <Modal title={`Nouvelle ${noun} ${forgeName}`} onClose={() => !creating && onClose()} width="w-[620px]">
       <div className="p-4 flex flex-col gap-3">
         <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
-          <span className="px-1.5 py-0.5 rounded bg-white/10 text-[var(--color-text)] font-semibold">{forgeName}</span>
+          <span className="px-1.5 py-0.5 rounded bg-overlay/10 text-[var(--color-text)] font-semibold">{forgeName}</span>
           <span className="font-mono truncate">{projectPath}</span>
           <span className="ml-auto truncate">{account.label}</span>
         </div>
@@ -354,7 +354,7 @@ function TagPicker({ label, choices, value, onChange, action }: {
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {value.map((key) => (
-            <span key={key} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/10 text-[11px] text-[var(--color-text)]">
+            <span key={key} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-overlay/10 text-[11px] text-[var(--color-text)]">
               {colorOf(key) && <span className="w-2 h-2 rounded-full" style={{ background: colorOf(key) }} />}
               {key}
               <button className="opacity-60 hover:opacity-100" aria-label={`Retirer ${key}`} onClick={() => onChange(value.filter((v) => v !== key))}>
@@ -380,11 +380,11 @@ function TagPicker({ label, choices, value, onChange, action }: {
         }}
       />
       {focused && suggestions.length > 0 && (
-        <ul className="absolute z-10 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-[#1e2030] border border-white/10 rounded shadow-xl">
+        <ul className="absolute z-10 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-[var(--color-bg-elevated)] border border-overlay/10 rounded shadow-xl">
           {suggestions.map((c) => (
             <li key={c.key}>
               <button
-                className="w-full text-left px-2 py-1 text-xs text-[var(--color-text)] hover:bg-white/10 flex items-center gap-2"
+                className="w-full text-left px-2 py-1 text-xs text-[var(--color-text)] hover:bg-overlay/10 flex items-center gap-2"
                 // mousedown : avant que le champ perde le focus et ferme la liste.
                 onMouseDown={(e) => {
                   e.preventDefault();

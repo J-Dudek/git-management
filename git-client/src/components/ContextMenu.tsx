@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { LucideIcon } from "lucide-react";
+import { Check, type LucideIcon } from "lucide-react";
 import { Kbd } from "./Kbd";
 
 export interface MenuItem {
@@ -13,6 +13,8 @@ export interface MenuItem {
   icon?: LucideIcon;
   /** Raccourci clavier affiché à droite, ex. "Ctrl+T". */
   shortcut?: string;
+  /** Choix actif d'une liste d'options : coche affichée à droite. */
+  checked?: boolean;
 }
 
 /** Titre de section. */
@@ -75,10 +77,10 @@ export function ContextMenu({ menu, onClose }: Props) {
       ref={ref}
       style={style}
       role="menu"
-      className="min-w-48 max-w-96 max-h-[80vh] overflow-y-auto p-1 rounded-lg border border-white/10 bg-[#1b1d2b]/95 backdrop-blur-md shadow-2xl shadow-black/50 ring-1 ring-black/40 select-none"
+      className="min-w-48 max-w-96 max-h-[80vh] overflow-y-auto p-1 rounded-lg border border-overlay/10 bg-[var(--color-bg-elevated)]/95 backdrop-blur-md shadow-2xl shadow-black/50 ring-1 ring-shade/40 select-none"
     >
       {menu.items.map((entry, i) => {
-        if (entry === "separator") return <div key={i} className="my-1 mx-1 h-px bg-white/10" />;
+        if (entry === "separator") return <div key={i} className="my-1 mx-1 h-px bg-overlay/10" />;
         if ("header" in entry) {
           return (
             <div key={i} className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
@@ -94,7 +96,7 @@ export function ContextMenu({ menu, onClose }: Props) {
             className={`group w-full flex items-center gap-2.5 text-left px-2 py-1.5 rounded-md text-xs transition-colors disabled:opacity-40 disabled:cursor-default ${
               entry.danger
                 ? "text-red-400 hover:bg-red-500/15"
-                : "text-[var(--color-text)] hover:bg-white/[0.08]"
+                : "text-[var(--color-text)] hover:bg-overlay/[0.08]"
             }`}
             disabled={entry.disabled}
             onClick={() => {
@@ -110,6 +112,7 @@ export function ContextMenu({ menu, onClose }: Props) {
               )}
             </span>
             {entry.shortcut && <Kbd keys={entry.shortcut} className="ml-4" />}
+            {entry.checked && <Check size={14} strokeWidth={2} className="shrink-0 ml-4 text-[var(--color-accent)]" aria-label="actif" />}
           </button>
         );
       })}
