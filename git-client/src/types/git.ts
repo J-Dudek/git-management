@@ -114,6 +114,34 @@ export interface RefComparison {
   files: CommitFile[];
 }
 
+/** Position d'une branche par rapport à sa cible. */
+export interface BranchDivergence {
+  /** Commit de tête de la branche, tel que connu localement. */
+  head: string;
+  ahead: number;
+  /** Commits de la cible absents de la branche : elle est en retard s'il y en a. */
+  behind: number;
+}
+
+/** Rebase en mémoire d'une branche de PR sur sa cible. */
+export interface PrRebase {
+  success: boolean;
+  /** Rebase automatique impossible : rien n'a été modifié. */
+  conflicted_files: string[];
+  new_head: string | null;
+  commits: number;
+  /** Commits déjà présents dans la cible, ou commits de merge (retirés comme par `git rebase`). */
+  skipped: number;
+}
+
+/** Effet du force push sur la branche locale du même nom. */
+export type LocalBranchUpdate = "absent" | "updated" | "diverged" | "dirty";
+
+export interface PrPush {
+  new_head: string;
+  local_branch: LocalBranchUpdate;
+}
+
 /** Résultat d'un merge, rebase, cherry-pick, revert ou pull. */
 export interface MergeResult {
   conflicted_files: string[];

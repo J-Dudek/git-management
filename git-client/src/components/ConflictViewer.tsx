@@ -124,7 +124,7 @@ export function ConflictViewer({ path }: { path: string }) {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center gap-3 px-3 h-9 border-b border-white/10 shrink-0 bg-[var(--color-bg-secondary)]">
+      <div className="flex items-center gap-3 px-3 h-9 border-b border-overlay/10 shrink-0 bg-[var(--color-bg-secondary)]">
         <button
           className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]"
           onClick={() => setCenter({ kind: "graph" })}
@@ -153,13 +153,13 @@ export function ConflictViewer({ path }: { path: string }) {
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {sections.map((section, i) => (
-          <div key={i} className="border border-white/10 rounded overflow-hidden text-[11px] font-mono">
+          <div key={i} className="border border-overlay/10 rounded overflow-hidden text-[11px] font-mono">
             {section.before.length > 0 && (
-              <div className="px-3 py-1 bg-black/20 text-[var(--color-muted)] opacity-60">
+              <div className="px-3 py-1 bg-shade/20 text-[var(--color-muted)] opacity-60">
                 {section.before.map((l, j) => <div key={j} className="whitespace-pre">{l || " "}</div>)}
               </div>
             )}
-            <div className="grid grid-cols-2 divide-x divide-white/10">
+            <div className="grid grid-cols-2 divide-x divide-overlay/10">
               <SidePanel
                 label="Actuel (HEAD)"
                 lines={section.ours}
@@ -179,7 +179,7 @@ export function ConflictViewer({ path }: { path: string }) {
                 activeBg="bg-blue-900/40"
               />
             </div>
-            <div className="flex justify-center gap-2 p-1 bg-black/20 border-t border-white/10">
+            <div className="flex justify-center gap-2 p-1 bg-shade/20 border-t border-overlay/10">
               <ChoiceBtn active={choices[i] === "both"} onClick={() => setChoices((p) => p.map((v, j) => j === i ? "both" : v))}>
                 Garder les deux
               </ChoiceBtn>
@@ -201,12 +201,12 @@ function SidePanel({ label, lines, chosen, side, onChoose, bg, activeBg }: {
       className={`${active ? activeBg : bg} cursor-pointer hover:opacity-90 transition-colors`}
       onClick={() => onChoose(side)}
     >
-      <div className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 ${active ? "text-white" : "text-[var(--color-muted)]"}`}>
+      <div className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 ${active ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"}`}>
         {active && <span>✓</span>}
         {label}
       </div>
       <div className="px-2 py-1">
-        {lines.map((l, i) => <div key={i} className={`whitespace-pre ${active ? "text-white" : "text-[var(--color-muted)]"}`}>{l || " "}</div>)}
+        {lines.map((l, i) => <div key={i} className={`whitespace-pre ${active ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"}`}>{l || " "}</div>)}
       </div>
     </div>
   );
@@ -216,7 +216,7 @@ function ChoiceBtn({ active, onClick, children }: { active: boolean; onClick: ()
   return (
     <button
       onClick={onClick}
-      className={`text-[9px] px-2 py-0.5 rounded transition-colors ${active ? "bg-white/20 text-white" : "text-[var(--color-muted)] hover:bg-white/10"}`}
+      className={`text-[9px] px-2 py-0.5 rounded transition-colors ${active ? "bg-overlay/20 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:bg-overlay/10"}`}
     >
       {children}
     </button>

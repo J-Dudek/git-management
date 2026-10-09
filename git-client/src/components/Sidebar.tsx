@@ -39,9 +39,9 @@ function submoduleTitle(sm: SubmoduleInfo): string {
 }
 
 function rowTone(active?: boolean, selected?: boolean): string {
-  if (active) return "text-[var(--color-accent)] bg-white/5 font-semibold";
+  if (active) return "text-[var(--color-accent)] bg-overlay/5 font-semibold";
   if (selected) return "text-[var(--color-text)] bg-[var(--color-accent)]/20";
-  return "text-[var(--color-text)] hover:bg-white/5";
+  return "text-[var(--color-text)] hover:bg-overlay/5";
 }
 
 export function Sidebar() {
@@ -500,7 +500,7 @@ export function Sidebar() {
                 <li className="px-6 py-1 flex items-center gap-2 text-[11px] text-amber-300">
                   {lfs.files.filter((f) => !f.downloaded).length} fichier(s) non téléchargé(s)
                   <button
-                    className="ml-auto px-1.5 rounded bg-white/10 hover:bg-white/15 text-[var(--color-text)]"
+                    className="ml-auto px-1.5 rounded bg-overlay/10 hover:bg-overlay/15 text-[var(--color-text)]"
                     onClick={() => runGit(() => lfsPull(path), { busy: "LFS…", success: "Fichiers LFS récupérés" })}
                   >
                     Récupérer
@@ -588,7 +588,7 @@ function SubGroup({ title, children, onContextMenu }: {
   return (
     <li>
       <button
-        className="w-full flex items-center gap-1 px-4 py-[3px] text-xs text-[var(--color-text)] hover:bg-white/5"
+        className="w-full flex items-center gap-1 px-4 py-[3px] text-xs text-[var(--color-text)] hover:bg-overlay/5"
         onClick={() => setOpen((v) => !v)}
         onContextMenu={onContextMenu}
       >
@@ -628,7 +628,7 @@ function BranchFolder({ name, count, depth, children }: {
   return (
     <li>
       <button
-        className="w-full flex items-center gap-1 pr-2 py-[3px] text-xs text-[var(--color-text)] hover:bg-white/5"
+        className="w-full flex items-center gap-1 pr-2 py-[3px] text-xs text-[var(--color-text)] hover:bg-overlay/5"
         style={{ paddingLeft: rowPadding(depth) - 12 }}
         onClick={() => setOpen((v) => !v)}
       >
@@ -687,8 +687,8 @@ function PrBadge({ prs, gitlab, fresh, onOpen }: { prs: ForgePR[]; gitlab: boole
   return (
     <button
       className={`relative shrink-0 px-1 text-[9px] font-mono rounded border ${
-        first.draft ? "border-white/20 text-[var(--color-muted)]" : "border-green-500/50 text-green-300"
-      } hover:bg-white/10`}
+        first.draft ? "border-overlay/20 text-[var(--color-muted)]" : "border-green-500/50 text-green-300"
+      } hover:bg-overlay/10`}
       title={`${title}${fresh ? "\nNon lue ou modifiée depuis ta dernière consultation" : ""}\nClic : voir le détail`}
       onClick={(e) => {
         e.stopPropagation();

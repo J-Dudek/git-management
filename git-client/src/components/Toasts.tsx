@@ -3,7 +3,7 @@ import { useUiStore, type Toast } from "../store/useUiStore";
 const TOAST_STYLES: Record<Toast["kind"], string> = {
   error: "bg-red-950/95 border-red-500/40 text-red-200",
   success: "bg-green-950/95 border-green-500/40 text-green-200",
-  info: "bg-[#1e2a3a]/95 border-sky-500/40 text-sky-200",
+  info: "bg-[var(--color-bg-info)]/95 border-sky-500/40 text-sky-200",
 };
 
 export function Toasts() {

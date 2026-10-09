@@ -85,6 +85,9 @@ const COMMANDS: Record<string, (a: Args) => string> = {
     const [remote, ...rest] = String(a.name).split("/");
     return `git push ${quote(remote)} --delete ${quote(rest.join("/"))}`;
   },
+  rebase_pull_request: (a) => `git rebase ${quote(a.onto)} ${quote(a.branch)}  # en mémoire, copie de travail intacte`,
+  force_push_pull_request: (a) =>
+    `git push --force-with-lease=${quote(a.branch)}:${short(a.expected)} ${quote(a.remote)} ${quote(a.branch)}`,
   push_tag: (a) => `git push ${quote(a.remote)} ${quote(a.tag)}`,
   delete_remote_tag: (a) => `git push ${quote(a.remote)} --delete ${quote(a.tag)}`,
 

@@ -265,7 +265,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form
-      className="mx-2 mb-2 p-2 flex flex-col gap-1.5 rounded border border-white/10 bg-black/20"
+      className="mx-2 mb-2 p-2 flex flex-col gap-1.5 rounded border border-overlay/10 bg-shade/20"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -277,7 +277,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
             key={k}
             type="button"
             onClick={() => setKind(k)}
-            className={`text-[10px] py-1 rounded ${kind === k ? "bg-white/15 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:bg-white/10"}`}
+            className={`text-[10px] py-1 rounded ${kind === k ? "bg-overlay/15 text-[var(--color-text)]" : "text-[var(--color-muted)] hover:bg-overlay/10"}`}
           >
             {l}
           </button>
@@ -293,7 +293,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
             key={m}
             type="button"
             onClick={() => setMode(m)}
-            className={`text-[10px] py-1 rounded border ${mode === m ? "border-[var(--color-accent)]/60 text-[var(--color-text)]" : "border-white/10 text-[var(--color-muted)] hover:bg-white/10"}`}
+            className={`text-[10px] py-1 rounded border ${mode === m ? "border-[var(--color-accent)]/60 text-[var(--color-text)]" : "border-overlay/10 text-[var(--color-muted)] hover:bg-overlay/10"}`}
           >
             {l}
           </button>
@@ -335,10 +335,10 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
 /** Code à saisir sur la page de la forge pendant la connexion OAuth (device flow). */
 function DeviceCodePanel({ device, onCancel }: { device: DeviceCode; onCancel: () => void }) {
   return (
-    <div className="mx-2 mb-2 p-3 flex flex-col gap-2 rounded border border-white/10 bg-black/20 text-center">
+    <div className="mx-2 mb-2 p-3 flex flex-col gap-2 rounded border border-overlay/10 bg-shade/20 text-center">
       <p className="text-[11px] text-[var(--color-muted)]">Saisis ce code sur la page qui vient de s'ouvrir :</p>
       <button
-        className="font-mono text-lg tracking-widest text-[var(--color-text)] bg-white/10 rounded py-1 hover:bg-white/15"
+        className="font-mono text-lg tracking-widest text-[var(--color-text)] bg-overlay/10 rounded py-1 hover:bg-overlay/15"
         title="Copier le code"
         onClick={() => navigator.clipboard.writeText(device.user_code)}
       >
@@ -465,7 +465,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5 hover:bg-white/5 group"
+      className="flex items-center gap-2 px-3 py-1.5 hover:bg-overlay/5 group"
       onContextMenu={(e) => open(e, [
         ...(account.auth === "pat" ? [{ label: "Changer le token…", action: changeToken }] : []),
         { label: "Renommer…", action: rename },
@@ -566,7 +566,7 @@ function RepoIssuesSection() {
 
 function IssueRow({ issue }: { issue: ForgeIssue }) {
   return (
-    <div className="px-3 py-1.5 hover:bg-white/5 cursor-pointer" onClick={() => openUrl(issue.url)}>
+    <div className="px-3 py-1.5 hover:bg-overlay/5 cursor-pointer" onClick={() => openUrl(issue.url)}>
       <div className="flex items-start gap-2">
         <span className={`shrink-0 text-xs ${issue.state === "open" ? "text-green-400" : "text-red-400"}`}>●</span>
         <div className="min-w-0">
@@ -582,7 +582,7 @@ function ProviderIcon({ provider }: { provider: Provider }) {
   return (
     <span
       className={`w-5 h-5 shrink-0 rounded flex items-center justify-center text-[10px] font-bold ${
-        provider === "github" ? "bg-white/15 text-white" : "bg-orange-500/30 text-orange-300"
+        provider === "github" ? "bg-overlay/15 text-[var(--color-text)]" : "bg-orange-500/30 text-orange-300"
       }`}
     >
       {provider === "github" ? "GH" : "GL"}
@@ -603,7 +603,7 @@ function SmallButton({ onClick, disabled, primary, type = "button", children }: 
       onClick={onClick}
       disabled={disabled}
       className={`text-[11px] px-2.5 py-1 rounded disabled:opacity-40 ${
-        primary ? "bg-[var(--color-accent)] text-white font-semibold hover:opacity-90" : "bg-white/10 text-[var(--color-text)] hover:bg-white/15"
+        primary ? "bg-[var(--color-accent)] text-white font-semibold hover:opacity-90" : "bg-overlay/10 text-[var(--color-text)] hover:bg-overlay/15"
       }`}
     >
       {children}

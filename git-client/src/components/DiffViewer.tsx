@@ -86,7 +86,7 @@ export function DiffViewer({ diff, loading, staging, annotations }: Props) {
       <div className="flex-1 overflow-auto font-mono text-[11px] leading-5 select-text">
         {diff.hunks.map((hunk, i) => (
           <div key={i}>
-            <div className="flex items-center gap-2 px-2 py-0.5 bg-[#1e2a3a] text-[#5b8dd9] border-y border-white/5 sticky top-0 z-10">
+            <div className="flex items-center gap-2 px-2 py-0.5 bg-[var(--color-bg-info)] text-[var(--color-info)] border-y border-overlay/5 sticky top-0 z-10">
               <span className="truncate flex-1">{hunk.header}</span>
               {staging && (
                 <div className="flex gap-1 font-sans shrink-0">
@@ -120,7 +120,7 @@ export function DiffViewer({ diff, loading, staging, annotations }: Props) {
       </div>
 
       {staging && selection && selectedCount > 0 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#1e2030] border border-white/15 shadow-xl text-xs">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--color-bg-elevated)] border border-overlay/15 shadow-xl text-xs">
           <span className="text-[var(--color-muted)]">
             {selectedCount} ligne{selectedCount > 1 ? "s" : ""} sélectionnée{selectedCount > 1 ? "s" : ""}
           </span>
@@ -150,7 +150,7 @@ function HunkBtn({ onClick, disabled, danger, children }: {
       onClick={onClick}
       disabled={disabled}
       className={`text-[10px] px-2 py-0.5 rounded disabled:opacity-40 ${
-        danger ? "text-red-300 hover:bg-red-900/40" : "bg-white/10 text-[var(--color-text)] hover:bg-white/20"
+        danger ? "text-red-300 hover:bg-red-900/40" : "bg-overlay/10 text-[var(--color-text)] hover:bg-overlay/20"
       }`}
     >
       {children}
@@ -194,10 +194,10 @@ function DiffLineRow({ line, selectable, selected, onToggle, annotations }: {
             )}
           </td>
         )}
-        <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-white/5">
+        <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-overlay/5">
           {line.old_lineno ?? ""}
         </td>
-        <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-white/5">
+        <td className="w-10 text-right pr-2 select-none text-[var(--color-muted)] opacity-50 border-r border-overlay/5">
           {line.new_lineno ?? ""}
         </td>
         <td className={`pl-2 pr-4 whitespace-pre ${text}`}>
@@ -207,7 +207,7 @@ function DiffLineRow({ line, selectable, selected, onToggle, annotations }: {
       </tr>
       {below && (
         <tr>
-          <td colSpan={annotations ? 5 : 4} className="px-3 py-1.5 bg-black/30 border-y border-white/5 font-sans text-xs whitespace-normal">
+          <td colSpan={annotations ? 5 : 4} className="px-3 py-1.5 bg-shade/30 border-y border-overlay/5 font-sans text-xs whitespace-normal">
             {below}
           </td>
         </tr>

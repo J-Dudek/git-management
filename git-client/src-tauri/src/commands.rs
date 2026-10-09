@@ -138,6 +138,36 @@ pub fn get_compare_file_diff(path: String, base: String, head: String, file_path
     with_repo(&path, |r| git::get_compare_file_diff(r, &base, &head, &file_path))
 }
 
+// ---------------------------------------------------------------- Mise à jour d'une branche de PR
+
+#[tauri::command]
+pub fn branch_divergence(path: String, base: String, head: String) -> Result<git::BranchDivergence, GitError> {
+    with_repo(&path, |r| git::branch_divergence(r, &base, &head))
+}
+
+/// Rebase en mémoire : la copie de travail n'est pas touchée.
+#[tauri::command]
+pub fn rebase_pull_request(path: String, onto: String, head: String, branch: String) -> Result<git::PrRebase, GitError> {
+    with_repo(&path, |r| git::rebase_pull_request(r, &onto, &head, &branch))
+}
+
+#[tauri::command]
+pub fn discard_pull_request_rebase(path: String, branch: String) -> Result<(), GitError> {
+    with_repo(&path, |r| git::discard_pull_request_rebase(r, &branch))
+}
+
+#[tauri::command]
+pub async fn force_push_pull_request(
+    app: AppHandle,
+    path: String,
+    remote: String,
+    branch: String,
+    expected: String,
+) -> Result<git::PrPush, GitError> {
+    // La branche locale peut être extraite et mise à jour : les fichiers LFS sont remis en place.
+    network(&app, move |creds| with_repo_lfs(&path, |r| git::force_push_pull_request(r, &remote, &branch, &expected, creds))).await
+}
+
 // ---------------------------------------------------------------- Copie de travail
 
 #[tauri::command]

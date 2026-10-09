@@ -31,7 +31,7 @@ export function Dialog() {
       >
         {dialog.message && <p className="text-xs text-[var(--color-muted)] whitespace-pre-line">{dialog.message}</p>}
         {dialog.sections && dialog.sections.length > 0 && (
-          <div className="max-h-64 overflow-y-auto flex flex-col gap-2 rounded border border-white/10 bg-black/20 p-3">
+          <div className="max-h-64 overflow-y-auto flex flex-col gap-2 rounded border border-overlay/10 bg-shade/20 p-3">
             {dialog.sections.map((section) => (
               <section key={section.title}>
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)] mb-1">{section.title}</h3>

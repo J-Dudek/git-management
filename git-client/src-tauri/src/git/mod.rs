@@ -12,6 +12,7 @@ mod stash;
 mod patch;
 mod paths;
 mod interactive;
+mod pr_rebase;
 mod submodule;
 pub mod lfs;
 
@@ -35,6 +36,10 @@ pub use commit::create_commit;
 pub use interactive::{
     rebase_todo, interactive_rebase, continue_interactive, abort_interactive, InteractiveOutcome,
     RebaseMode, RebaseStep, TodoCommit,
+};
+pub use pr_rebase::{
+    branch_divergence, rebase_pull_request, discard_pull_request_rebase, force_push_pull_request, BranchDivergence,
+    PrRebase, PrPush,
 };
 pub use submodule::{list_submodules, update_submodules, SubmoduleInfo};
 pub use patch::{apply_lines, LineAction};

@@ -21,7 +21,7 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
           width={176}
           height={176}
           draggable={false}
-          className="w-44 h-44 rounded-3xl shadow-2xl shadow-black/40 ring-1 ring-white/10 select-none"
+          className="w-44 h-44 rounded-3xl shadow-2xl shadow-black/40 ring-1 ring-overlay/10 select-none"
         />
         <p className="text-xs text-[var(--color-muted)] mt-4">Ouvre, crée ou clone un dépôt pour commencer</p>
       </div>
@@ -33,9 +33,9 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
       {recent.length > 0 && (
         <div className="w-full max-w-lg">
           <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)] mb-1">Récents</p>
-          <ul className="border border-white/10 rounded divide-y divide-white/5">
+          <ul className="border border-overlay/10 rounded divide-y divide-overlay/5">
             {recent.map((path) => (
-              <li key={path} className="flex items-center group hover:bg-white/5">
+              <li key={path} className="flex items-center group hover:bg-overlay/5">
                 <button className="flex-1 text-left px-3 py-2 min-w-0" onClick={() => onOpenPath(path)}>
                   <p className="text-xs text-[var(--color-text)] truncate">{path.split(/[\\/]/).pop()}</p>
                   <p className="text-[10px] text-[var(--color-muted)] font-mono truncate">{path}</p>
@@ -60,7 +60,7 @@ function WelcomeBtn({ onClick, icon, label }: { onClick: () => void; icon: strin
   return (
     <button
       onClick={onClick}
-      className="w-28 h-24 flex flex-col items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+      className="w-28 h-24 flex flex-col items-center justify-center gap-2 rounded-lg border border-overlay/10 bg-overlay/5 hover:bg-overlay/10 transition-colors"
     >
       <span className="text-2xl">{icon}</span>
       <span className="text-xs text-[var(--color-text)]">{label}</span>

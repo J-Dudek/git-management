@@ -48,7 +48,7 @@ Les empreintes SHA-256 de tous les fichiers sont dans `SHA256SUMS.txt`. Une fois
 - **Tags et stash** : tags légers ou annotés (création, push, suppression), stash (avec fichiers non suivis), apply, pop, drop.
 - **Comptes** : GitHub, GitLab.com et GitLab auto-hébergé, par connexion navigateur (OAuth, voir plus bas) ou token personnel. Le token est validé à l'ajout puis stocké dans le trousseau du système (Secret Service, Keychain, Credential Manager). À défaut de trousseau, il est écrit dans `tokens.json` (droits 600) du dossier de configuration de l'app. Le compte dont l'hôte correspond au remote est utilisé automatiquement pour clone / fetch / pull / push en HTTPS ; en SSH, l'agent puis les clés `~/.ssh` sont utilisés. L'onglet **Comptes** liste aussi les PR / MR de tous les projets (voir plus bas) et les issues ouvertes du dépôt courant.
 - **Identité Git** : nom et email, globaux ou propres au dépôt.
-- **Préférences** (Ctrl+,) : taille de toute l'interface de 80 à 200 % (Ctrl+= / Ctrl+- / Ctrl+0), taille du texte du terminal, densité du graphe (compacte, normale, aérée), intervalle de la synchronisation automatique (avec un bouton « Synchroniser maintenant ») et liste des raccourcis clavier. Les réglages s'appliquent immédiatement à toutes les fenêtres.
+- **Préférences** (Ctrl+,) : thème clair, sombre ou celui du système (suivi en direct), taille de toute l'interface de 80 à 200 % (Ctrl+= / Ctrl+- / Ctrl+0), taille du texte du terminal, densité du graphe (compacte, normale, aérée), intervalle de la synchronisation automatique (avec un bouton « Synchroniser maintenant ») et liste des raccourcis clavier. Les réglages s'appliquent immédiatement à toutes les fenêtres.
 - **Mises à jour automatiques** : au démarrage, l'application vérifie s'il existe une nouvelle release, propose de l'installer puis redémarre (aussi via le menu Merathon → « Rechercher des mises à jour… »). Les paquets sont signés et la signature est vérifiée avant toute installation (AppImage, `.deb`, `.exe`, `.msi`).
 
 ### Pull requests et merge requests
@@ -61,6 +61,7 @@ Avec un compte GitHub ou GitLab correspondant à un remote du dépôt, les PR (G
 - **Création** : clic droit sur une branche → **Créer une pull request GitHub…** (ou **merge request GitLab…**) : branche cible, titre, description, relecteurs, assignés, labels, jalon, brouillon, squash et suppression de la branche source (GitLab), avec push préalable de la branche locale si besoin. La description est pré-remplie avec le modèle du dépôt, comme sur la forge : `pull_request_template.md` (dans `.github/`, à la racine ou dans `docs/`) sur GitHub, le modèle « Default » de `.gitlab/merge_request_templates/` (ou celui des réglages du projet) sur GitLab. Les autres modèles se choisissent dans une liste.
 - **Détail** (clic sur une PR ou sur le badge d'une branche) : description, relecteurs et leur avis, approbations requises (GitLab), statut de chaque job de CI, conversation.
 - **Actions** : commenter ; approuver, demander des changements (GitHub) ou retirer son approbation (GitLab) ; passer de brouillon à prête et inversement ; mettre à jour la branche avec la cible (merge sur GitHub, rebase sur GitLab) ; merger selon les modes autorisés par le dépôt (commit de merge, squash, rebase), après confirmation et seulement si la branche n'a pas bougé entre-temps ; fermer ou rouvrir. Quand le merge est bloqué, la raison est affichée (conflits, CI, approbations, brouillon, droits…).
+- **Retard sur la branche cible** (dépôt ouvert localement) : à l'ouverture d'une PR, le remote est fetché et le panneau indique si la branche est à jour ou en retard de N commits sur sa cible. **Rebaser sur …** rejoue ses commits au-dessus de la cible, en mémoire : ni la copie de travail ni les branches locales ne bougent. L'historique obtenu est linéaire, sans commits de merge, et les commits déjà présents dans la cible sont retirés, comme avec `git rebase`. En cas de conflit, rien n'est modifié et le panneau propose de faire un checkout de la branche pour rebaser à la main. Sinon, **Force push** remplace la branche distante, avec la sécurité de `git push --force-with-lease` : le push est annulé si quelqu'un a poussé entre-temps. La branche locale du même nom suit si elle était à l'ancienne tête. Indisponible pour une PR venant d'un fork.
 - **Fichiers modifiés** : diff de la PR calculé en local avec git, depuis l'ancêtre commun avec la branche cible (un fetch est lancé si des commits manquent). Les commentaires de ligne de la forge s'affichent sous leurs lignes, avec réponse et résolution des fils.
 - **Revue** : survoler une ligne puis **+** pour la commenter, tout de suite ou en attente. **Terminer la revue** publie les commentaires en attente avec un commentaire général et un avis (commentaire, approbation, demande de changements sur GitHub). Sur GitHub, la revue est publiée en une seule fois ; sur GitLab, commentaire par commentaire, ceux qui échouent restant en attente.
 - **Fichiers vus** : chaque fichier se coche « vu » au fil de la relecture (passage automatique au suivant), avec un compteur. Ce suivi est mémorisé localement et repart de zéro au push suivant.
@@ -84,6 +85,48 @@ Limites : les PR venant d'un fork ne sont pas récupérées par le fetch du remo
 Quand le terminal a le focus, les touches vont au shell (Ctrl+R, Ctrl+W, Échap…).
 
 Le code de l'application se trouve dans le dossier [`git-client/`](git-client/).
+
+## Choix techniques
+
+Un client Git de bureau doit être **rapide sur de gros historiques**, **sûr** (il manipule des tokens et des dépôts qu'on ne connaît pas toujours), **léger** (il reste ouvert toute la journée, à côté de l'IDE) et **multiplateforme**. Chaque brique a été choisie pour l'une de ces contraintes.
+
+### Tauri 2 plutôt qu'Electron
+
+- **Léger** : Tauri utilise le moteur web du système (WebKitGTK sous Linux, WebView2 sous Windows) au lieu d'embarquer Chromium et Node.js. Le paquet `.deb` pèse environ 8 Mo, quand une application Electron dépasse souvent les 80 Mo. La mémoire consommée au repos est aussi bien plus faible, ce qui compte pour un outil qu'on ne ferme jamais.
+- **Sûr par construction** : le webview n'a aucun accès au système. Il ne peut appeler que les commandes Rust déclarées une à une, avec les permissions listées dans `capabilities/`. Une faille dans l'interface ne donne donc accès ni aux fichiers, ni au réseau, ni aux tokens (voir [Sécurité](#sécurité)).
+- **Livré clé en main** : installeurs Linux et Windows, mises à jour signées, multi-fenêtres et boîtes de dialogue natives sont fournis par Tauri et ses plugins, sans outillage maison.
+
+### Rust et libgit2 (`git2`) pour le moteur Git
+
+- **Pas d'analyse de la sortie de `git`** : beaucoup de clients lancent la commande `git` et lisent son texte, qui varie selon la version, la langue et la configuration. libgit2 donne un accès direct et typé aux objets, à l'index et aux références : statut, diff, graphe, rebase ou patch ligne par ligne sont calculés sans intermédiaire.
+- **Performance** : lire des milliers de commits ou calculer un diff se fait en Rust natif, hors du thread de l'interface (`spawn_blocking`). L'interface reste fluide pendant un fetch ou un rebase.
+- **Sécurité face aux dépôts inconnus** : libgit2 n'exécute ni hooks, ni filtres, ni commandes définies dans la configuration d'un dépôt. Cloner et ouvrir un dépôt malveillant ne lance donc rien. Le seul appel à `git` (pour Git LFS, qui n'existe pas dans libgit2) neutralise explicitement ces mécanismes.
+- **Fiabilité du code** : le typage strict de Rust et la gestion d'erreurs explicite (`Result`, `thiserror`) évitent les plantages au milieu d'une opération qui modifie le dépôt. Les opérations sensibles (rebase interactif, merge, patch) sont couvertes par des tests sur de vrais dépôts temporaires.
+- **Tokens côté Rust uniquement** : les appels aux API GitHub / GitLab (`ureq` + `rustls`) et le stockage dans le trousseau du système (`keyring`) sont faits dans le backend. Le token n'est jamais transmis à l'interface.
+
+### React 19, TypeScript et Vite pour l'interface
+
+- **Une interface très interactive** : graphe, diff, staging, revue de PR, menus contextuels, glisser-déposer du rebase interactif… React, avec ses composants et son rendu déclaratif, est fait pour ces écrans qui changent en permanence.
+- **TypeScript** : les données échangées avec Rust (commits, statut, PR…) sont typées des deux côtés (`src/types/`). Une incohérence se voit à la compilation, pas chez l'utilisateur.
+- **Vite** : rechargement à chaud instantané en développement et build optimisé pour la production.
+- **Graphe dessiné dans un `<canvas>`, et seulement sa partie visible** : les lignes et les points de l'historique ne créent pas un élément DOM chacun, le défilement reste fluide quelle que soit la taille du graphe affiché.
+
+### Zustand pour l'état, Tailwind pour le style
+
+- **Zustand** : un état global simple, sans le cérémonial de Redux. Chaque onglet de dépôt garde son état (sélection, diff, brouillon de commit) et chaque composant ne se réabonne qu'à ce qu'il affiche, ce qui limite les rendus inutiles.
+- **Tailwind CSS** : le style est écrit à côté du composant, avec des couleurs et des tailles cohérentes. Le CSS livré ne contient que les classes réellement utilisées.
+
+### Le reste de l'outillage
+
+- **xterm.js + `portable-pty`** : un vrai terminal (le même moteur que celui de VS Code) relié à un pseudo-terminal natif, sous Linux comme sous Windows.
+- **Vitest, ESLint (SonarJS), Clippy, `cargo test`, `npm audit` / `cargo audit`** : la même chaîne de vérification en local et en CI, à chaque push.
+- **Conventional Commits et releases automatiques** : la version, le changelog, les paquets signés et la mise à jour automatique découlent des messages de commit, sans étape manuelle.
+
+### Les compromis assumés
+
+- **Moteur web du système** : WebKitGTK et WebView2 ne rendent pas exactement pareil. L'interface évite donc les fonctionnalités web trop récentes, et la CI fait tourner les tests sous Linux et sous Windows.
+- **libgit2 ne couvre pas tout Git** : Git LFS passe par la commande `git` (qui doit alors être installée), et certaines options avancées de Git n'ont pas d'équivalent.
+- **Deux langages** : Rust et TypeScript demandent deux compétences. En échange, chacun fait ce qu'il fait le mieux : Rust la sécurité et la performance, TypeScript l'interface.
 
 ## Prérequis pour le développement
 

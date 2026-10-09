@@ -142,7 +142,7 @@ export function InteractiveRebaseDialog({ base, onClose }: { base: string; onClo
     <Modal title={`Rebase interactif de ${info?.head_branch ?? "HEAD"} sur ${base.slice(0, 7)}`} onClose={() => !running && onClose()} width="w-[760px]">
       <div className="p-4 flex flex-col gap-3">
         {merges > 0 && (
-          <div className="flex flex-col gap-1.5 p-2 rounded border border-white/10 bg-black/20">
+          <div className="flex flex-col gap-1.5 p-2 rounded border border-overlay/10 bg-shade/20">
             <p className="text-[11px] text-[var(--color-text)]">
               L'historique contient {merges} commit{merges > 1 ? "s" : ""} de merge.
             </p>
@@ -167,7 +167,7 @@ export function InteractiveRebaseDialog({ base, onClose }: { base: string; onClo
         {todo && rows.length === 0 && <p className="text-xs text-[var(--color-muted)] italic">Aucun commit à réécrire.</p>}
 
         {rows.length > 0 && (
-          <div ref={listRef} className="flex flex-col border border-white/10 rounded divide-y divide-white/5 max-h-[50vh] overflow-y-auto">
+          <div ref={listRef} className="flex flex-col border border-overlay/10 rounded divide-y divide-overlay/5 max-h-[50vh] overflow-y-auto">
             {rows.map((row, i) => {
               const editable = row.action === "reword" || row.action === "squash";
               const isMerge = row.commit.is_merge;
@@ -200,7 +200,7 @@ export function InteractiveRebaseDialog({ base, onClose }: { base: string; onClo
                       </>
                     )}
                     <select
-                      className="w-28 shrink-0 bg-black/30 border border-white/10 rounded px-1.5 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
+                      className="w-28 shrink-0 bg-shade/30 border border-overlay/10 rounded px-1.5 py-1 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]/60"
                       value={row.action}
                       title={ACTIONS.find((a) => a.value === row.action)?.hint}
                       onChange={(e) => {
@@ -256,7 +256,7 @@ function ModeBtn({ active, onClick, title, children }: { active: boolean; onClic
       type="button"
       onClick={onClick}
       className={`text-left p-2 rounded border transition-colors ${
-        active ? "border-[var(--color-accent)]/60 bg-white/5" : "border-white/10 hover:bg-white/5"
+        active ? "border-[var(--color-accent)]/60 bg-overlay/5" : "border-overlay/10 hover:bg-overlay/5"
       }`}
     >
       <span className={`block text-xs font-semibold ${active ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"}`}>{title}</span>
