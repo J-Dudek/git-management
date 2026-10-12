@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.8.0](https://github.com/J-Dudek/git-management/compare/v1.7.0...v1.8.0) (2026-10-12)
+
+### Nouveautés
+
+- design, display name on PR/MR consultation ([da37034](https://github.com/J-Dudek/git-management/commit/da37034a2944695aff78f3a849e3364902666c6e))
+
 ## [1.7.0](https://github.com/J-Dudek/git-management/compare/v1.6.0...v1.7.0) (2026-10-12)
 
 ### Nouveautés
