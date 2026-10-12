@@ -18,7 +18,7 @@ import { Toasts } from "./components/Toasts";
 import { InteractiveRebaseDialog } from "./components/InteractiveRebaseDialog";
 import { useRepoStore } from "./store/useRepoStore";
 import { useAccountsStore } from "./store/useAccountsStore";
-import { useUiStore } from "./store/useUiStore";
+import { defaultSideWidths, useUiStore, type Side } from "./store/useUiStore";
 import { persistTabSession, useTabsStore } from "./store/useTabsStore";
 import { stepZoom, useDisplayStore } from "./store/useDisplayStore";
 import { PreferencesDialog } from "./components/PreferencesDialog";
@@ -49,6 +49,7 @@ export default function App() {
   const preferencesOpen = useUiStore((s) => s.preferencesOpen);
   const setPreferencesOpen = useUiStore((s) => s.setPreferencesOpen);
   const setRebaseBase = useUiStore((s) => s.setInteractiveRebaseBase);
+  const sideWidths = useUiStore((s) => s.sideWidths);
 
   useEffect(() => {
     loadAccounts().catch((e) => notify("error", `Comptes : ${errorMessage(e)}`));
@@ -140,7 +141,11 @@ export default function App() {
 
       {/* Remonté à chaque changement d'onglet : pas de sélection d'un dépôt appliquée à un autre. */}
       <div key={activeTab} className="flex flex-1 overflow-hidden">
-        <div className="w-60 shrink-0 flex flex-col overflow-hidden border-r border-overlay/10 bg-[var(--color-bg-secondary)]">
+        <div
+          className="relative shrink-0 flex flex-col overflow-hidden border-r border-overlay/10 bg-[var(--color-bg-secondary)]"
+          style={{ width: sideWidths.left }}
+        >
+          <SideResizer side="left" />
           <div className="flex shrink-0 border-b border-overlay/10">
             <LeftTabBtn active={leftTab === "repo"} onClick={() => setLeftTab("repo")}>Dépôt</LeftTabBtn>
             <LeftTabBtn active={leftTab === "accounts"} onClick={() => setLeftTab("accounts")}>Comptes</LeftTabBtn>
@@ -154,7 +159,8 @@ export default function App() {
         </main>
 
         {repoPath && (
-          <div className="w-80 shrink-0 overflow-hidden border-l border-overlay/10">
+          <div className="relative shrink-0 overflow-hidden border-l border-overlay/10" style={{ width: sideWidths.right }}>
+            <SideResizer side="right" />
             {selectedCommit ? <CommitDetails commit={selectedCommit} /> : <StagingPanel />}
           </div>
         )}
@@ -175,6 +181,43 @@ function cycleTab(direction: 1 | -1) {
   const i = tabs.tabs.findIndex((t) => t.id === tabs.activeId);
   const n = tabs.tabs.length;
   tabs.switchTab(tabs.tabs[(i + direction + n) % n].id);
+}
+
+/** Largeur minimale laissée à la zone centrale pendant le redimensionnement d'un panneau latéral. */
+const MIN_CENTER_WIDTH = 320;
+
+/** Poignée sur le bord intérieur d'un panneau latéral : tirer pour l'élargir, double-clic pour la largeur par défaut. */
+function SideResizer({ side }: { side: Side }) {
+  const setSideWidth = useUiStore((s) => s.setSideWidth);
+
+  function startResize(e: React.PointerEvent) {
+    e.preventDefault();
+    const { sideWidths } = useUiStore.getState();
+    const startX = e.clientX;
+    const startWidth = sideWidths[side];
+    // Le panneau ne grandit qu'aux dépens de la zone centrale.
+    const center = e.currentTarget.parentElement?.parentElement?.querySelector("main")?.clientWidth ?? Infinity;
+    const max = startWidth + center - MIN_CENTER_WIDTH;
+    const direction = side === "left" ? 1 : -1;
+    const move = (ev: PointerEvent) => setSideWidth(side, Math.min(max, startWidth + direction * (ev.clientX - startX)));
+    const up = () => {
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  return (
+    <div
+      className={`absolute inset-y-0 ${side === "left" ? "right-0" : "left-0"} w-1 cursor-col-resize z-10 hover:bg-sky-400/40 active:bg-sky-400/60`}
+      onPointerDown={startResize}
+      onDoubleClick={() => setSideWidth(side, defaultSideWidths[side])}
+      title="Redimensionner (double-clic : largeur par défaut)"
+    />
+  );
 }
 
 function zoomBy(direction: 1 | -1) {
