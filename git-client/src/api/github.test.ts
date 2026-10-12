@@ -142,6 +142,8 @@ describe("GitHubClient pull request review", () => {
         { name: "lint", status: "in_progress", conclusion: null, html_url: null },
       ] },
       [`${base}/commits/abc/status`]: { statuses: [{ context: "ci/legacy", state: "error", target_url: null }] },
+      "/users/carol": { login: "carol", name: "Carol Petit" },
+      "/users/alice": { login: "alice", name: null },
       ...overrides,
     };
     return new GitHubClient(vi.fn((path: string) => Promise.resolve(responses[path])) as never);
@@ -153,6 +155,7 @@ describe("GitHubClient pull request review", () => {
     expect(d.changesRequestedBy).toEqual(["dave"]);
     expect(d.approvedByMe).toBe(true);
     expect(d.pr).toMatchObject({ reviewers: ["carol"], assignees: ["alice"] });
+    expect(d.names).toEqual({ carol: "Carol Petit" });
   });
 
   it("maps checks, statuses and allowed merge methods", async () => {

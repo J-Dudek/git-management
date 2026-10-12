@@ -112,7 +112,7 @@ describe("GitLabClient merge request review", () => {
   const details = {
     ...rawMR, description: null, sha: "abc", detailed_merge_status: "mergeable", squash: false,
     force_remove_source_branch: null, head_pipeline: { id: 5, status: "running", web_url: "p" }, user: { can_merge: true },
-    reviewers: [{ username: "bob" }], assignees: [{ username: "alice" }],
+    reviewers: [{ username: "bob", name: "Bob Martin" }], assignees: [{ username: "alice", name: "Alice Durand" }],
   };
   function detailsClient(overrides: Record<string, unknown> = {}) {
     const responses: Record<string, unknown> = {
@@ -138,6 +138,7 @@ describe("GitLabClient merge request review", () => {
     });
     expect(d.checks.map((c) => c.status)).toEqual(["success", "skipped", "pending", "skipped"]);
     expect(d.pr).toMatchObject({ reviewers: ["bob"], assignees: ["alice"] });
+    expect(d.names).toEqual({ bob: "Bob Martin", alice: "Alice Durand" });
   });
 
   it("offers auto-merge while the pipeline runs, unless it is already scheduled", async () => {

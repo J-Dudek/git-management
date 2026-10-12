@@ -113,6 +113,8 @@ export interface PullRequestDetails {
   /** GitHub : relecteurs dont le dernier avis demande des changements. */
   changesRequestedBy: string[];
   approvedByMe: boolean;
+  /** Nom complet des relecteurs et assignés, par login ; absent quand la forge ne le donne pas. */
+  names: Record<string, string>;
   /** GitLab : approbations encore requises (null si non applicable). */
   approvalsLeft: number | null;
   checks: ForgeCheck[];

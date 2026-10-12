@@ -345,7 +345,7 @@ function Header({ details, account, forgeName, onCheckout }: {
 
 /** Relecteurs demandés et ayant donné un avis, avec leur verdict. */
 function People({ details }: { details: PullRequestDetails }) {
-  const { pr, approvedBy, changesRequestedBy, approvalsLeft } = details;
+  const { pr, approvedBy, changesRequestedBy, approvalsLeft, names } = details;
   const reviewers = [...new Set([...pr.reviewers, ...approvedBy, ...changesRequestedBy])];
   const verdict = (login: string) => {
     if (approvedBy.includes(login)) return <Check size={12} className="text-green-400" aria-label="a approuvé" />;
@@ -358,13 +358,13 @@ function People({ details }: { details: PullRequestDetails }) {
         <span className={labelClass}>Relecteurs{approvalsLeft ? ` · ${approvalsRequired(approvalsLeft)}` : ""}</span>
         {reviewers.length === 0 && <span className="text-xs text-[var(--color-muted)] italic">Aucun</span>}
         {reviewers.map((login) => (
-          <span key={login} className="flex items-center gap-1.5 text-xs text-[var(--color-text)]">{verdict(login)} {login}</span>
+          <span key={login} title={login} className="flex items-center gap-1.5 text-xs text-[var(--color-text)]">{verdict(login)} {names[login] ?? login}</span>
         ))}
       </section>
       <section className="flex flex-col gap-1 min-w-0">
         <span className={labelClass}>Assignés</span>
         {pr.assignees.length === 0 && <span className="text-xs text-[var(--color-muted)] italic">Aucun</span>}
-        {pr.assignees.map((login) => <span key={login} className="text-xs text-[var(--color-text)]">{login}</span>)}
+        {pr.assignees.map((login) => <span key={login} title={login} className="text-xs text-[var(--color-text)]">{names[login] ?? login}</span>)}
       </section>
     </div>
   );

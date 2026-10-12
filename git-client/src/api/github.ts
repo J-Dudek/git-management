@@ -23,6 +23,8 @@ const seg = (value: string) => encodeURIComponent(value);
 interface RawUser {
   id?: number;
   login: string;
+  /** Nom complet : seulement dans le profil (`/users/{login}`), pas dans les listes. */
+  name?: string | null;
 }
 
 interface RawLabel {
@@ -261,6 +263,15 @@ export class GitHubClient {
     const withVerdict = (state: RawReview["state"]) => [...verdicts].filter(([, s]) => s === state).map(([login]) => login);
 
     const pr = parsePR(raw);
+    // L'API ne donne que les logins : le nom complet vient du profil de chacun, facultatif.
+    const people = [...new Set([...pr.reviewers, ...pr.assignees, ...verdicts.keys()])];
+    const profiles = await Promise.all(people.map((login) => this.get<RawUser>(`/users/${seg(login)}`).catch(() => null)));
+    const names: Record<string, string> = {};
+    people.forEach((login, i) => {
+      const name = profiles[i]?.name;
+      if (name) names[login] = name;
+    });
+
     const methods: MergeMethod[] = [];
     if (settings.allow_merge_commit !== false) methods.push("merge");
     if (settings.allow_squash_merge !== false) methods.push("squash");
@@ -283,6 +294,7 @@ export class GitHubClient {
       approvedBy: withVerdict("APPROVED"),
       changesRequestedBy: withVerdict("CHANGES_REQUESTED"),
       approvedByMe: verdicts.get(me) === "APPROVED",
+      names,
       approvalsLeft: null,
       checks: [...runs.check_runs.map(parseCheckRun), ...statuses.statuses.map(parseStatus)],
       mergeable,

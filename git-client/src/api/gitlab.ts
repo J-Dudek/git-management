@@ -241,7 +241,8 @@ export class GitLabClient {
     if (squashOption === "never") methods = ["merge"];
     if (squashOption === "always") methods = ["squash"];
     const squashByDefault = raw.squash ?? (squashOption === "default_on" || squashOption === "always");
-    const approvedBy = (approvals.approved_by ?? []).map((a) => a.user.username);
+    const approvers = (approvals.approved_by ?? []).map((a) => a.user);
+    const approvedBy = approvers.map((u) => u.username);
 
     return {
       pr,
@@ -250,6 +251,7 @@ export class GitLabClient {
       approvedBy,
       changesRequestedBy: [],
       approvedByMe: approvals.user_has_approved ?? approvedBy.includes(me),
+      names: fullNames([...(raw.reviewers ?? []), ...(raw.assignees ?? []), ...approvers]),
       approvalsLeft: approvals.approvals_left ?? null,
       checks,
       mergeable: pr.state === "open" && canMerge && (status === "mergeable" || status === "can_be_merged"),
@@ -471,6 +473,15 @@ const DRAFT_PREFIX = /^\s*(draft:|\[draft\]|\(draft\)|draft\s+-|wip:|\[wip\])\s*
 export function draftTitle(title: string, draft: boolean): string {
   const bare = title.replace(DRAFT_PREFIX, "");
   return draft ? `Draft: ${bare}` : bare;
+}
+
+/** Nom complet par login, pour ceux dont GitLab le donne. */
+function fullNames(users: RawUser[]): Record<string, string> {
+  const names: Record<string, string> = {};
+  for (const u of users) {
+    if (u.name) names[u.username] = u.name;
+  }
+  return names;
 }
 
 function parseMR(raw: RawMergeRequest): ForgePR {
