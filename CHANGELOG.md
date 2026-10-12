@@ -2,6 +2,14 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.7.0](https://github.com/J-Dudek/git-management/compare/v1.6.0...v1.7.0) (2026-10-12)
+
+### Nouveautés
+
+- add resize on right and left sections ([9c7b409](https://github.com/J-Dudek/git-management/commit/9c7b409803b6f087ba5ba4f0c3b4890e4f75d0c3))
+- add bypass for force merge ([b7be880](https://github.com/J-Dudek/git-management/commit/b7be8803d996f829ad94ac8f64bca1024c484bb9))
+- add label on approuved MR ([6f59f48](https://github.com/J-Dudek/git-management/commit/6f59f48ae1c9108fba645653e1a12bb17e96bbf2))
+
 ## [1.6.0](https://github.com/J-Dudek/git-management/compare/v1.5.1...v1.6.0) (2026-10-09)
 
 ### Nouveautés
