@@ -49,6 +49,37 @@ function loadPanel(): BottomPanelState {
   }
 }
 
+/** Largeur en pixels des panneaux latéraux : barre latérale à gauche, détail du commit / staging à droite. */
+export interface SideWidths {
+  left: number;
+  right: number;
+}
+
+export type Side = keyof SideWidths;
+
+const SIDES_KEY = "git-client.side-widths";
+export const defaultSideWidths: SideWidths = { left: 240, right: 320 };
+export const SIDE_LIMITS: Record<Side, { min: number; max: number }> = {
+  left: { min: 180, max: 600 },
+  right: { min: 240, max: 800 },
+};
+
+/** Largeur bornée aux limites du panneau ; une valeur invalide redonne la largeur par défaut. */
+export function clampSideWidth(side: Side, width: unknown): number {
+  if (typeof width !== "number" || !Number.isFinite(width)) return defaultSideWidths[side];
+  const { min, max } = SIDE_LIMITS[side];
+  return Math.round(Math.min(max, Math.max(min, width)));
+}
+
+function loadSideWidths(): SideWidths {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SIDES_KEY) ?? "{}") as Partial<SideWidths> | null;
+    return { left: clampSideWidth("left", raw?.left), right: clampSideWidth("right", raw?.right) };
+  } catch {
+    return defaultSideWidths;
+  }
+}
+
 interface PendingDialog extends DialogOptions {
   resolve: (result: DialogResult | null) => void;
 }
@@ -61,6 +92,7 @@ interface UiStore {
   /** Commit de base du rebase interactif en cours de préparation. */
   interactiveRebaseBase: string | null;
   panel: BottomPanelState;
+  sideWidths: SideWidths;
   /** Fenêtre des préférences ouverte. */
   preferencesOpen: boolean;
 
@@ -71,6 +103,7 @@ interface UiStore {
   setBusy: (label: string | null) => void;
   setInteractiveRebaseBase: (hash: string | null) => void;
   setPanel: (patch: Partial<BottomPanelState>) => void;
+  setSideWidth: (side: Side, width: number) => void;
   setPreferencesOpen: (open: boolean) => void;
 }
 
@@ -82,6 +115,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   busy: null,
   interactiveRebaseBase: null,
   panel: loadPanel(),
+  sideWidths: loadSideWidths(),
   preferencesOpen: false,
 
   notify: (kind, message) => {
@@ -113,6 +147,16 @@ export const useUiStore = create<UiStore>((set, get) => ({
     set({ panel });
     try {
       localStorage.setItem(PANEL_KEY, JSON.stringify(panel));
+    } catch {
+      // stockage indisponible : réglage gardé pour la session
+    }
+  },
+
+  setSideWidth: (side, width) => {
+    const sideWidths = { ...get().sideWidths, [side]: clampSideWidth(side, width) };
+    set({ sideWidths });
+    try {
+      localStorage.setItem(SIDES_KEY, JSON.stringify(sideWidths));
     } catch {
       // stockage indisponible : réglage gardé pour la session
     }

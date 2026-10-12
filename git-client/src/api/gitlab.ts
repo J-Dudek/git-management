@@ -63,6 +63,8 @@ interface RawMergeRequestDetails extends RawMergeRequest {
   /** GitLab ≥ 15.6 ; avant, seul `merge_status` existe. */
   detailed_merge_status?: string;
   merge_status?: string;
+  /** Auto-merge déjà programmé. */
+  merge_when_pipeline_succeeds?: boolean;
   squash?: boolean;
   force_remove_source_branch?: boolean | null;
   head_pipeline?: { id: number; status: string; web_url: string } | null;
@@ -168,7 +170,13 @@ export class GitLabClient {
     const data = await this.get<RawMergeRequest[]>(
       `/projects/${id}/merge_requests?state=${API_STATES[state]}&per_page=${PR_PAGE_SIZE}`
     );
-    return data.map(parseMR);
+    // La liste ne donne pas les approbations : une requête par MR ouverte.
+    return Promise.all(data.map(async (raw) => {
+      const mr = parseMR(raw);
+      if (mr.state !== "open") return mr;
+      const approvals = await this.get<RawApprovals>(`/projects/${id}/merge_requests/${raw.iid}/approvals`).catch((): RawApprovals => ({}));
+      return { ...mr, approved: isApproved(approvals) };
+    }));
   }
 
   async getMergeRequest(project: string, iid: number): Promise<ForgePR> {
@@ -177,7 +185,7 @@ export class GitLabClient {
 
   /**
    * MR ouvertes de tous les projets : assignées, relecture demandée (fusionnées sans doublon) et ouvertes par moi.
-   * Pour les miennes, une requête de détail (pipeline) et une d'approbations par MR : la liste ne les donne pas.
+   * Une requête d'approbations par MR, et pour les miennes une de détail (pipeline) : la liste ne les donne pas.
    */
   async getMyMergeRequests(me: string): Promise<MyPullRequests> {
     const open = `state=opened&per_page=${PR_PAGE_SIZE}`;
@@ -186,15 +194,20 @@ export class GitLabClient {
       this.get<RawMergeRequest[]>(`/merge_requests?scope=all&reviewer_username=${encodeURIComponent(me)}&${open}`),
       this.get<RawMergeRequest[]>(`/merge_requests?scope=created_by_me&${open}`),
     ]);
-    const mine = await Promise.all(authored.map(async (raw) => {
-      const mrPath = `/projects/${raw.project_id}/merge_requests/${raw.iid}`;
-      const [details, approvals] = await Promise.all([
-        this.get<RawMergeRequestDetails>(mrPath).catch(() => null),
-        this.get<RawApprovals>(`${mrPath}/approvals`).catch((): RawApprovals => ({})),
-      ]);
-      return parseSummary(details ?? raw, approvals);
-    }));
-    return { assigned: uniquePrs([...assigned, ...reviewing].map((raw) => parseSummary(raw))), authored: mine };
+    const mrPath = (raw: RawMergeRequest) => `/projects/${raw.project_id}/merge_requests/${raw.iid}`;
+    const approvalsOf = (raw: RawMergeRequest) => this.get<RawApprovals>(`${mrPath(raw)}/approvals`).catch((): RawApprovals => ({}));
+    const [mine, toProcess] = await Promise.all([
+      Promise.all(authored.map(async (raw) => {
+        const [details, approvals] = await Promise.all([
+          this.get<RawMergeRequestDetails>(mrPath(raw)).catch(() => null),
+          approvalsOf(raw),
+        ]);
+        return parseSummary(details ?? raw, approvals);
+      })),
+      Promise.all(uniquePrs([...assigned, ...reviewing].map((raw) => ({ raw, ...parseSummary(raw) })))
+        .map(async ({ raw }) => parseSummary(raw, await approvalsOf(raw)))),
+    ]);
+    return { assigned: toProcess, authored: mine };
   }
 
   /** Les jobs du pipeline sont facultatifs : à défaut, le statut global du pipeline est affiché. */
@@ -220,6 +233,7 @@ export class GitLabClient {
     let mergeStatus: string;
     if (pr.state !== "open") mergeStatus = pr.state === "merged" ? "Déjà mergée" : "Fermée";
     else if (!canMerge) mergeStatus = "Droits insuffisants pour merger";
+    else if (raw.merge_when_pipeline_succeeds) mergeStatus = "Auto-merge programmé : merge dès que le pipeline réussit";
     else mergeStatus = MERGE_STATUSES[status] ?? `Merge impossible (${status})`;
 
     const squashOption = settings.squash_option ?? "default_off";
@@ -240,6 +254,10 @@ export class GitLabClient {
       checks,
       mergeable: pr.state === "open" && canMerge && (status === "mergeable" || status === "can_be_merged"),
       mergeStatus,
+      canForceMerge: false,
+      canAutoMerge: pr.state === "open" && canMerge && !raw.merge_when_pipeline_succeeds
+        && !!pipeline && PIPELINE_STATES[pipeline.status] === "pending"
+        && ["mergeable", "can_be_merged", "ci_still_running"].includes(status),
       canUpdateBranch: pr.state === "open" && status === "need_rebase",
       mergeMethods: methods,
       defaultMergeMethod: squashByDefault && methods.includes("squash") ? "squash" : methods[0],
@@ -273,11 +291,13 @@ export class GitLabClient {
     if (body.trim()) await this.addComment(project, iid, body);
   }
 
+  /** Sans `autoMerge`, le merge est immédiat : il n'attend pas un pipeline en cours. */
   async merge(project: string, iid: number, options: MergeOptions): Promise<void> {
     await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/merge`, {
       sha: options.sha,
       squash: options.method === "squash",
       should_remove_source_branch: options.removeSourceBranch,
+      ...(options.autoMerge ? { merge_when_pipeline_succeeds: true } : {}),
     });
   }
 
@@ -478,12 +498,17 @@ const PIPELINE_STATES: Record<string, PrSummary["ci"]> = {
   created: "pending", waiting_for_resource: "pending", preparing: "pending", pending: "pending", running: "pending", scheduled: "pending",
 };
 
+/** Au moins une approbation, et plus aucune requise. */
+function isApproved(approvals: RawApprovals): boolean {
+  return !!approvals.approved_by?.length && !approvals.approvals_left;
+}
+
 /** MR d'un projet quelconque ; sans approbations ni détail, seul ce que donne la liste est connu. */
 function parseSummary(raw: RawMergeRequest & Partial<RawMergeRequestDetails>, approvals?: RawApprovals): PrSummary {
   const full = raw.references?.full ?? "";
   let review: PrSummary["review"] = "pending";
   if (raw.detailed_merge_status === "requested_changes") review = "changes_requested";
-  else if (approvals?.approved_by?.length && !approvals.approvals_left) review = "approved";
+  else if (approvals && isApproved(approvals)) review = "approved";
   return {
     ...parseMR(raw),
     projectPath: full.includes("!") ? full.slice(0, full.lastIndexOf("!")) : "",

@@ -69,6 +69,7 @@ export function MyPullRequestsSection({ account, showAccount }: {
   const localRemote = (pr: PrSummary) =>
     linked && linked.account.id === account.id && linked.projectPath === pr.projectPath ? linked.remoteName : null;
 
+  /** `meta` porte déjà l'état de la relecture : sans lui, une approbation est signalée à côté du titre. */
   function row(pr: PrSummary, subtitle: string, meta?: React.ReactNode) {
     const freshness = prFreshness(seen[keyOf(pr)], pr);
     return (
@@ -76,6 +77,7 @@ export function MyPullRequestsSection({ account, showAccount }: {
         key={`${pr.projectPath}${sign}${pr.number}`}
         pr={pr}
         freshness={freshness}
+        approved={!meta && pr.review === "approved"}
         typeLabel={prLabel}
         indent={24}
         subtitle={subtitle}

@@ -7,6 +7,7 @@ import { prFreshness, seenKey, seenPrefix, useSeenPrsStore, type PrFreshness } f
 import { checkoutRemoteBranch, fetchRemote } from "../ipc/commands";
 import { errorMessage, runGit } from "../lib/actions";
 import { remoteForAccount } from "../lib/remoteUrl";
+import { MY_PR_STATUSES } from "../lib/prStatus";
 import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { PullRequestReviewDialog } from "./PullRequestReviewDialog";
 import { PR_PAGE_SIZE, type ForgeAccount, type ForgePR, type PullRequestState } from "../types/forge";
@@ -256,6 +257,7 @@ export function PullRequestList({ forge, list, indent = 12 }: { forge: LinkedFor
                 key={pr.number}
                 pr={pr}
                 freshness={freshness}
+                approved={pr.approved}
                 typeLabel={prLabel}
                 indent={indent}
                 onClick={() => setReviewing(pr.number)}
@@ -330,9 +332,11 @@ export function FreshnessTags({ freshness }: { freshness: PrFreshness }) {
  * Ligne d'une PR / MR. `subtitle` remplace la ligne de détail par défaut ; `meta` s'affiche en dessous
  * (dans la barre latérale étroite, des badges à droite écraseraient le titre).
  */
-export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu, subtitle, hint, meta }: {
+export function PRRow({ pr, freshness, approved, typeLabel, indent, onClick, onContextMenu, subtitle, hint, meta }: {
   pr: ForgePR;
   freshness: PrFreshness;
+  /** Relecture approuvée : libellé à côté du titre. */
+  approved?: boolean;
   typeLabel: string;
   indent: number;
   onClick: () => void;
@@ -365,6 +369,9 @@ export function PRRow({ pr, freshness, typeLabel, indent, onClick, onContextMenu
           {meta && <div className="mt-1 flex flex-wrap items-center gap-1">{meta}</div>}
         </div>
         <FreshnessTags freshness={freshness} />
+        {approved && (
+          <span className={`text-[9px] px-1 rounded border shrink-0 ${MY_PR_STATUSES.approved.className}`}>{MY_PR_STATUSES.approved.label}</span>
+        )}
         {pr.draft && <span className="text-[9px] border border-overlay/20 px-1 rounded text-[var(--color-muted)] shrink-0">draft</span>}
       </div>
     </div>

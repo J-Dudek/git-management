@@ -124,18 +124,24 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
     }, messages[event]);
   }
 
-  async function handleMerge() {
+  async function handleMerge(mode: MergeMode) {
     if (!details) return;
     const { pr } = details;
     const extra = removeSource ? `, puis suppression de ${pr.sourceBranch}` : "";
-    const ok = await confirmAction(
-      `Merger ${ref} ?`,
-      `${pr.sourceBranch} → ${pr.targetBranch} (${METHOD_LABELS[method].toLowerCase()}${extra}). Cette action est irréversible.`,
-      true,
-    );
-    if (!ok) return;
-    run("merge", () => client().merge(projectPath, number, { method, sha: details.headSha, removeSourceBranch: removeSource }),
-      `${ref} mergée`, true);
+    const summary = `${pr.sourceBranch} → ${pr.targetBranch} (${METHOD_LABELS[method].toLowerCase()}${extra}).`;
+    const prompts: Record<MergeMode, [string, string]> = {
+      merge: [`Merger ${ref} ?`, `${summary} Cette action est irréversible.`],
+      force: [
+        `Forcer le merge de ${ref} ?`,
+        `${summary} Les exigences de la branche (${details.mergeStatus.toLowerCase()}) seront contournées avec tes droits. Cette action est irréversible.`,
+      ],
+      auto: [`Programmer le merge de ${ref} ?`, `${summary} Le merge se fera dès que le pipeline réussit.`],
+    };
+    if (!(await confirmAction(...prompts[mode], true))) return;
+    const auto = mode === "auto";
+    run(auto ? "auto" : "merge",
+      () => client().merge(projectPath, number, { method, sha: details.headSha, removeSourceBranch: removeSource, autoMerge: auto }),
+      auto ? `Auto-merge programmé pour ${ref}` : `${ref} mergée`, !auto);
   }
 
   async function handleState(state: "open" | "closed") {
@@ -455,6 +461,9 @@ function ReviewActions({ details, account, hasReply, pending, onComment, onRevie
   );
 }
 
+/** Merge normal, forcé malgré les exigences de la branche (GitHub), ou programmé à la réussite du pipeline (GitLab). */
+type MergeMode = "merge" | "force" | "auto";
+
 function MergeBox({ details, isGitHub, method, onMethod, removeSource, onRemoveSource, pending, onMerge, onUpdateBranch, onClose, onDraft, onRefresh }: {
   details: PullRequestDetails;
   isGitHub: boolean;
@@ -463,13 +472,14 @@ function MergeBox({ details, isGitHub, method, onMethod, removeSource, onRemoveS
   removeSource: boolean;
   onRemoveSource: (v: boolean) => void;
   pending: string | null;
-  onMerge: () => void;
+  onMerge: (mode: MergeMode) => void;
   onUpdateBranch: () => void;
   onClose: () => void;
   onDraft: (draft: boolean) => void;
   onRefresh: () => void;
 }) {
   const updateLabel = isGitHub ? "Mettre à jour la branche" : "Rebaser";
+  const mergeLabel = details.canAutoMerge ? "Merger immédiatement" : "Merger";
   return (
     <section className="flex flex-col gap-2 rounded border border-overlay/10 p-3">
       <div className="flex items-center gap-2">
@@ -519,9 +529,31 @@ function MergeBox({ details, isGitHub, method, onMethod, removeSource, onRemoveS
           <Button variant="danger" onClick={onClose} disabled={!!pending}>
             {pending === "state" ? "Fermeture…" : "Fermer"}
           </Button>
-          <Button variant="primary" onClick={onMerge} disabled={!!pending || !details.mergeable}>
-            {pending === "merge" ? "Merge…" : "Merger"}
-          </Button>
+          {details.canForceMerge && (
+            <Button
+              variant="danger"
+              onClick={() => onMerge("force")}
+              disabled={!!pending}
+              title="Merger sans attendre les exigences de la branche (relectures, checks…) : tes droits permettent de les contourner"
+            >
+              {pending === "merge" ? "Merge…" : "Forcer le merge"}
+            </Button>
+          )}
+          {details.canAutoMerge && (
+            <Button onClick={() => onMerge("auto")} disabled={!!pending} title="Merger dès que le pipeline réussit">
+              {pending === "auto" ? "Envoi…" : "Auto-merge"}
+            </Button>
+          )}
+          {!details.canForceMerge && (
+            <Button
+              variant="primary"
+              onClick={() => onMerge("merge")}
+              disabled={!!pending || !details.mergeable}
+              title={details.canAutoMerge ? "Merger maintenant, sans attendre la fin du pipeline" : undefined}
+            >
+              {pending === "merge" ? "Merge…" : mergeLabel}
+            </Button>
+          )}
         </div>
       </div>
     </section>
