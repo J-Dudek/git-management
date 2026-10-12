@@ -63,6 +63,8 @@ interface RawMergeRequestDetails extends RawMergeRequest {
   /** GitLab ≥ 15.6 ; avant, seul `merge_status` existe. */
   detailed_merge_status?: string;
   merge_status?: string;
+  /** Auto-merge déjà programmé. */
+  merge_when_pipeline_succeeds?: boolean;
   squash?: boolean;
   force_remove_source_branch?: boolean | null;
   head_pipeline?: { id: number; status: string; web_url: string } | null;
@@ -231,6 +233,7 @@ export class GitLabClient {
     let mergeStatus: string;
     if (pr.state !== "open") mergeStatus = pr.state === "merged" ? "Déjà mergée" : "Fermée";
     else if (!canMerge) mergeStatus = "Droits insuffisants pour merger";
+    else if (raw.merge_when_pipeline_succeeds) mergeStatus = "Auto-merge programmé : merge dès que le pipeline réussit";
     else mergeStatus = MERGE_STATUSES[status] ?? `Merge impossible (${status})`;
 
     const squashOption = settings.squash_option ?? "default_off";
@@ -251,6 +254,10 @@ export class GitLabClient {
       checks,
       mergeable: pr.state === "open" && canMerge && (status === "mergeable" || status === "can_be_merged"),
       mergeStatus,
+      canForceMerge: false,
+      canAutoMerge: pr.state === "open" && canMerge && !raw.merge_when_pipeline_succeeds
+        && !!pipeline && PIPELINE_STATES[pipeline.status] === "pending"
+        && ["mergeable", "can_be_merged", "ci_still_running"].includes(status),
       canUpdateBranch: pr.state === "open" && status === "need_rebase",
       mergeMethods: methods,
       defaultMergeMethod: squashByDefault && methods.includes("squash") ? "squash" : methods[0],
@@ -284,11 +291,13 @@ export class GitLabClient {
     if (body.trim()) await this.addComment(project, iid, body);
   }
 
+  /** Sans `autoMerge`, le merge est immédiat : il n'attend pas un pipeline en cours. */
   async merge(project: string, iid: number, options: MergeOptions): Promise<void> {
     await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/merge`, {
       sha: options.sha,
       squash: options.method === "squash",
       should_remove_source_branch: options.removeSourceBranch,
+      ...(options.autoMerge ? { merge_when_pipeline_succeeds: true } : {}),
     });
   }
 

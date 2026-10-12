@@ -172,6 +172,26 @@ describe("GitHubClient pull request review", () => {
     expect(behind).toMatchObject({ mergeable: false, canUpdateBranch: true });
   });
 
+  it("allows a forced merge of a blocked PR only when the viewer can bypass the requirements", async () => {
+    const responses: Record<string, unknown> = { [base]: {}, [`${base}/pulls/7/reviews?per_page=100`]: [] };
+    const details = (state: string, admin: boolean | Error, mergeable: boolean | null = true) => {
+      const all: Record<string, unknown> = { ...responses, [`${base}/pulls/7`]: { ...pull, mergeable, mergeable_state: state } };
+      const get = vi.fn((path: string) => (path in all ? Promise.resolve(all[path]) : Promise.reject(new Error(path))));
+      const graphql = vi.fn(() => admin instanceof Error
+        ? Promise.reject(admin)
+        : Promise.resolve({ repository: { pullRequest: { viewerCanMergeAsAdmin: admin } } }));
+      return { graphql, result: new GitHubClient(get as never, undefined, graphql as never).getPullRequestDetails("o", "r", 7, "me") };
+    };
+
+    expect(await details("blocked", true).result).toMatchObject({ mergeable: false, canForceMerge: true, canAutoMerge: false });
+    expect(await details("blocked", false).result).toMatchObject({ canForceMerge: false });
+    expect(await details("blocked", new Error("scope")).result).toMatchObject({ canForceMerge: false });
+    expect(await details("dirty", true, false).result).toMatchObject({ canForceMerge: false });
+    const clean = details("clean", true);
+    expect(await clean.result).toMatchObject({ mergeable: true, canForceMerge: false });
+    expect(clean.graphql).not.toHaveBeenCalled();
+  });
+
   it("tolerates a token without access to checks", async () => {
     const responses: Record<string, unknown> = { [`${base}/pulls/7`]: pull, [base]: {}, [`${base}/pulls/7/reviews?per_page=100`]: [] };
     const get = vi.fn((path: string) => path.includes("/commits/") ? Promise.reject(new Error("403")) : Promise.resolve(responses[path]));

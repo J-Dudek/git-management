@@ -120,6 +120,10 @@ export interface PullRequestDetails {
   mergeable: boolean;
   /** Explication lisible de l'état de merge. */
   mergeStatus: string;
+  /** GitHub : des exigences manquent (relectures, checks…), mais mes droits permettent de merger quand même. */
+  canForceMerge: boolean;
+  /** GitLab : pipeline en cours, le merge peut être programmé pour sa réussite. */
+  canAutoMerge: boolean;
   /** La branche est en retard sur la cible et peut être mise à jour depuis la forge. */
   canUpdateBranch: boolean;
   mergeMethods: MergeMethod[];
@@ -199,6 +203,8 @@ export interface MergeOptions {
   sha: string;
   /** GitLab uniquement : GitHub ne permet pas de supprimer la branche par l'API acceptée ici. */
   removeSourceBranch: boolean;
+  /** GitLab : merge dès que le pipeline réussit, au lieu de tout de suite. */
+  autoMerge?: boolean;
 }
 
 export type ReviewEvent = "approve" | "unapprove" | "request_changes";

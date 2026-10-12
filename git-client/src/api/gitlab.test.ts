@@ -140,6 +140,28 @@ describe("GitLabClient merge request review", () => {
     expect(d.pr).toMatchObject({ reviewers: ["bob"], assignees: ["alice"] });
   });
 
+  it("offers auto-merge while the pipeline runs, unless it is already scheduled", async () => {
+    const of = async (mr: Record<string, unknown>) => detailsClient({ [mrPath]: { ...details, ...mr } }).getMergeRequestDetails("group/app", 12, "me");
+
+    expect(await of({})).toMatchObject({ mergeable: true, canAutoMerge: true, canForceMerge: false });
+    expect(await of({ detailed_merge_status: "ci_still_running" })).toMatchObject({ mergeable: false, canAutoMerge: true });
+    expect(await of({ head_pipeline: { id: 5, status: "success", web_url: "p" } })).toMatchObject({ mergeable: true, canAutoMerge: false });
+    expect(await of({ detailed_merge_status: "not_approved" })).toMatchObject({ canAutoMerge: false });
+    expect(await of({ merge_when_pipeline_succeeds: true })).toMatchObject({
+      canAutoMerge: false, mergeStatus: "Auto-merge programmé : merge dès que le pipeline réussit",
+    });
+  });
+
+  it("merges immediately by default, or when the pipeline succeeds on request", async () => {
+    const send = vi.fn().mockResolvedValue({});
+    const gl = new GitLabClient(vi.fn() as never, send as never);
+    await gl.merge("group/app", 12, { method: "merge", sha: "abc", removeSourceBranch: false });
+    await gl.merge("group/app", 12, { method: "merge", sha: "abc", removeSourceBranch: false, autoMerge: true });
+
+    expect(send.mock.calls[0][2]).toEqual({ sha: "abc", squash: false, should_remove_source_branch: false });
+    expect(send.mock.calls[1][2]).toEqual({ sha: "abc", squash: false, should_remove_source_branch: false, merge_when_pipeline_succeeds: true });
+  });
+
   it("explains why a merge request cannot be merged", async () => {
     const rebase = await detailsClient({ [mrPath]: { ...details, detailed_merge_status: "need_rebase" } })
       .getMergeRequestDetails("group/app", 12, "me");

@@ -267,10 +267,14 @@ export class GitHubClient {
     if (settings.allow_rebase_merge !== false) methods.push("rebase");
 
     const mergeState = raw.mergeable_state ?? "unknown";
+    const canPush = settings.permissions?.push !== false;
     const mergeable = pr.state === "open"
-      && settings.permissions?.push !== false
+      && canPush
       && raw.mergeable === true
       && ["clean", "has_hooks", "unstable"].includes(mergeState);
+    // Exigences de la branche non remplies, sans conflit : seul GraphQL dit si mes droits permettent de passer outre.
+    const blocked = pr.state === "open" && canPush && raw.mergeable === true && ["blocked", "behind"].includes(mergeState);
+    const canForceMerge = blocked && await this.canMergeAsAdmin(owner, repo, number).catch(() => false);
 
     return {
       pr,
@@ -283,12 +287,24 @@ export class GitHubClient {
       checks: [...runs.check_runs.map(parseCheckRun), ...statuses.statuses.map(parseStatus)],
       mergeable,
       mergeStatus: describeMergeState(pr, raw, settings),
+      canForceMerge,
+      canAutoMerge: false,
       canUpdateBranch: pr.state === "open" && mergeState === "behind",
       mergeMethods: methods,
       defaultMergeMethod: methods[0] ?? "merge",
       removeSourceBranchDefault: false,
       diffRefs: null,
     };
+  }
+
+  private async canMergeAsAdmin(owner: string, repo: string, number: number): Promise<boolean> {
+    const data = await this.graphql<{ repository: { pullRequest: { viewerCanMergeAsAdmin: boolean } | null } | null }>(
+      `query($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) { pullRequest(number: $number) { viewerCanMergeAsAdmin } }
+      }`,
+      { owner, repo, number },
+    );
+    return data.repository?.pullRequest?.viewerCanMergeAsAdmin ?? false;
   }
 
   /** Commentaires de la conversation et avis de relecture, par date. */
@@ -326,6 +342,7 @@ export class GitHubClient {
     });
   }
 
+  /** Un merge forcé passe par la même requête : GitHub applique de lui-même les droits de contournement. */
   async merge(owner: string, repo: string, number: number, options: MergeOptions): Promise<void> {
     await this.send("PUT", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/merge`, {
       merge_method: options.method,
