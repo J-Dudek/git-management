@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de Merathon, générées à partir des messages de commit.
 
+## [1.9.0](https://github.com/J-Dudek/git-management/compare/v1.8.0...v1.9.0) (2026-10-12)
+
+### Nouveautés
+
+- add about section on menu fix: release job issue ([50ff712](https://github.com/J-Dudek/git-management/commit/50ff712cd77b3c2ede5bf752b38fe9625e8a5ae2))
+
 ## [1.8.0](https://github.com/J-Dudek/git-management/compare/v1.7.0...v1.8.0) (2026-10-12)
 
 ### Nouveautés
