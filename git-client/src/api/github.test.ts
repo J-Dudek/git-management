@@ -22,6 +22,21 @@ describe("GitHubClient", () => {
     expect(prs[0]).toMatchObject({ number: 42, state: "open", author: "alice", sourceBranch: "feature/x", targetBranch: "main", labels: ["enhancement"] });
   });
 
+  it("flags open PRs approved by review, and leaves them unflagged when reviews are unavailable", async () => {
+    const raw = (number: number, state = "open") => ({ number, title: "t", state, merged_at: null, created_at: "2024-01-01" });
+    const get = vi.fn().mockResolvedValue([raw(1), raw(2), raw(3), raw(4, "closed")]);
+    const node = (number: number, reviewDecision: string | null, states: string[]) =>
+      ({ number, reviewDecision, latestOpinionatedReviews: { nodes: states.map((state) => ({ state })) } });
+    const graphql = vi.fn().mockResolvedValue({
+      repository: { pullRequests: { nodes: [node(1, "APPROVED", []), node(2, null, ["APPROVED"]), node(3, "REVIEW_REQUIRED", ["APPROVED"])] } },
+    });
+    const prs = await new GitHubClient(get as never, undefined, graphql as never).getPullRequests("o", "r", "all");
+
+    expect(prs.map((p) => p.approved)).toEqual([true, true, false, undefined]);
+    expect(graphql.mock.calls[0][1]).toEqual({ owner: "o", repo: "r" });
+    expect((await new GitHubClient(get as never).getPullRequests("o", "r"))[0].approved).toBeUndefined();
+  });
+
   it("getPullRequest counts conversation and line comments", async () => {
     const { gh, get } = client({ number: 7, title: "t", state: "open", merged_at: null, updated_at: "2024-01-03", head: { ref: "x", sha: "abc" }, comments: 2, review_comments: 3 });
     expect(await gh.getPullRequest("o", "r", 7)).toMatchObject({ updatedAt: "2024-01-03", headSha: "abc", commentCount: 5 });

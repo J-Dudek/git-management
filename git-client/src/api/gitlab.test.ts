@@ -19,6 +19,21 @@ describe("GitLabClient", () => {
     expect(mr).toMatchObject({ number: 12, state: "open", author: "alice", sourceBranch: "feat/x", targetBranch: "main", labels: ["backend"] });
   });
 
+  it("flags open merge requests with every required approval", async () => {
+    const approvals: Record<string, unknown> = {
+      "/projects/g%2Fp/merge_requests/1/approvals": { approved_by: [{ user: { username: "bob" } }], approvals_left: 0 },
+      "/projects/g%2Fp/merge_requests/2/approvals": { approved_by: [{ user: { username: "bob" } }], approvals_left: 1 },
+      "/projects/g%2Fp/merge_requests/3/approvals": { approved_by: [], approvals_left: 0 },
+    };
+    const get = vi.fn((path: string) => {
+      if (path.startsWith("/projects/g%2Fp/merge_requests?")) return Promise.resolve([1, 2, 3, 4].map((iid) => ({ ...rawMR, iid })).concat({ ...rawMR, iid: 5, state: "merged" }));
+      return path in approvals ? Promise.resolve(approvals[path]) : Promise.reject(new Error(path));
+    });
+    const mrs = await new GitLabClient(get as never).getMergeRequests("g/p", "all");
+
+    expect(mrs.map((m) => m.approved)).toEqual([true, false, false, false, undefined]);
+  });
+
   it("maps merged and closed states", async () => {
     const { gl } = client([{ ...rawMR, state: "merged" }, { ...rawMR, iid: 13, state: "closed" }]);
     const mrs = await gl.getMergeRequests("owner/repo");
@@ -291,12 +306,13 @@ describe("GitLabClient inline review", () => {
       if (path.startsWith("/merge_requests?scope=all&reviewer_username=me")) return Promise.resolve([mr(1), mr(2)]);
       if (path.startsWith("/merge_requests?scope=created_by_me")) return Promise.resolve([mr(3)]);
       if (path === "/projects/9/merge_requests/3") return Promise.resolve(mr(3, { head_pipeline: { id: 1, status: "failed", web_url: "" }, has_conflicts: false }));
+      if (path === "/projects/9/merge_requests/2/approvals") return Promise.resolve({ approved_by: [{ user: { username: "bob" } }], approvals_left: 0 });
       if (path === "/projects/9/merge_requests/3/approvals") return Promise.resolve({ approved_by: [{ user: { username: "bob" } }], approvals_left: 0 });
       return Promise.reject(new Error(path));
     });
     const mine = await new GitLabClient(get as never).getMyMergeRequests("me");
 
-    expect(mine.assigned.map((m) => [m.projectPath, m.number])).toEqual([["grp/proj", 1], ["grp/proj", 2]]);
+    expect(mine.assigned.map((m) => [m.projectPath, m.number, m.review])).toEqual([["grp/proj", 1, "pending"], ["grp/proj", 2, "approved"]]);
     expect(mine.authored[0]).toMatchObject({ number: 3, projectPath: "grp/proj", review: "approved", ci: "failure", conflicts: false });
   });
 });

@@ -58,6 +58,8 @@ export interface ForgePR {
   /** Relecteurs demandés (logins). */
   reviewers: string[];
   assignees: string[];
+  /** Relecture approuvée ; absent quand la liste ne le dit pas (PR / MR fermée, état inconnu). */
+  approved?: boolean;
 }
 
 /** PR / MR d'un projet quelconque, avec l'état de sa relecture, de sa CI et de sa mergeabilité. */

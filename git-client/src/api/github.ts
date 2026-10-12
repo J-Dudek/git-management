@@ -153,6 +153,18 @@ const MY_PRS_QUERY = `query($assigned: String!, $reviewing: String!, $authored: 
   authored: search(query: $authored, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
 }`;
 
+/** Avis de relecture d'une PR, tels que GraphQL les donne. */
+type RawReviewState = Pick<RawSearchPullRequest, "reviewDecision" | "latestOpinionatedReviews">;
+
+/** La liste REST des PR ne donne pas les relectures : elles sont lues à part, dans le même ordre (création). */
+const OPEN_REVIEWS_QUERY = `query($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequests(states: OPEN, first: ${PR_PAGE_SIZE}, orderBy: { field: CREATED_AT, direction: DESC }) {
+      nodes { number reviewDecision latestOpinionatedReviews(first: 20) { nodes { state } } }
+    }
+  }
+}`;
+
 /** Explication de `mergeable_state` (https://docs.github.com/rest/pulls/pulls). */
 const MERGE_STATES: Record<string, string> = {
   clean: "Prête à merger",
@@ -195,7 +207,17 @@ export class GitHubClient {
     const prs = data.map(parsePR);
     if (state === "merged") return prs.filter((p) => p.state === "merged");
     if (state === "closed") return prs.filter((p) => p.state === "closed");
-    return prs;
+    if (!prs.some((p) => p.state === "open")) return prs;
+    const approved = await this.getApprovedPullRequests(owner, repo).catch(() => null);
+    return approved ? prs.map((p) => (p.state === "open" ? { ...p, approved: approved.has(p.number) } : p)) : prs;
+  }
+
+  /** Numéros des PR ouvertes dont la relecture est approuvée. */
+  private async getApprovedPullRequests(owner: string, repo: string): Promise<Set<number>> {
+    type Node = RawReviewState & { number: number };
+    const data = await this.graphql<{ repository: { pullRequests: { nodes: Node[] } } | null }>(OPEN_REVIEWS_QUERY, { owner, repo });
+    const nodes = data.repository?.pullRequests.nodes ?? [];
+    return new Set(nodes.filter((n) => reviewState(n) === "approved").map((n) => n.number));
   }
 
   async getPullRequest(owner: string, repo: string, number: number): Promise<ForgePR> {
@@ -500,12 +522,15 @@ const CI_STATES: Record<string, PrSummary["ci"]> = {
   SUCCESS: "success", FAILURE: "failure", ERROR: "failure", PENDING: "pending", EXPECTED: "pending",
 };
 
-function parseSearchPR(raw: RawSearchPullRequest): PrSummary {
+function reviewState(raw: RawReviewState): PrSummary["review"] {
   const verdicts = raw.latestOpinionatedReviews.nodes.map((r) => r.state);
-  let review: PrSummary["review"] = "pending";
   // Sans relecture obligatoire, GitHub ne donne pas de décision : on la déduit des derniers avis.
-  if (raw.reviewDecision === "CHANGES_REQUESTED" || (!raw.reviewDecision && verdicts.includes("CHANGES_REQUESTED"))) review = "changes_requested";
-  else if (raw.reviewDecision === "APPROVED" || (!raw.reviewDecision && verdicts.includes("APPROVED"))) review = "approved";
+  if (raw.reviewDecision === "CHANGES_REQUESTED" || (!raw.reviewDecision && verdicts.includes("CHANGES_REQUESTED"))) return "changes_requested";
+  if (raw.reviewDecision === "APPROVED" || (!raw.reviewDecision && verdicts.includes("APPROVED"))) return "approved";
+  return "pending";
+}
+
+function parseSearchPR(raw: RawSearchPullRequest): PrSummary {
   const rollup = raw.commits.nodes[0]?.commit.statusCheckRollup;
   return {
     number: raw.number!,
@@ -523,7 +548,7 @@ function parseSearchPR(raw: RawSearchPullRequest): PrSummary {
     reviewers: raw.reviewRequests.nodes.flatMap((r) => (r.requestedReviewer?.login ? [r.requestedReviewer.login] : [])),
     assignees: raw.assignees.nodes.map((u) => u.login),
     projectPath: raw.repository.nameWithOwner,
-    review,
+    review: reviewState(raw),
     ci: rollup ? CI_STATES[rollup.state] ?? null : null,
     conflicts: raw.mergeable === "CONFLICTING",
   };
