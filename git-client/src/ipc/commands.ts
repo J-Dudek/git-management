@@ -205,6 +205,17 @@ export const oauthComplete = (provider: Provider, baseUrl: string, clientId: str
   invoke<SavedAccount>("oauth_complete", { provider, baseUrl, clientId, device, label });
 export const oauthCancel = (deviceCode: string) => invoke<void>("oauth_cancel", { deviceCode });
 
+export interface AppInfo {
+  os: string;
+  arch: string;
+  libgit2: string;
+  /** Build de développement (`tauri dev`). */
+  debug: boolean;
+}
+
+/** Environnement d'exécution : système, architecture et version de libgit2 embarquée. */
+export const appInfo = () => invoke<AppInfo>("app_info");
+
 /** Outils de développement (sans effet dans les builds de release). */
 export const openDevtools = () => invoke<void>("open_devtools");
 

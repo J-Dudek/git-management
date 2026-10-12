@@ -57,6 +57,9 @@ export interface SideWidths {
 
 export type Side = keyof SideWidths;
 
+/** Rubriques de la fenêtre des préférences. */
+export type PreferencesSection = "appearance" | "terminal" | "sync" | "shortcuts" | "about";
+
 const SIDES_KEY = "git-client.side-widths";
 export const defaultSideWidths: SideWidths = { left: 240, right: 320 };
 export const SIDE_LIMITS: Record<Side, { min: number; max: number }> = {
@@ -95,6 +98,8 @@ interface UiStore {
   sideWidths: SideWidths;
   /** Fenêtre des préférences ouverte. */
   preferencesOpen: boolean;
+  /** Rubrique affichée à l'ouverture des préférences. */
+  preferencesSection: PreferencesSection;
 
   notify: (kind: Toast["kind"], message: string) => void;
   dismiss: (id: number) => void;
@@ -104,7 +109,7 @@ interface UiStore {
   setInteractiveRebaseBase: (hash: string | null) => void;
   setPanel: (patch: Partial<BottomPanelState>) => void;
   setSideWidth: (side: Side, width: number) => void;
-  setPreferencesOpen: (open: boolean) => void;
+  setPreferencesOpen: (open: boolean, section?: PreferencesSection) => void;
 }
 
 let nextToastId = 1;
@@ -117,6 +122,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   panel: loadPanel(),
   sideWidths: loadSideWidths(),
   preferencesOpen: false,
+  preferencesSection: "appearance",
 
   notify: (kind, message) => {
     const id = nextToastId++;
@@ -140,7 +146,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
   setBusy: (busy) => set({ busy }),
   setInteractiveRebaseBase: (interactiveRebaseBase) => set({ interactiveRebaseBase }),
 
-  setPreferencesOpen: (preferencesOpen) => set({ preferencesOpen }),
+  setPreferencesOpen: (preferencesOpen, preferencesSection = "appearance") => set({ preferencesOpen, preferencesSection }),
 
   setPanel: (patch) => {
     const panel = { ...get().panel, ...patch };

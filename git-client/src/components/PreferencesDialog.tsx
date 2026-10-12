@@ -1,25 +1,37 @@
-import { useState } from "react";
-import { Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, SquareTerminal, Sun, type LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  BookOpen, Bug, Check, Copy, ExternalLink, FolderGit2, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
+  SquareTerminal, Sun, type LucideIcon,
+} from "lucide-react";
+import { getTauriVersion, getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { Modal } from "./Modal";
 import { Kbd } from "./Kbd";
 import {
   ROW_HEIGHTS, SYNC_INTERVALS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, ZOOM_STEPS, defaultDisplay, useDisplayStore, type Density,
   type ThemePreference,
 } from "../store/useDisplayStore";
+import { useUiStore, type PreferencesSection as Section } from "../store/useUiStore";
 import { syncOpenRepos } from "../lib/autoSync";
-
-type Section = "appearance" | "terminal" | "sync" | "shortcuts";
+import { checkForUpdates } from "../lib/updater";
+import { aboutReport, osLabel, REPO_URL, releaseUrl, versionLabel } from "../lib/about";
+import { appInfo, type AppInfo } from "../ipc/commands";
+import logo from "../assets/logo.webp";
 
 const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "appearance", label: "Apparence", icon: Palette },
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
   { id: "sync", label: "Synchronisation", icon: RefreshCw },
   { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
+  { id: "about", label: "À propos", icon: Info },
 ];
+
+/** Rubriques sans réglage : pas de bouton « Réinitialiser ». */
+const READ_ONLY: Section[] = ["shortcuts", "about"];
 
 /** Préférences de l'application : appliquées immédiatement et partagées entre les fenêtres. */
 export function PreferencesDialog({ onClose }: { onClose: () => void }) {
-  const [section, setSection] = useState<Section>("appearance");
+  const [section, setSection] = useState<Section>(() => useUiStore.getState().preferencesSection);
   const reset = useDisplayStore((s) => s.reset);
 
   return (
@@ -51,8 +63,9 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
             {section === "terminal" && <TerminalSection />}
             {section === "sync" && <SyncSection />}
             {section === "shortcuts" && <ShortcutsSection />}
+            {section === "about" && <AboutSection />}
           </div>
-          {section !== "shortcuts" && (
+          {!READ_ONLY.includes(section) && (
             <div className="flex justify-end px-6 py-3 border-t border-overlay/10">
               <button
                 onClick={reset}
@@ -327,6 +340,114 @@ function ShortcutsSection() {
           </div>
         </div>
       ))}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- À propos
+
+const LINKS: { label: string; icon: LucideIcon; url: (version: string) => string }[] = [
+  { label: "Dépôt GitHub", icon: FolderGit2, url: () => REPO_URL },
+  { label: "Notes de cette version", icon: ScrollText, url: releaseUrl },
+  { label: "Journal des modifications", icon: BookOpen, url: () => `${REPO_URL}/blob/main/CHANGELOG.md` },
+  { label: "Signaler un bug", icon: Bug, url: () => `${REPO_URL}/issues/new/choose` },
+  { label: "Licence MIT", icon: Scale, url: () => `${REPO_URL}/blob/main/LICENSE` },
+];
+
+function AboutSection() {
+  const [version, setVersion] = useState("");
+  const [tauri, setTauri] = useState("");
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    // Hors de Tauri (tests, aperçu navigateur) : les champs restent vides.
+    getVersion().then(setVersion).catch(() => {});
+    getTauriVersion().then(setTauri).catch(() => {});
+    appInfo().then(setInfo).catch(() => {});
+  }, []);
+
+  async function check() {
+    setChecking(true);
+    try {
+      await checkForUpdates(true);
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  async function copy() {
+    await navigator.clipboard.writeText(aboutReport(version, tauri, info));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  const rows: [string, string][] = [
+    ["Version", version ? versionLabel(version, info) : "…"],
+    ["Système", info ? `${osLabel(info.os)} · ${info.arch}` : "…"],
+    ["Tauri", tauri || "…"],
+    ["libgit2", info?.libgit2 ?? "…"],
+  ];
+
+  return (
+    <>
+      <div className="mb-5 flex items-center gap-4">
+        <img src={logo} alt="" className="h-14 w-14 shrink-0 rounded-xl" />
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold">
+            Merathon {version && <span className="ml-1 font-mono text-xs font-normal text-[var(--color-muted)]">v{version}</span>}
+          </h2>
+          <p className="mt-0.5 text-[var(--color-muted)]">Git Repository Manager — client Git graphique de bureau.</p>
+        </div>
+      </div>
+
+      <Group title="Version installée" description="À joindre à un rapport de bug.">
+        <div className="rounded-lg border border-overlay/10 divide-y divide-overlay/5">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex items-center justify-between px-3 py-2">
+              <span className="text-[var(--color-muted)]">{label}</span>
+              <span className="font-mono text-[11px] select-text">{value}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2.5 flex gap-2">
+          <button
+            onClick={check}
+            disabled={checking}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10 disabled:opacity-50"
+          >
+            <RefreshCw size={13} strokeWidth={1.75} className={checking ? "animate-spin" : ""} />
+            {checking ? "Vérification…" : "Rechercher des mises à jour"}
+          </button>
+          <button
+            onClick={copy}
+            disabled={!version}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10 disabled:opacity-50"
+          >
+            {copied ? <Check size={13} strokeWidth={1.75} /> : <Copy size={13} strokeWidth={1.75} />}
+            {copied ? "Copié" : "Copier les informations"}
+          </button>
+        </div>
+      </Group>
+
+      <Group title="Liens">
+        <div className="rounded-lg border border-overlay/10 divide-y divide-overlay/5">
+          {LINKS.map(({ label, icon: Icon, url }) => (
+            <button
+              key={label}
+              onClick={() => openUrl(url(version)).catch(() => {})}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-overlay/5"
+            >
+              <Icon size={14} strokeWidth={1.75} className="text-[var(--color-muted)]" />
+              <span className="flex-1">{label}</span>
+              <ExternalLink size={12} strokeWidth={1.75} className="text-[var(--color-muted)]" />
+            </button>
+          ))}
+        </div>
+      </Group>
+
+      <p className="text-[10px] text-[var(--color-muted)]">© 2026 Julien Dudek — distribué sous licence MIT.</p>
     </>
   );
 }

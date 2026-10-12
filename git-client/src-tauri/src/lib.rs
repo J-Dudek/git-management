@@ -98,6 +98,7 @@ pub fn run() {
             commands::oauth_start,
             commands::oauth_complete,
             commands::oauth_cancel,
+            commands::app_info,
             commands::open_devtools,
             commands::terminal_open,
             commands::terminal_write,

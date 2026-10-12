@@ -762,6 +762,26 @@ pub fn oauth_cancel(device_code: String) {
     oauth::cancel(&device_code);
 }
 
+/// Environnement d'exécution, affiché dans « À propos » et joint aux rapports de bug.
+#[derive(serde::Serialize)]
+pub struct AppInfo {
+    os: &'static str,
+    arch: &'static str,
+    libgit2: String,
+    debug: bool,
+}
+
+#[tauri::command]
+pub fn app_info() -> AppInfo {
+    let (major, minor, patch) = git2::Version::get().libgit2_version();
+    AppInfo {
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        libgit2: format!("{major}.{minor}.{patch}"),
+        debug: cfg!(debug_assertions),
+    }
+}
+
 /// Outils de développement du webview (builds de debug uniquement).
 #[tauri::command]
 pub fn open_devtools(window: tauri::WebviewWindow) {
