@@ -34,7 +34,6 @@ jobs:
       contents: write
     outputs:
       version: ${{ steps.next.outputs.version }}
-      changelog: ${{ steps.release.outputs.changelog }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,6 +81,25 @@ jobs:
           git tag -a "v$VERSION" -m "Merathon v$VERSION"
           # Commit et tag poussés ensemble : soit les deux, soit aucun.
           git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "v$VERSION"
+
+      # Brouillon créé ici, une seule fois : si chaque job de paquets créait le sien en parallèle,
+      # on obtiendrait deux brouillons pour le même tag, chacun avec la moitié des paquets.
+      - name: Brouillon de release
+        if: steps.next.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.next.outputs.version }}
+          CHANGELOG: ${{ steps.release.outputs.changelog }}
+        run: |
+          {
+            echo "## Merathon — Git Repository Manager $TAG"
+            echo
+            echo "$CHANGELOG"
+            echo
+            cat .github/release-footer.md
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Merathon $TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
   build:
     name: Paquets ${{ matrix.platform }}
@@ -147,25 +165,7 @@ jobs:
           projectPath: git-client
           tagName: ${{ env.TAG }}
           releaseName: "Merathon ${{ env.TAG }}"
-          releaseBody: |
-            ## Merathon — Git Repository Manager ${{ env.TAG }}
-
-            ${{ needs.version.outputs.changelog }}
-
-            ### Téléchargements
-            - **Linux** : `.deb` (Debian/Ubuntu) · `.AppImage` (universel)
-            - **Windows** : `.msi` (installateur) · `.exe` (NSIS)
-
-            ### Windows : avertissement SmartScreen
-            Les installateurs ne sont pas encore signés : au premier lancement, Windows affiche
-            « Windows a protégé votre ordinateur ». Cliquez sur **Informations complémentaires**,
-            puis sur **Exécuter quand même**.
-
-            ### Vérifier un téléchargement
-            Les empreintes SHA-256 de tous les fichiers sont dans `SHA256SUMS.txt` :
-            - Linux : `sha256sum -c SHA256SUMS.txt --ignore-missing`
-            - Windows (PowerShell) : `Get-FileHash .\<fichier>` puis comparer avec la ligne correspondante
-          # Brouillon pendant la génération : publié par le job suivant quand tous les paquets sont prêts.
+          # Paquets ajoutés au brouillon créé par le job « Version et tag » (notes comprises).
           releaseDraft: true
           # latest.json (manifeste des mises à jour automatiques) est écrit par le job de publication :
           # ici, les jobs Linux et Windows le complèteraient en parallèle et le dernier écraserait l'autre.
