@@ -16,16 +16,14 @@ const KEYRING_SERVICE: &str = "merathon";
 const LEGACY_KEYRING_SERVICE: &str = "git-client";
 
 /// Secret d'un compte dans le trousseau. Une entrée enregistrée sous l'ancien nom de service
-/// est déplacée sous le nouveau.
+/// est copiée sous le nouveau ; l'ancienne est conservée, pour qu'une version antérieure de
+/// l'application (retour en arrière, installation en parallèle) retrouve encore le compte.
 fn keyring_secret(id: &str) -> Option<String> {
     if let Ok(secret) = keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.get_password()) {
         return Some(secret);
     }
-    let legacy = keyring::Entry::new(LEGACY_KEYRING_SERVICE, id).ok()?;
-    let secret = legacy.get_password().ok()?;
-    if keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.set_password(&secret)).is_ok() {
-        let _ = legacy.delete_credential();
-    }
+    let secret = keyring::Entry::new(LEGACY_KEYRING_SERVICE, id).and_then(|e| e.get_password()).ok()?;
+    let _ = keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.set_password(&secret));
     Some(secret)
 }
 
