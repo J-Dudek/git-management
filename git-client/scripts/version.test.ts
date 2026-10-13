@@ -50,17 +50,17 @@ describe("versions", () => {
 
 describe("setCargoVersion", () => {
   it("met à jour uniquement la section [package] de Cargo.toml", () => {
-    const toml = '[package]\nname = "git-client"\nversion = "0.1.0"\n\n[dependencies]\nserde = { version = "1" }\n';
+    const toml = '[package]\nname = "merathon"\nversion = "0.1.0"\n\n[dependencies]\nserde = { version = "1" }\n';
     const out = setCargoVersion(toml, "0.2.0");
     expect(out).toContain('version = "0.2.0"');
     expect(out).toContain('serde = { version = "1" }');
   });
 
-  it("met à jour uniquement le paquet git-client de Cargo.lock", () => {
-    const lock = '[[package]]\nname = "git2"\nversion = "0.21.0"\n\n[[package]]\nname = "git-client"\nversion = "0.1.0"\n';
+  it("met à jour uniquement le paquet merathon de Cargo.lock", () => {
+    const lock = '[[package]]\nname = "git2"\nversion = "0.21.0"\n\n[[package]]\nname = "merathon"\nversion = "0.1.0"\n';
     const out = setCargoVersion(lock, "1.0.0", { lock: true });
     expect(out).toContain('name = "git2"\nversion = "0.21.0"');
-    expect(out).toContain('name = "git-client"\nversion = "1.0.0"');
+    expect(out).toContain('name = "merathon"\nversion = "1.0.0"');
   });
 });
 

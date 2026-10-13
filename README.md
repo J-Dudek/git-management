@@ -181,12 +181,12 @@ La connexion par navigateur utilise le *device flow* : l'application affiche un 
 L'identifiant se saisit dans le formulaire d'ajout de compte (il est mémorisé par instance), ou se fournit par variable d'environnement, lue au lancement de l'application puis, à défaut, intégrée au build :
 
 ```bash
-export GIT_CLIENT_GITHUB_CLIENT_ID=Ov23li...
-export GIT_CLIENT_GITLAB_CLIENT_ID=abc123...
+export MERATHON_GITHUB_CLIENT_ID=Ov23li...
+export MERATHON_GITLAB_CLIENT_ID=abc123...
 npm run tauri dev     # à lancer depuis ce même terminal
 ```
 
-En CI, le workflow de release intègre au binaire les variables (ou secrets) de dépôt `GIT_CLIENT_GITHUB_CLIENT_ID` et `GIT_CLIENT_GITLAB_CLIENT_ID`.
+En CI, le workflow de release intègre au binaire les variables (ou secrets) de dépôt `MERATHON_GITHUB_CLIENT_ID` et `MERATHON_GITLAB_CLIENT_ID` (les anciens noms `GIT_CLIENT_…` restent acceptés, au lancement comme au build).
 
 Les tokens GitLab expirent au bout de 2 h : ils sont renouvelés automatiquement grâce au refresh token.
 

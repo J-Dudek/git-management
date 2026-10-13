@@ -11,7 +11,23 @@ use serde::{Deserialize, Serialize};
 use crate::git::Credentials;
 use crate::oauth::{self, OAuthToken};
 
-const KEYRING_SERVICE: &str = "git-client";
+const KEYRING_SERVICE: &str = "merathon";
+/// Nom du service d'avant le renommage en Merathon : ses entrées sont reprises à la première lecture.
+const LEGACY_KEYRING_SERVICE: &str = "git-client";
+
+/// Secret d'un compte dans le trousseau. Une entrée enregistrée sous l'ancien nom de service
+/// est déplacée sous le nouveau.
+fn keyring_secret(id: &str) -> Option<String> {
+    if let Ok(secret) = keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.get_password()) {
+        return Some(secret);
+    }
+    let legacy = keyring::Entry::new(LEGACY_KEYRING_SERVICE, id).ok()?;
+    let secret = legacy.get_password().ok()?;
+    if keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.set_password(&secret)).is_ok() {
+        let _ = legacy.delete_credential();
+    }
+    Some(secret)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -162,14 +178,16 @@ impl AccountStore {
     }
 
     fn secret_in_keyring(&self, id: &str) -> bool {
-        keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.get_password()).is_ok()
+        keyring_secret(id).is_some()
     }
 
     pub fn remove(&self, id: &str) -> Result<(), String> {
         let accounts: Vec<Account> = self.list()?.into_iter().filter(|a| a.id != id).collect();
         self.write_accounts(&accounts)?;
-        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, id) {
-            let _ = entry.delete_credential();
+        for service in [KEYRING_SERVICE, LEGACY_KEYRING_SERVICE] {
+            if let Ok(entry) = keyring::Entry::new(service, id) {
+                let _ = entry.delete_credential();
+            }
         }
         let mut file_tokens = self.read_file_tokens();
         if file_tokens.remove(id).is_some() {
@@ -179,7 +197,7 @@ impl AccountStore {
     }
 
     fn stored_secret(&self, id: &str) -> Result<String, String> {
-        if let Ok(token) = keyring::Entry::new(KEYRING_SERVICE, id).and_then(|e| e.get_password()) {
+        if let Some(token) = keyring_secret(id) {
             return Ok(token);
         }
         self.read_file_tokens()

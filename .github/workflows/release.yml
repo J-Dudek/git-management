@@ -165,8 +165,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Identifiants client OAuth intégrés au binaire (publics : variables ou secrets du dépôt)
-          GIT_CLIENT_GITHUB_CLIENT_ID: ${{ vars.GIT_CLIENT_GITHUB_CLIENT_ID || secrets.GIT_CLIENT_GITHUB_CLIENT_ID }}
-          GIT_CLIENT_GITLAB_CLIENT_ID: ${{ vars.GIT_CLIENT_GITLAB_CLIENT_ID || secrets.GIT_CLIENT_GITLAB_CLIENT_ID }}
+          # (les anciens noms GIT_CLIENT_* des variables du dépôt restent lus)
+          MERATHON_GITHUB_CLIENT_ID: ${{ vars.MERATHON_GITHUB_CLIENT_ID || secrets.MERATHON_GITHUB_CLIENT_ID || vars.GIT_CLIENT_GITHUB_CLIENT_ID || secrets.GIT_CLIENT_GITHUB_CLIENT_ID }}
+          MERATHON_GITLAB_CLIENT_ID: ${{ vars.MERATHON_GITLAB_CLIENT_ID || secrets.MERATHON_GITLAB_CLIENT_ID || vars.GIT_CLIENT_GITLAB_CLIENT_ID || secrets.GIT_CLIENT_GITLAB_CLIENT_ID }}
         with:
           projectPath: git-client
           tagName: ${{ env.TAG }}

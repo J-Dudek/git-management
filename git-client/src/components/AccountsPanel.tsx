@@ -123,7 +123,7 @@ function tokenHelpUrl(kind: Kind, url: string): string {
   return `${url}/-/user_settings/personal_access_tokens?name=Merathon&scopes=api,read_user,write_repository`;
 }
 
-const CLIENT_ID_KEY = "git-client.oauth-client-ids";
+const CLIENT_ID_KEY = "merathon.oauth-client-ids";
 
 function savedClientIds(): Record<string, string> {
   try {

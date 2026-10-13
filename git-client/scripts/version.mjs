@@ -70,11 +70,11 @@ export function maxVersion(a, b) {
   return a;
 }
 
-/** Remplace la version du paquet `git-client` dans Cargo.toml / Cargo.lock. */
+/** Remplace la version du paquet `merathon` dans Cargo.toml / Cargo.lock. */
 export function setCargoVersion(content, version, { lock = false } = {}) {
   if (lock) {
-    const re = /(\[\[package\]\]\nname = "git-client"\nversion = ")[^"]+(")/;
-    if (!re.test(content)) throw new Error("Paquet git-client introuvable dans Cargo.lock");
+    const re = /(\[\[package\]\]\nname = "merathon"\nversion = ")[^"]+(")/;
+    if (!re.test(content)) throw new Error("Paquet merathon introuvable dans Cargo.lock");
     return content.replace(re, `$1${version}$2`);
   }
   const re = /(\[package\][^[]*?\nversion = ")[^"]+(")/;
