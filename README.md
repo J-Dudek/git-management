@@ -247,6 +247,8 @@ Les installeurs sont générés dans `git-client/src-tauri/target/release/bundle
 
 La branche `main` étant protégée, le commit de version est poussé avec le secret `RELEASE_TOKEN` : un token autorisé à contourner la protection (GitHub App ou token *fine-grained* limité à ce dépôt, permission « Contents : read and write »).
 
+Pour prévenir les utilisateurs d'un point particulier d'une version (action à faire après la mise à jour, changement de nom…), ajouter au corps d'un commit une ligne `Release-Note: le message`. Elle est reprise en tête des notes de version, dans une rubrique « À savoir », et s'affiche donc aussi dans la fenêtre de mise à jour de l'application.
+
 Vérifier localement la prochaine version : `node git-client/scripts/version.mjs next`.
 
 Les pull requests du dépôt partent du modèle [`.github/pull_request_template.md`](.github/pull_request_template.md) (type de changement, zone concernée, vérifications de la CI).
