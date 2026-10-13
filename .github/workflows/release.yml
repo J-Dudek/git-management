@@ -118,7 +118,7 @@ jobs:
       matrix:
         include:
           - platform: linux
-            os: ubuntu-latest
+            os: ubuntu-22.04 # glibc 2.35 : le binaire tourne sur Ubuntu 22.04+ et Debian 12+
             targets: deb,appimage
           - platform: windows
             os: windows-latest
@@ -146,7 +146,7 @@ jobs:
           workspaces: git-client/src-tauri
 
       - name: Install Linux deps
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.platform == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
