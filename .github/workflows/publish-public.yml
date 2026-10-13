@@ -1,18 +1,33 @@
 name: Publish to public repo
 
+# Copie le contenu d'un tag sur le dépôt public (vitrine) et y pousse le même tag.
+# Appelé par le workflow « Release » : un tag poussé par GITHUB_TOKEN ne déclenche aucun workflow,
+# un déclenchement « on: push: tags » ne partirait donc pas. Relançable à la main pour un tag existant.
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag à publier (ex. v2.0.0)
+        required: true
+        type: string
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
+    env:
+      TAG: ${{ inputs.tag }}
     steps:
       - name: Checkout (private repo)
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag }}
           fetch-depth: 1
 
       - name: Export a clean snapshot
@@ -41,8 +56,8 @@ jobs:
           git config user.name "release-bot"
           git config user.email "release-bot@users.noreply.github.com"
           git add -A
-          git commit -m "Release ${GITHUB_REF_NAME}" || echo "Rien à publier"
-          git tag -f "${GITHUB_REF_NAME}"
+          git commit -m "Release ${TAG}" || echo "Rien à publier"
+          git tag -f "${TAG}"
           git push origin HEAD --tags --force
 
       # La release (notes, paquets, latest.json) est créée sur ce tag par le workflow « Release ».

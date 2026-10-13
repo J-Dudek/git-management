@@ -179,9 +179,19 @@ jobs:
           prerelease: false
           args: --bundles ${{ matrix.targets }}
 
+  # Contenu du tag et tag lui-même copiés sur le dépôt public, avant d'y créer la release.
+  public:
+    name: Dépôt public
+    needs: version
+    if: needs.version.outputs.version != ''
+    uses: ./.github/workflows/publish-public.yml
+    with:
+      tag: v${{ needs.version.outputs.version }}
+    secrets: inherit
+
   publish:
     name: Publication de la release
-    needs: [version, build]
+    needs: [version, build, public]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -234,7 +244,7 @@ jobs:
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
 
       # Mêmes notes et mêmes fichiers sur le dépôt public : latest.json y est lu par l'application.
-      # Le tag y est poussé par le workflow « Publish to public repo » (d'où --verify-tag).
+      # Le tag y a été poussé par le job « Dépôt public » (d'où --verify-tag).
       - name: Release sur le dépôt public
         env:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
