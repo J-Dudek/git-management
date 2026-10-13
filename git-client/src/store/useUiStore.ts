@@ -17,6 +17,8 @@ export interface DialogOptions {
   danger?: boolean;
   /** Liste à rubriques sous le message (ex. notes de version), dans une zone défilante. */
   sections?: DialogSection[];
+  /** Lien affiché sous le champ de saisie, ouvert dans le navigateur. */
+  link?: { label: string; url: string };
 }
 
 export interface DialogSection {
