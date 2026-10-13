@@ -15,9 +15,9 @@ body:
     attributes:
       label: Avant de commencer
       options:
-        - label: J'ai vérifié qu'aucune [issue existante](https://github.com/J-Dudek/git-management/issues?q=is%3Aissue) ne décrit déjà ce problème.
+        - label: J'ai vérifié qu'aucune [issue existante](https://github.com/J-Dudek/merathon/issues?q=is%3Aissue) ne décrit déjà ce problème.
           required: true
-        - label: Le problème se produit avec la [dernière version](https://github.com/J-Dudek/git-management/releases/latest) (menu « Rechercher des mises à jour… »).
+        - label: Le problème se produit avec la [dernière version](https://github.com/J-Dudek/merathon/releases/latest) (menu « Rechercher des mises à jour… »).
           required: false
 
   - type: textarea

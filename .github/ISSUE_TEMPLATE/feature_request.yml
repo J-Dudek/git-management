@@ -15,7 +15,7 @@ body:
     attributes:
       label: Avant de commencer
       options:
-        - label: J'ai vérifié qu'aucune [issue existante](https://github.com/J-Dudek/git-management/issues?q=is%3Aissue+label%3Aenhancement) ne propose déjà cette idée (sinon, ajoute un 👍 dessus).
+        - label: J'ai vérifié qu'aucune [issue existante](https://github.com/J-Dudek/merathon/issues?q=is%3Aissue+label%3Aenhancement) ne propose déjà cette idée (sinon, ajoute un 👍 dessus).
           required: true
 
   - type: textarea

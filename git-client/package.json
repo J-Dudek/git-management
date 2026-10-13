@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/J-Dudek/git-management.git"
+    "url": "https://github.com/J-Dudek/merathon.git"
   },
   "type": "module",
   "scripts": {

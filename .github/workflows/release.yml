@@ -5,7 +5,8 @@ name: Release
 #   2. calcul de la version d'après les commits depuis le dernier tag (Conventional Commits),
 #      mise à jour des fichiers applicatifs et du CHANGELOG.md, commit sur main et tag vX.Y.Z ;
 #   3. génération des paquets Linux / Windows dans une release GitHub ;
-#   4. publication de la release, une fois tous les paquets générés.
+#   4. publication de la release, une fois tous les paquets générés, puis copie sur le dépôt public
+#      (vitrine) : c'est lui qui sert les téléchargements et les mises à jour automatiques.
 # Si les commits ne justifient pas de release (docs, ci, test, chore, style), on s'arrête après les tests.
 on:
   push:
@@ -19,6 +20,10 @@ concurrency:
 
 permissions:
   contents: read
+
+env:
+  # Dépôt public (vitrine) : ce dépôt-ci est privé, ses releases ne sont pas téléchargeables.
+  PUBLIC_REPO: J-Dudek/merathon
 
 jobs:
   tests:
@@ -64,6 +69,7 @@ jobs:
         if: steps.next.outputs.version != ''
         env:
           VERSION: ${{ steps.next.outputs.version }}
+          PUBLIC_REPOSITORY: ${{ env.PUBLIC_REPO }} # liens du changelog vers le dépôt public
         run: |
           node git-client/scripts/version.mjs apply "$VERSION"
           # Section ajoutée en tête de CHANGELOG.md ; ses notes deviennent le corps de la release.
@@ -196,7 +202,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          BASE="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          BASE="https://github.com/$PUBLIC_REPO/releases/download/$TAG"
           platforms='{}'
           add() { # add <plateforme> <fichier> : échoue si le paquet ou sa signature manque
             [ -f "assets/$2" ] && [ -f "assets/$2.sig" ] || { echo "::error::Paquet ou signature manquant : $2"; exit 1; }
@@ -226,4 +232,18 @@ jobs:
       - name: Publier la release
         run: |
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
-          echo "Release $TAG publiée : https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"
+
+      # Mêmes notes et mêmes fichiers sur le dépôt public : latest.json y est lu par l'application.
+      # Le tag y est poussé par le workflow « Publish to public repo » (d'où --verify-tag).
+      - name: Release sur le dépôt public
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          # En cas de relance : la release existe déjà, seuls ses fichiers sont remplacés.
+          if ! gh release view "$TAG" --repo "$PUBLIC_REPO" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$PUBLIC_REPO" --draft --verify-tag \
+              --title "Merathon $TAG" --notes-file notes.md
+          fi
+          gh release upload "$TAG" assets/* SHA256SUMS.txt --repo "$PUBLIC_REPO" --clobber
+          gh release edit "$TAG" --repo "$PUBLIC_REPO" --draft=false --latest
+          echo "Release $TAG publiée : https://github.com/$PUBLIC_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

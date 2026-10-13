@@ -19,8 +19,9 @@ jobs:
         run: |
           mkdir ../snapshot
           git archive HEAD | tar -x -C ../snapshot
-          # Retirer ce qui ne doit pas être public
-          rm -rf ../snapshot/.github ../snapshot/docs-internes
+          # Retirer ce qui ne doit pas être public : de .github, seuls les modèles d'issues sont gardés
+          find ../snapshot/.github -mindepth 1 -maxdepth 1 ! -name ISSUE_TEMPLATE -exec rm -rf {} +
+          rm -rf ../snapshot/docs-internes
 
       - name: Clone public repo
         env:
@@ -44,11 +45,4 @@ jobs:
           git tag -f "${GITHUB_REF_NAME}"
           git push origin HEAD --tags --force
 
-      - name: Create release on public repo
-        env:
-          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --repo J-Dudek/merathon \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+      # La release (notes, paquets, latest.json) est créée sur ce tag par le workflow « Release ».
