@@ -1,0 +1,54 @@
+name: Publish to public repo
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (private repo)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Export a clean snapshot
+        run: |
+          mkdir ../snapshot
+          git archive HEAD | tar -x -C ../snapshot
+          # Retirer ce qui ne doit pas être public
+          rm -rf ../snapshot/.github ../snapshot/docs-internes
+
+      - name: Clone public repo
+        env:
+          DEPLOY_KEY: ${{ secrets.PUBLIC_REPO_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          git clone git@github.com:monorg/mon-projet-public.git ../public
+
+      - name: Replace content and push
+        run: |
+          cd ../public
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a ../snapshot/. .
+          git config user.name "release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "Release ${GITHUB_REF_NAME}" || echo "Rien à publier"
+          git tag -f "${GITHUB_REF_NAME}"
+          git push origin HEAD --tags --force
+
+      - name: Create release on public repo
+        env:
+          GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo monorg/mon-projet-public \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes
