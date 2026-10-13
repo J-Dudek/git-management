@@ -30,7 +30,7 @@ jobs:
           echo "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan github.com >> ~/.ssh/known_hosts
-          git clone git@github.com:monorg/mon-projet-public.git ../public
+          git clone git@github.com:J-Dudek/merathon.git ../public
 
       - name: Replace content and push
         run: |
@@ -49,6 +49,6 @@ jobs:
           GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            --repo monorg/mon-projet-public \
+            --repo J-Dudek/merathon \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes
