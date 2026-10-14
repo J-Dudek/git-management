@@ -1,13 +1,15 @@
 name: Release
 
 # À chaque merge sur main :
-#   1. tests (workflow CI) ;
-#   2. calcul de la version d'après les commits depuis le dernier tag (Conventional Commits),
-#      mise à jour des fichiers applicatifs et du CHANGELOG.md, commit sur main et tag vX.Y.Z ;
-#   3. génération des paquets Linux / Windows dans une release GitHub ;
-#   4. publication de la release, une fois tous les paquets générés, puis copie sur le dépôt public
-#      (vitrine) : c'est lui qui sert les téléchargements et les mises à jour automatiques.
-# Si les commits ne justifient pas de release (docs, ci, test, chore, style), on s'arrête après les tests.
+#   1. en parallèle : les tests (workflow CI) et, si les commits justifient une release, la génération
+#      des paquets Linux / Windows avec la nouvelle version appliquée (rien n'est encore publié) ;
+#   2. seulement si tests et paquets réussissent : mise à jour des fichiers et du CHANGELOG.md, commit sur
+#      main, tag vX.Y.Z et brouillon de release avec les paquets ;
+#   3. publication de la release, puis copie sur le dépôt public (vitrine) : c'est lui qui sert les
+#      téléchargements et les mises à jour automatiques.
+# Les paquets sont générés avant le commit de version, à partir du même contenu : le job « Version, tag
+# et brouillon » vérifie que les fichiers versionnés sont identiques à ceux des paquets.
+# Si les commits ne justifient pas de release (docs, ci, test, chore, style), seuls les tests tournent.
 on:
   push:
     branches: [main]
@@ -31,21 +33,16 @@ jobs:
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     uses: ./.github/workflows/ci.yml
 
-  version:
-    name: Version et tag
-    needs: tests
+  plan:
+    name: Prochaine version
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     outputs:
       version: ${{ steps.next.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # historique et tags complets pour calculer la version
-          # main est protégée (ruleset) : le push du commit de version passe par un token
-          # autorisé à la contourner (secret RELEASE_TOKEN). À défaut, GITHUB_TOKEN.
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -64,73 +61,31 @@ jobs:
             echo "Aucun changement applicatif depuis la dernière release : pas de nouvelle version." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Mise à jour des fichiers et du changelog, commit et tag
-        id: release
-        if: steps.next.outputs.version != ''
-        env:
-          VERSION: ${{ steps.next.outputs.version }}
-          PUBLIC_REPOSITORY: ${{ env.PUBLIC_REPO }} # liens du changelog vers le dépôt public
-        run: |
-          node git-client/scripts/version.mjs apply "$VERSION"
-          # Section ajoutée en tête de CHANGELOG.md ; ses notes deviennent le corps de la release.
-          {
-            echo "changelog<<CHANGELOG_EOF"
-            node git-client/scripts/version.mjs changelog "$VERSION"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add git-client/package.json git-client/package-lock.json \
-            git-client/src-tauri/Cargo.toml git-client/src-tauri/Cargo.lock \
-            git-client/src-tauri/tauri.conf.json CHANGELOG.md
-          git commit -m "chore(release): v$VERSION [skip ci]"
-          git tag -a "v$VERSION" -m "Merathon v$VERSION"
-          # Commit et tag poussés ensemble : soit les deux, soit aucun.
-          git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "v$VERSION"
-
-      # Brouillon créé ici, une seule fois : si chaque job de paquets créait le sien en parallèle,
-      # on obtiendrait deux brouillons pour le même tag, chacun avec la moitié des paquets.
-      - name: Brouillon de release
-        if: steps.next.outputs.version != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: v${{ steps.next.outputs.version }}
-          CHANGELOG: ${{ steps.release.outputs.changelog }}
-        run: |
-          {
-            echo "## Merathon — Git Repository Manager $TAG"
-            echo
-            echo "$CHANGELOG"
-            echo
-            cat .github/release-footer.md
-          } > "$RUNNER_TEMP/notes.md"
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
-            --title "Merathon $TAG" --notes-file "$RUNNER_TEMP/notes.md"
-
+  # Paquets générés pendant les tests, à partir du commit fusionné et de la version appliquée localement :
+  # le même contenu que le futur commit de version. Ils ne sont publiés qu'une fois les tests passés.
   build:
     name: Paquets ${{ matrix.platform }}
-    needs: version
-    if: needs.version.outputs.version != ''
-    permissions:
-      contents: write
+    needs: plan
+    if: needs.plan.outputs.version != ''
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux
             os: ubuntu-22.04 # glibc 2.35 : le binaire tourne sur Ubuntu 22.04+ et Debian 12+
-            targets: deb,appimage
+            bundles: deb,appimage
           - platform: windows
             os: windows-latest
-            targets: nsis,msi
+            bundles: nsis,msi
 
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     env:
-      TAG: v${{ needs.version.outputs.version }}
+      VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: v${{ needs.version.outputs.version }} # le commit de version, avec les fichiers à jour
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -158,47 +113,142 @@ jobs:
         working-directory: git-client
         run: npm ci
 
-      - name: Build & publish release
-        uses: tauri-apps/tauri-action@v0
+      # Empreinte (arbre git) des fichiers versionnés : le job de release la compare à son commit de version.
+      - name: Appliquer la version
+        run: |
+          node git-client/scripts/version.mjs apply "$VERSION"
+          git add -- $VERSIONED_FILES
+          mkdir -p dist
+          git write-tree > dist/version-tree.txt
+          echo "Arbre versionné : $(cat dist/version-tree.txt)"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSIONED_FILES: >-
+            git-client/package.json git-client/package-lock.json git-client/src-tauri/Cargo.toml
+            git-client/src-tauri/Cargo.lock git-client/src-tauri/tauri.conf.json
+
+      - name: Build
+        working-directory: git-client
+        env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Identifiants client OAuth intégrés au binaire (publics : variables ou secrets du dépôt)
           # (les anciens noms GIT_CLIENT_* des variables du dépôt restent lus)
           MERATHON_GITHUB_CLIENT_ID: ${{ vars.MERATHON_GITHUB_CLIENT_ID || secrets.MERATHON_GITHUB_CLIENT_ID || vars.GIT_CLIENT_GITHUB_CLIENT_ID || secrets.GIT_CLIENT_GITHUB_CLIENT_ID }}
           MERATHON_GITLAB_CLIENT_ID: ${{ vars.MERATHON_GITLAB_CLIENT_ID || secrets.MERATHON_GITLAB_CLIENT_ID || vars.GIT_CLIENT_GITLAB_CLIENT_ID || secrets.GIT_CLIENT_GITLAB_CLIENT_ID }}
+        run: npx tauri build --bundles ${{ matrix.bundles }}
+
+      # Paquets et signatures (.sig, lues pour latest.json), sous leurs noms de release.
+      - name: Rassembler les paquets
+        run: |
+          shopt -s nullglob
+          bundle=git-client/src-tauri/target/release/bundle
+          cp $bundle/deb/*.deb* $bundle/appimage/*.AppImage* $bundle/nsis/*.exe* $bundle/msi/*.msi* dist/
+          ls -l dist
+
+      - name: Conserver les paquets
+        uses: actions/upload-artifact@v6
         with:
-          projectPath: git-client
-          tagName: ${{ env.TAG }}
-          releaseName: "Merathon ${{ env.TAG }}"
-          # Paquets ajoutés au brouillon créé par le job « Version et tag » (notes comprises).
-          releaseDraft: true
-          # latest.json (manifeste des mises à jour automatiques) est écrit par le job de publication :
-          # ici, les jobs Linux et Windows le complèteraient en parallèle et le dernier écraserait l'autre.
-          includeUpdaterJson: false
-          prerelease: false
-          args: --bundles ${{ matrix.targets }}
+          name: paquets-${{ matrix.platform }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Version, tag et brouillon
+    needs: [tests, plan, build]
+    if: needs.plan.outputs.version != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: v${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # tags complets pour le changelog
+          # main est protégée (ruleset) : le push du commit de version passe par un token
+          # autorisé à la contourner (secret RELEASE_TOKEN). À défaut, GITHUB_TOKEN.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Télécharger les paquets
+        uses: actions/download-artifact@v7
+        with:
+          pattern: paquets-*
+          path: paquets
+
+      - name: Mise à jour des fichiers et du changelog, commit et tag
+        id: release
+        env:
+          PUBLIC_REPOSITORY: ${{ env.PUBLIC_REPO }} # liens du changelog vers le dépôt public
+          VERSIONED_FILES: >-
+            git-client/package.json git-client/package-lock.json git-client/src-tauri/Cargo.toml
+            git-client/src-tauri/Cargo.lock git-client/src-tauri/tauri.conf.json
+        run: |
+          node git-client/scripts/version.mjs apply "$VERSION"
+          git add -- $VERSIONED_FILES
+          # Les paquets doivent avoir été générés à partir exactement de ces fichiers.
+          tree="$(git write-tree)"
+          for f in paquets/*/version-tree.txt; do
+            if [ "$(cat "$f")" != "$tree" ]; then
+              echo "::error::Paquets générés avec d'autres fichiers versionnés ($f : $(cat "$f"), attendu $tree)"
+              exit 1
+            fi
+          done
+          # Section ajoutée en tête de CHANGELOG.md ; ses notes deviennent le corps de la release.
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            node git-client/scripts/version.mjs changelog "$VERSION"
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): v$VERSION [skip ci]"
+          git tag -a "$TAG" -m "Merathon $TAG"
+          # Commit et tag poussés ensemble : soit les deux, soit aucun. Refusé si main a avancé entre-temps.
+          git push --atomic origin "HEAD:${GITHUB_REF_NAME}" "$TAG"
+
+      - name: Brouillon de release avec les paquets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGELOG: ${{ steps.release.outputs.changelog }}
+        run: |
+          {
+            echo "## Merathon — Git Repository Manager $TAG"
+            echo
+            echo "$CHANGELOG"
+            echo
+            cat .github/release-footer.md
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "Merathon $TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" \
+            paquets/*/Merathon_* --clobber
 
   # Contenu du tag et tag lui-même copiés sur le dépôt public, avant d'y créer la release.
   public:
     name: Dépôt public
-    needs: version
-    if: needs.version.outputs.version != ''
+    needs: [plan, release]
     uses: ./.github/workflows/publish-public.yml
     with:
-      tag: v${{ needs.version.outputs.version }}
+      tag: v${{ needs.plan.outputs.version }}
     secrets: inherit
 
   publish:
     name: Publication de la release
-    needs: [version, build, public]
+    needs: [plan, release, public]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: v${{ needs.version.outputs.version }}
+      TAG: v${{ needs.plan.outputs.version }}
     steps:
       - name: Télécharger les paquets
         run: |
@@ -211,7 +261,7 @@ jobs:
       # Entrées génériques : AppImage sous Linux, installateur NSIS sous Windows.
       - name: Manifeste des mises à jour (latest.json)
         env:
-          VERSION: ${{ needs.version.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
           BASE="https://github.com/$PUBLIC_REPO/releases/download/$TAG"
           platforms='{}'
