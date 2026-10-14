@@ -4,6 +4,7 @@ mod accounts;
 mod commands;
 mod forge;
 mod http;
+mod notifications;
 mod oauth;
 mod git;
 mod terminal;
@@ -20,8 +21,10 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             commands::open_new_window,
+            notifications::notify_desktop,
             commands::open_repository,
             commands::get_repo_info,
             commands::init_repository,

@@ -39,6 +39,9 @@ export const initRepository = (path: string) => invoke<void>("init_repository", 
 /** `repo` : dépôt à ouvrir directement dans la nouvelle fenêtre. */
 export const openNewWindow = (repo: string | null = null) => invoke<void>("open_new_window", { repo });
 
+/** Notification du système (voir notifications.rs pour Linux). */
+export const notifyDesktop = (title: string, body: string) => invoke<void>("notify_desktop", { title, body });
+
 /** `path` null : identité globale. */
 export const getIdentity = (path: string | null) => invoke<Identity>("get_identity", { path });
 export const setIdentity = (path: string | null, name: string, email: string) =>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  BookOpen, Bug, Check, Copy, ExternalLink, FolderGit2, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
+  Bell, BookOpen, Bug, Check, Copy, ExternalLink, FolderGit2, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
   SquareTerminal, Sun, type LucideIcon,
 } from "lucide-react";
 import { getTauriVersion, getVersion } from "@tauri-apps/api/app";
@@ -9,11 +9,13 @@ import { Modal } from "./Modal";
 import { Kbd } from "./Kbd";
 import {
   ROW_HEIGHTS, SYNC_INTERVALS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, ZOOM_STEPS, defaultDisplay, useDisplayStore, type Density,
-  type ThemePreference,
+  type NotificationSettings, type ThemePreference,
 } from "../store/useDisplayStore";
 import { useUiStore, type PreferencesSection as Section } from "../store/useUiStore";
 import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
+import { sendTestNotification } from "../lib/prNotifications";
 import { checkForUpdates } from "../lib/updater";
+import { errorMessage } from "../lib/actions";
 import { aboutReport, osLabel, REPO_URL, releaseUrl, versionLabel } from "../lib/about";
 import { appInfo, type AppInfo } from "../ipc/commands";
 import logo from "../assets/logo.webp";
@@ -270,7 +272,66 @@ function SyncSection() {
         <RefreshCw size={13} strokeWidth={1.75} className={syncing ? "animate-spin" : ""} />
         {syncing ? "Synchronisation…" : "Synchroniser maintenant"}
       </button>
+      <NotificationsGroup />
     </>
+  );
+}
+
+const NOTIFICATION_KINDS: { key: Exclude<keyof NotificationSettings, "enabled">; label: string }[] = [
+  { key: "opened", label: "Nouvelle PR / MR à traiter (assignée ou relecture demandée)" },
+  { key: "commits", label: "Nouveaux commits (hors mes propres PR / MR)" },
+  { key: "comments", label: "Nouveaux commentaires" },
+  { key: "ci", label: "CI passée ou en échec" },
+  { key: "review", label: "Approbation ou modifications demandées" },
+  { key: "badge", label: "Pastille sur l'icône : nombre de PR / MR avec du nouveau, non consultées" },
+];
+
+function NotificationsGroup() {
+  const settings = useDisplayStore((s) => s.notifications);
+  const update = useDisplayStore((s) => s.update);
+  const notify = useUiStore((s) => s.notify);
+  const set = (patch: Partial<NotificationSettings>) => update({ notifications: { ...settings, ...patch } });
+
+  async function test() {
+    try {
+      if (!(await sendTestNotification())) notify("error", "Les notifications système ne sont pas autorisées pour Merathon.");
+    } catch (e) {
+      notify("error", `Notification impossible : ${errorMessage(e)}`);
+    }
+  }
+
+  return (
+    <section className="mt-6">
+      <Group
+        title="Notifications"
+        description="À chaque synchronisation, l'activité de mes PR / MR (tous projets) : notification système si Merathon est en arrière-plan, simple bandeau sinon."
+      >
+        <label className="flex items-center gap-2 mb-2 font-medium">
+          <input type="checkbox" checked={settings.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+          Activer les notifications
+        </label>
+        <div className={`flex flex-col gap-1.5 pl-5 ${settings.enabled ? "" : "opacity-50"}`}>
+          {NOTIFICATION_KINDS.map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={settings[key]}
+                disabled={!settings.enabled}
+                onChange={(e) => set({ [key]: e.target.checked })}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+      </Group>
+      <button
+        onClick={() => void test()}
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10"
+      >
+        <Bell size={13} strokeWidth={1.75} />
+        Envoyer une notification d'essai
+      </button>
+    </section>
   );
 }
 

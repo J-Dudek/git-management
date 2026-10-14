@@ -29,6 +29,7 @@ import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
 import { startAutoSync } from "./lib/autoSync";
+import { useIconBadge } from "./lib/iconBadge";
 import { openDevtools } from "./ipc/commands";
 
 type LeftTab = "repo" | "accounts";
@@ -74,6 +75,9 @@ export default function App() {
 
   // Fetch et PR de chaque dépôt ouvert à intervalle régulier (Préférences) : les changements sont notifiés.
   useEffect(() => startAutoSync(syncInterval), [syncInterval]);
+
+  // Nombre de PR / MR avec du nouveau sur l'icône de l'application (Dock, barre des tâches, lanceur).
+  useIconBadge();
 
   // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
   useEffect(() => {
