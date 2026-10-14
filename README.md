@@ -239,14 +239,14 @@ Les installeurs sont générés dans `git-client/src-tauri/target/release/bundle
 
 - **À chaque push** (toutes branches) et sur les pull requests : tests Rust et frontend, lint, audit des dépendances (`.github/workflows/ci.yml`).
 - **À chaque merge sur `main`** (`.github/workflows/release.yml`) :
-  1. les mêmes tests ;
+  1. les mêmes tests et, **en parallèle**, le calcul de la prochaine version et la génération des paquets ;
   2. calcul de la version d'après les messages de commit depuis le dernier tag ([Conventional Commits](https://www.conventionalcommits.org)) :
      - `feat!:` ou `BREAKING CHANGE:` → version majeure,
      - `feat:` → version mineure,
      - `fix:`, `perf:`, `refactor:`, `build:` ou message libre → correctif,
      - uniquement `docs:`, `ci:`, `test:`, `chore:`, `style:` → pas de release ;
-  3. mise à jour de la version (`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`), commit `chore(release): vX.Y.Z` sur `main` et tag `vX.Y.Z` ;
-  4. génération des paquets Linux (`.deb`, `.AppImage`) et Windows (`.msi`, `.exe`) puis publication automatique de la release GitHub, une fois tous les paquets prêts (si une plateforme échoue, la release reste en brouillon).
+  3. génération des paquets Linux (`.deb`, `.AppImage`) et Windows (`.msi`, `.exe`) avec la nouvelle version appliquée (`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`), pendant que les tests tournent ; rien n'est encore publié ;
+  4. seulement si **les tests et tous les paquets** réussissent : commit `chore(release): vX.Y.Z` sur `main`, tag `vX.Y.Z` et release GitHub, publiée automatiquement. Le commit de version est vérifié identique aux fichiers dont les paquets ont été générés. Si un test ou une plateforme échoue, rien n'est tagué ni publié.
 
 La branche `main` étant protégée, le commit de version est poussé avec le secret `RELEASE_TOKEN` : un token autorisé à contourner la protection (GitHub App ou token *fine-grained* limité à ce dépôt, permission « Contents : read and write »).
 
