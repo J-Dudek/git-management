@@ -20,7 +20,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -31,6 +31,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: git-client/src-tauri
+          # Cache enregistré seulement sur main (via le workflow Release) : les branches et les PR le lisent
+          # sans écrire le leur (~1,5 Go chacun). Sinon le quota de 10 Go déborde et GitHub évince
+          # les caches des paquets de release, alors recompilés de zéro.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux deps
         if: matrix.os == 'ubuntu-latest'
@@ -50,7 +54,7 @@ jobs:
         run: cargo test
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -78,10 +82,10 @@ jobs:
     name: Audit de sécurité des dépendances
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
 
