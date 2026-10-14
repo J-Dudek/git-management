@@ -12,7 +12,7 @@ import {
   type ThemePreference,
 } from "../store/useDisplayStore";
 import { useUiStore, type PreferencesSection as Section } from "../store/useUiStore";
-import { syncOpenRepos } from "../lib/autoSync";
+import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
 import { checkForUpdates } from "../lib/updater";
 import { aboutReport, osLabel, REPO_URL, releaseUrl, versionLabel } from "../lib/about";
 import { appInfo, type AppInfo } from "../ipc/commands";
@@ -242,17 +242,8 @@ function syncTick(minutes: number): string {
 function SyncSection() {
   const interval = useDisplayStore((s) => s.syncInterval);
   const update = useDisplayStore((s) => s.update);
-  const [syncing, setSyncing] = useState(false);
+  const syncing = useSyncRunning();
   const index = Math.max(0, SYNC_INTERVALS.indexOf(interval));
-
-  async function syncNow() {
-    setSyncing(true);
-    try {
-      await syncOpenRepos();
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   return (
     <>
@@ -272,7 +263,7 @@ function SyncSection() {
         />
       </Group>
       <button
-        onClick={syncNow}
+        onClick={() => void syncOpenRepos()}
         disabled={syncing}
         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10 disabled:opacity-50"
       >

@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { fetchAllQuietly, getBranches, listRemotes } from "../ipc/commands";
 import { linkedForge, refreshOpenPullRequests } from "../components/PullRequestList";
 import { useAccountsStore } from "../store/useAccountsStore";
@@ -125,6 +126,23 @@ async function syncRepo(path: string): Promise<{ changes: RepoChanges; prLabel: 
 
 let running = false;
 const syncedListeners = new Set<() => void>();
+const runningListeners = new Set<() => void>();
+
+function setRunning(value: boolean) {
+  running = value;
+  runningListeners.forEach((l) => l());
+}
+
+/** Vrai pendant une synchronisation, qu'elle soit automatique ou lancée à la main. */
+export function useSyncRunning(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      runningListeners.add(listener);
+      return () => runningListeners.delete(listener);
+    },
+    () => running,
+  );
+}
 
 /** Appelé à la fin de chaque synchronisation ; renvoie la fonction de désinscription. */
 export function onSynced(listener: () => void): () => void {
@@ -137,7 +155,7 @@ export function onSynced(listener: () => void): () => void {
 /** Synchronise chaque dépôt ouvert et notifie les changements. Silencieux en cas d'erreur (hors ligne, accès refusé…). */
 export async function syncOpenRepos() {
   if (running) return;
-  running = true;
+  setRunning(true);
   try {
     for (const path of openRepos()) {
       // Une opération lancée par l'utilisateur (pull, push…) est en cours : on attendra le prochain passage.
@@ -151,7 +169,7 @@ export async function syncOpenRepos() {
       }
     }
   } finally {
-    running = false;
+    setRunning(false);
     syncedListeners.forEach((l) => l());
   }
 }
