@@ -545,12 +545,15 @@ function GraphResizer({ graphWidth, fullWidth }: { graphWidth: number; fullWidth
 
   return (
     <div
-      className="absolute inset-y-0 w-1 -ml-0.5 cursor-col-resize z-10 hover:bg-sky-400/40 active:bg-sky-400/60"
+      className="group absolute inset-y-0 w-1 -ml-0.5 cursor-col-resize z-10 hover:bg-sky-400/40 active:bg-sky-400/60"
       style={{ left: graphWidth }}
       onPointerDown={startResize}
       onDoubleClick={() => setGraphWidth(null)}
       title="Redimensionner l'arbre des branches (double-clic : tout afficher)"
-    />
+    >
+      {/* Fine bordure toujours visible pour repérer la poignée, comme celle des panneaux latéraux. */}
+      <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-overlay/10 group-hover:bg-transparent" />
+    </div>
   );
 }
 
