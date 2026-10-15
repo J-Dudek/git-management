@@ -28,6 +28,11 @@ export function pendingCount(lists: { accountId: string; data: MyPullRequests }[
 const isWindows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 const SIZE = 32;
 
+/** Image Tauri du canvas. Les pixels passent en tableau : un `Uint8ClampedArray` arrive en objet côté Rust. */
+function canvasImage(ctx: CanvasRenderingContext2D, width: number, height: number): Promise<Image> {
+  return Image.new(Array.from(ctx.getImageData(0, 0, width, height).data), width, height);
+}
+
 /** Pastille rouge avec le nombre (« 9+ » au-delà), pour l'icône superposée de la barre des tâches Windows. */
 async function overlayImage(count: number): Promise<Image | undefined> {
   const canvas = document.createElement("canvas");
@@ -45,7 +50,7 @@ async function overlayImage(count: number): Promise<Image | undefined> {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, SIZE / 2, SIZE / 2 + 1);
-  return Image.new(ctx.getImageData(0, 0, SIZE, SIZE).data, SIZE, SIZE);
+  return canvasImage(ctx, SIZE, SIZE);
 }
 
 /** Pastille sur l'icône : Dock (macOS), lanceur qui la gère (Linux), icône superposée (Windows). 0 l'efface. */
