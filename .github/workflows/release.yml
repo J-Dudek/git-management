@@ -277,7 +277,16 @@ jobs:
           add windows-x86_64-nsis   "Merathon_${VERSION}_x64-setup.exe"
           add windows-x86_64-msi    "Merathon_${VERSION}_x64_en-US.msi"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
-          jq -n --arg version "$VERSION" --rawfile notes notes.md --arg date "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
+          # Notes lues par l'application : celles de la release, puis le CHANGELOG.md du tag après un marqueur,
+          # pour afficher toutes les versions publiées depuis celle installée (voir git-client/src/lib/updater.ts).
+          {
+            cat notes.md
+            echo
+            echo "<!-- merathon:changelog -->"
+            gh api "repos/$GITHUB_REPOSITORY/contents/CHANGELOG.md?ref=$TAG" -H "Accept: application/vnd.github.raw" \
+              | sed -n '/^## /,$p'
+          } > updater-notes.md
+          jq -n --arg version "$VERSION" --rawfile notes updater-notes.md --arg date "$(date -u +%Y-%m-%dT%H:%M:%S.000Z)" \
             --argjson platforms "$platforms" \
             '{version: $version, notes: ($notes | rtrimstr("\n")), pub_date: $date, platforms: $platforms}' > assets/latest.json
           cat assets/latest.json
