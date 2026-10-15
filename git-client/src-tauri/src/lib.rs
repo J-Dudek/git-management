@@ -26,6 +26,7 @@ pub fn run() {
             commands::open_new_window,
             notifications::notify_desktop,
             notifications::close_desktop_notification,
+            notifications::is_wsl,
             commands::open_repository,
             commands::get_repo_info,
             commands::init_repository,

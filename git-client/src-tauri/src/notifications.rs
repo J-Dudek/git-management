@@ -55,6 +55,19 @@ pub async fn close_desktop_notification(id: u32) -> Result<(), String> {
     }
 }
 
+/// Merathon tourne dans WSL : la pastille du nombre de PR est alors dessinée dans l'icône de la fenêtre.
+#[tauri::command]
+pub fn is_wsl() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        crate::is_wsl()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 #[cfg(target_os = "linux")]
 mod linux {
     use std::collections::HashMap;
