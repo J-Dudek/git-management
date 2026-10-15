@@ -61,6 +61,12 @@ pub fn open_repository(path: String) -> Result<git::RepoInfo, GitError> {
     with_repo(&path, git::repo_info)
 }
 
+/// Ajoute un dépôt appartenant à un autre utilisateur à `safe.directory` pour pouvoir l'ouvrir.
+#[tauri::command]
+pub fn trust_repository(path: String) -> Result<(), GitError> {
+    git::trust_repo(&path)
+}
+
 #[tauri::command]
 pub fn get_repo_info(path: String) -> Result<git::RepoInfo, GitError> {
     with_repo(&path, git::repo_info)
