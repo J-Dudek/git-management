@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  Bell, BookOpen, Bug, Check, Copy, ExternalLink, FolderGit2, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
+  Accessibility, Bell, BookOpen, Bug, Check, Copy, ExternalLink, FolderGit2, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
   SquareTerminal, Sun, Trophy, type LucideIcon,
 } from "lucide-react";
 import { getTauriVersion, getVersion } from "@tauri-apps/api/app";
@@ -22,6 +22,10 @@ import { sendTestNotification } from "../lib/prNotifications";
 import { checkForUpdates } from "../lib/updater";
 import { errorMessage } from "../lib/actions";
 import { aboutReport, osLabel, REPO_URL, releaseUrl, versionLabel } from "../lib/about";
+import {
+  AUDIT, EVALUATED_VIEWS, ISSUES_URL, ORCA_PROTOCOL_URL, RGAA_GRID_URL, criteria, declaration, declarationMarkdown, formatPercent, scoreAfter,
+  viewsAtFullScore, type Finding,
+} from "../lib/accessibility";
 import { appInfo, type AppInfo } from "../ipc/commands";
 import logo from "../assets/logo.webp";
 
@@ -31,11 +35,12 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "sync", label: "Synchronisation", icon: RefreshCw },
   { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
   { id: "activity", label: "Mon activité", icon: Trophy },
+  { id: "accessibility", label: "Accessibilité", icon: Accessibility },
   { id: "about", label: "À propos", icon: Info },
 ];
 
 /** Rubriques sans réglage : pas de bouton « Réinitialiser ». */
-const READ_ONLY: Section[] = ["shortcuts", "activity", "about"];
+const READ_ONLY: Section[] = ["shortcuts", "activity", "accessibility", "about"];
 
 /** Préférences de l'application : appliquées immédiatement et partagées entre les fenêtres. */
 export function PreferencesDialog({ onClose }: { onClose: () => void }) {
@@ -60,10 +65,13 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
                   : "text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/5"
               }`}
             >
-              <Icon size={15} strokeWidth={1.75} className={section === id ? "text-[var(--color-accent)]" : ""} />
+              <Icon size={15} strokeWidth={1.75} className={section === id ? "text-[var(--color-accent-text)]" : ""} />
               {label}
               {id === "activity" && newRewards && (
-                <span className="ml-auto h-2 w-2 rounded-full bg-[var(--color-accent)]" aria-label="Nouvelles récompenses" />
+                <>
+                  <span className="ml-auto h-2 w-2 rounded-full bg-[var(--color-accent)]" aria-hidden />
+                  <span className="sr-only">, nouvelles récompenses</span>
+                </>
               )}
             </button>
           ))}
@@ -79,6 +87,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
             {section === "sync" && <SyncSection />}
             {section === "shortcuts" && <ShortcutsSection />}
             {section === "activity" && <ActivitySection />}
+            {section === "accessibility" && <AccessibilitySection />}
             {section === "about" && <AboutSection />}
           </div>
           {!READ_ONLY.includes(section) && (
@@ -135,7 +144,7 @@ function AppearanceSection() {
                   : "border-overlay/10 hover:border-overlay/25 hover:bg-overlay/5"
               }`}
             >
-              <Icon size={15} strokeWidth={1.75} className={theme === value ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"} />
+              <Icon size={15} strokeWidth={1.75} className={theme === value ? "text-[var(--color-accent-text)]" : "text-[var(--color-muted)]"} />
               <span className="font-medium">{label}</span>
             </button>
           ))}
@@ -148,6 +157,8 @@ function AppearanceSection() {
         value={`${Math.round(zoom * 100)} %`}
       >
         <Slider
+          label="Taille de l'interface"
+          valueText={`${Math.round(zoom * 100)} %`}
           min={0}
           max={ZOOM_STEPS.length - 1}
           value={index}
@@ -215,6 +226,8 @@ function TerminalSection() {
       <SectionTitle title="Terminal" subtitle="Terminal intégré du panneau du bas." />
       <Group title="Taille du texte" description="S'applique aussi aux terminaux déjà ouverts." value={`${fontSize} px`}>
         <Slider
+          label="Taille du texte du terminal"
+          valueText={`${fontSize} px`}
           min={TERMINAL_FONT_MIN}
           max={TERMINAL_FONT_MAX}
           value={fontSize}
@@ -270,6 +283,8 @@ function SyncSection() {
         value={syncLabel(interval)}
       >
         <Slider
+          label="Intervalle de synchronisation"
+          valueText={syncLabel(interval)}
           min={0}
           max={SYNC_INTERVALS.length - 1}
           value={index}
@@ -320,15 +335,16 @@ function NotificationsGroup() {
         title="Notifications"
         description="À chaque synchronisation, l'activité de mes PR / MR (tous projets) : notification système si Merathon est en arrière-plan, simple bandeau sinon."
       >
-        <label className="flex items-center gap-2 mb-2 font-medium">
-          <input type="checkbox" checked={settings.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+        <label className="flex items-center gap-2 mb-3 font-medium">
+          <input type="checkbox" className="h-4 w-4" checked={settings.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
           Activer les notifications
         </label>
-        <div className={`flex flex-col gap-1.5 pl-5 ${settings.enabled ? "" : "opacity-50"}`}>
+        <div className={`flex flex-col gap-2.5 pl-6 ${settings.enabled ? "" : "opacity-50"}`}>
           {NOTIFICATION_KINDS.map(({ key, label }) => (
             <label key={key} className="flex items-center gap-2">
               <input
                 type="checkbox"
+                className="h-4 w-4"
                 checked={settings[key]}
                 disabled={!settings.enabled}
                 onChange={(e) => set({ [key]: e.target.checked })}
@@ -362,6 +378,18 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
     ],
   },
   {
+    group: "Navigation au clavier",
+    items: [
+      ["Menu contextuel de l'élément actif", "Maj+F10"],
+      ["Graphe : commit précédent / suivant", "↑ / ↓"],
+      ["Graphe : premier / dernier commit", "Origine / Fin"],
+      ["Barre latérale : sélectionner", "Espace"],
+      ["Barre latérale : extraire, appliquer, ouvrir", "Entrée"],
+      ["Menu : choix précédent / suivant", "↑ / ↓"],
+      ["Sortir du terminal intégré", "Ctrl+Maj+J"],
+    ],
+  },
+  {
     group: "Onglets et fenêtres",
     items: [
       ["Nouvel onglet", "Ctrl+T"],
@@ -392,10 +420,10 @@ const SHORTCUTS: { group: string; items: [string, string][] }[] = [
 function ShortcutsSection() {
   return (
     <>
-      <SectionTitle title="Raccourcis clavier" subtitle="Quand le terminal a le focus, les touches vont au shell." />
+      <SectionTitle title="Raccourcis clavier" subtitle="Quand le terminal a le focus, les touches vont au shell, sauf Ctrl+Maj+C, Ctrl+Maj+V et Ctrl+Maj+J (sortir du terminal)." />
       {SHORTCUTS.map(({ group, items }) => (
         <div key={group} className="mb-5">
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{group}</p>
+          <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{group}</h4>
           <div className="rounded-lg border border-overlay/10 divide-y divide-overlay/5">
             {items.map(([label, keys]) => (
               <div key={label} className="flex items-center justify-between px-3 py-2">
@@ -461,9 +489,9 @@ function AboutSection() {
       <div className="mb-5 flex items-center gap-4">
         <img src={logo} alt="" className="h-14 w-14 shrink-0 rounded-xl" />
         <div className="min-w-0">
-          <h2 className="text-base font-semibold">
+          <h3 className="text-base font-semibold">
             Merathon {version && <span className="ml-1 font-mono text-xs font-normal text-[var(--color-muted)]">v{version}</span>}
-          </h2>
+          </h3>
           <p className="mt-0.5 text-[var(--color-muted)]">Git Repository Manager — client Git graphique de bureau.</p>
         </div>
       </div>
@@ -530,6 +558,10 @@ const BADGE_STYLES: Record<Tier, string> = {
   2: "border-amber-400 bg-amber-400/20 shadow-[0_0_12px_rgb(251_191_36/0.35)]",
 };
 
+/** Anneau de focus clavier des badges (focusables pour lire leur infobulle). */
+const FOCUS_RING =
+  "outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--color-bg-elevated)]";
+
 const rewardDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" });
 
 function ActivitySection() {
@@ -547,7 +579,7 @@ function ActivitySection() {
         {MILESTONE_KINDS.map((kind) => (
           <div key={kind} className="rounded-lg border border-overlay/10 bg-overlay/[0.03] px-3 py-2.5">
             <p className="flex items-center gap-1.5 text-[var(--color-muted)]">
-              <span className="celebrate-emoji">{kindEmojis(kind)[0]}</span>
+              <span className="celebrate-emoji" aria-hidden>{kindEmojis(kind)[0]}</span>
               {KIND_LABELS[kind]}
             </p>
             <p className="mt-1 text-lg font-semibold tabular-nums">{milestones.counts[kind]}</p>
@@ -561,7 +593,15 @@ function ActivitySection() {
         const rewards = milestones.rewards.filter((r) => r.kind === kind && !r.surprise).sort((a, b) => a.count - b.count);
         return (
           <Group key={kind} title={KIND_LABELS[kind]} description={`Prochain palier : ${next} ${KIND_UNITS[kind]}`} value={`${count} / ${next}`}>
-            <div className="mb-3 h-1.5 rounded-full bg-overlay/10 overflow-hidden">
+            <div
+              role="progressbar"
+              aria-label={`${KIND_LABELS[kind]} : progression vers le prochain palier`}
+              aria-valuemin={0}
+              aria-valuemax={next}
+              aria-valuenow={count}
+              aria-valuetext={`${count} sur ${next}`}
+              className="mb-3 h-1.5 rounded-full bg-overlay/10 overflow-hidden"
+            >
               <div className="h-full rounded-full bg-[var(--color-accent)]" style={{ width: `${Math.min(100, (count / next) * 100)}%` }} />
             </div>
             <div className="flex flex-wrap gap-2">
@@ -587,17 +627,22 @@ function ActivitySection() {
 function RewardBadge({ reward, isNew }: { reward: Reward; isNew: boolean }) {
   const tier = reward.surprise ? 0 : milestoneTier(reward.kind, reward.count);
   const date = reward.at === null ? "Date inconnue" : `Obtenu le ${rewardDate.format(reward.at)}`;
+  const label = `${rewardLabel(reward)}, ${date.toLowerCase()}${isNew ? ", nouveau" : ""}`;
   return (
     <Tooltip title={rewardLabel(reward)} lines={[date]}>
+      {/* Focusable : au clavier aussi, l'infobulle donne la date. */}
       <div
-        className={`relative flex h-11 min-w-11 flex-col items-center justify-center rounded-full border-2 px-1.5 ${
+        role="img"
+        tabIndex={0}
+        aria-label={label}
+        className={`relative flex h-11 min-w-11 flex-col items-center justify-center rounded-full border-2 px-1.5 ${FOCUS_RING} ${
           reward.surprise ? "border-green-400/60 bg-green-400/15" : BADGE_STYLES[tier]
         }`}
       >
         <span className="celebrate-emoji text-sm leading-none">{reward.surprise ? "🍀" : kindEmojis(reward.kind)[0]}</span>
         <span className="text-[10px] font-semibold leading-tight tabular-nums">{reward.count}</span>
         {isNew && (
-          <span className="absolute -top-2.5 -right-2.5 rounded-full bg-[var(--color-accent)] px-1 text-[8px] font-bold uppercase leading-[14px] text-white">
+          <span className="absolute -top-2.5 -right-2.5 rounded-full bg-[var(--color-accent-solid)] px-1 text-[8px] font-bold uppercase leading-[14px] text-white">
             nouveau
           </span>
         )}
@@ -610,10 +655,198 @@ function RewardBadge({ reward, isNew }: { reward: Reward; isNew: boolean }) {
 function LockedBadge() {
   return (
     <Tooltip title="Prochaine récompense" lines={["Continuez pour la découvrir"]}>
-      <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-overlay/20 text-[var(--color-muted)]">
+      <div
+        role="img"
+        tabIndex={0}
+        aria-label="Prochaine récompense, à découvrir"
+        className={`flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-overlay/20 text-[var(--color-muted)] ${FOCUS_RING}`}
+      >
         <span className="celebrate-emoji text-sm opacity-60">🔒</span>
       </div>
     </Tooltip>
+  );
+}
+
+// ---------------------------------------------------------------- Accessibilité
+
+const auditDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(`${AUDIT.date}T12:00:00`));
+
+function AccessibilitySection() {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(declarationMarkdown());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  const tiles: [string, string, string][] = [
+    ["Score Lighthouse", formatPercent(scoreAfter()), `${formatPercent(AUDIT.scoreBefore)} avant corrections`],
+    ["Vues à 100 %", `${viewsAtFullScore()} / ${EVALUATED_VIEWS.length * 2}`, "thèmes sombre et clair"],
+    ["Conformité RGAA", "Non conforme", "audit complet à réaliser"],
+  ];
+
+  return (
+    <>
+      <SectionTitle title="Accessibilité" subtitle="Compte rendu de l'évaluation et déclaration d'accessibilité de Merathon." />
+
+      <div className="mb-6 grid grid-cols-3 gap-2.5">
+        {tiles.map(([label, value, hint]) => (
+          <div key={label} className="rounded-lg border border-overlay/10 bg-overlay/[0.03] px-3 py-2.5">
+            <p className="text-[var(--color-muted)]">{label}</p>
+            <p className="mt-1 whitespace-nowrap text-base font-semibold tabular-nums">{value}</p>
+            <p className="text-[10px] text-[var(--color-muted)]">{hint}</p>
+          </div>
+        ))}
+      </div>
+
+      <Group title="Méthode" description={`Évaluation du ${auditDate}, référence : ${AUDIT.standard}.`}>
+        <BulletList items={AUDIT.tools} />
+        <p className="mt-2 text-[11px] text-[var(--color-muted)]">{AUDIT.environment}</p>
+      </Group>
+
+      <Group
+        title="Grille d'audit RGAA"
+        description="106 critères pré-remplis pour préparer l'audit complet, et protocole de test avec le lecteur d'écran Orca."
+        value={`${AUDIT.rgaaGrid.NT} à tester`}
+      >
+        <div className="mb-3 grid grid-cols-4 gap-2 text-center">
+          {([["C", "Conformes"], ["NC", "Non conformes"], ["NA", "Non applicables"], ["NT", "Non testés"]] as const).map(([key, label]) => (
+            <div key={key} className="rounded-md border border-overlay/10 px-2 py-1.5">
+              <p className="text-base font-semibold tabular-nums">{AUDIT.rgaaGrid[key]}</p>
+              <p className="text-[10px] text-[var(--color-muted)]">{label}</p>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => void openUrl(RGAA_GRID_URL)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/15 hover:bg-overlay/5"
+          >
+            <ExternalLink size={13} strokeWidth={1.75} />
+            Grille RGAA
+          </button>
+          <button
+            onClick={() => void openUrl(ORCA_PROTOCOL_URL)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/15 hover:bg-overlay/5"
+          >
+            <ExternalLink size={13} strokeWidth={1.75} />
+            Protocole de test Orca
+          </button>
+        </div>
+      </Group>
+
+      <Group title="Corrections apportées" value={String(AUDIT.fixes.length)}>
+        <FindingList items={AUDIT.fixes} />
+      </Group>
+
+      <Group title="Non-conformités connues" description="Relevées dans le code ou par les tests manuels." value={String(AUDIT.nonCompliant.length)}>
+        {AUDIT.nonCompliant.length ? (
+          <FindingList items={AUDIT.nonCompliant} />
+        ) : (
+          <p className="text-[11px] text-[var(--color-muted)]">Aucune à ce jour : toutes celles relevées ont été corrigées (voir ci-dessus).</p>
+        )}
+      </Group>
+
+      <Group title="Vérifications manuelles">
+        <BulletList items={AUDIT.manualChecks} />
+      </Group>
+
+      <Group title="Non évalué">
+        <BulletList items={AUDIT.notEvaluated} />
+      </Group>
+
+      <Group title="Vues évaluées" description="Score Lighthouse de chaque vue, en thème sombre puis en thème clair." value={String(EVALUATED_VIEWS.length)}>
+        <ul className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {EVALUATED_VIEWS.map((view) => (
+            <li key={view.name} className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="truncate" title={view.name}>{view.name}</span>
+              <span
+                className="shrink-0 font-mono text-[10px] text-[var(--color-muted)]"
+                aria-label={`${view.dark} % en thème sombre, ${view.light} % en thème clair`}
+              >
+                {view.dark} · {view.light}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </Group>
+
+      <Group title="Déclaration d'accessibilité" description="Sur le modèle de déclaration du RGAA 4.1.2.">
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button
+            onClick={() => void copy()}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/15 hover:bg-overlay/5"
+          >
+            {copied ? <Check size={13} strokeWidth={1.75} /> : <Copy size={13} strokeWidth={1.75} />}
+            {copied ? "Copiée" : "Copier en Markdown"}
+          </button>
+          <button
+            onClick={() => void openUrl(ISSUES_URL)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/15 hover:bg-overlay/5"
+          >
+            <ExternalLink size={13} strokeWidth={1.75} />
+            Signaler un problème d'accessibilité
+          </button>
+        </div>
+        <article aria-label="Déclaration d'accessibilité" className="rounded-lg border border-overlay/10 bg-overlay/[0.03] px-4 py-3 leading-relaxed">
+          {declaration().map((block) => (
+            <section key={block.heading} className="mb-3 last:mb-0">
+              <h5 className="mb-1 font-semibold">{block.heading}</h5>
+              {block.paragraphs?.map((p) => <p key={p} className="mb-1 text-[11px]"><Linkified text={p} /></p>)}
+              {block.list && <BulletList items={block.list} linkify />}
+            </section>
+          ))}
+        </article>
+      </Group>
+    </>
+  );
+}
+
+function BulletList({ items, linkify = false }: { items: string[]; linkify?: boolean }) {
+  return (
+    <ul className="list-disc pl-4 space-y-1 text-[11px]">
+      {items.map((item) => <li key={item}>{linkify ? <Linkified text={item} /> : item}</li>)}
+    </ul>
+  );
+}
+
+function FindingList({ items }: { items: Finding[] }) {
+  return (
+    <ul className="space-y-2">
+      {items.map((f) => (
+        <li key={f.title} className="rounded-md border border-overlay/10 px-3 py-2">
+          <p className="flex items-baseline justify-between gap-3">
+            <span className="font-medium">{f.title}</span>
+            <span className="shrink-0 font-mono text-[10px] text-[var(--color-muted)]">{criteria(f)}</span>
+          </p>
+          <p className="mt-0.5 text-[11px] text-[var(--color-muted)]">{f.detail}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Texte dont les adresses web s'ouvrent dans le navigateur. */
+function Linkified({ text }: { text: string }) {
+  // Sans la ponctuation qui termine la phrase.
+  const parts = text.split(/(https?:\/\/[^\s;,)]*[^\s;,).])/);
+  return parts.map((part, i) =>
+    i % 2 === 1 ? (
+      <a
+        key={part}
+        href={part}
+        onClick={(e) => {
+          e.preventDefault();
+          void openUrl(part);
+        }}
+        className="text-[var(--color-accent-text)] underline underline-offset-2 break-all"
+      >
+        {part}
+      </a>
+    ) : (
+      part
+    ),
   );
 }
 
@@ -622,7 +855,7 @@ function LockedBadge() {
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="mb-5">
-      <h2 className="text-base font-semibold">{title}</h2>
+      <h3 className="text-base font-semibold">{title}</h3>
       <p className="mt-0.5 text-[var(--color-muted)]">{subtitle}</p>
     </div>
   );
@@ -638,7 +871,7 @@ function Group({ title, description, value, children }: {
     <section className="mb-6">
       <div className="mb-2.5 flex items-start justify-between gap-4">
         <div>
-          <p className="font-semibold">{title}</p>
+          <h4 className="font-semibold">{title}</h4>
           {description && <p className="mt-0.5 text-[11px] text-[var(--color-muted)]">{description}</p>}
         </div>
         {value && (
@@ -651,7 +884,11 @@ function Group({ title, description, value, children }: {
 }
 
 /** Curseur à crans, avec graduations ; le cran par défaut est souligné. */
-function Slider({ min, max, value, onChange, ticks, defaultIndex }: {
+function Slider({ label, valueText, min, max, value, onChange, ticks, defaultIndex }: {
+  /** Nom annoncé par les lecteurs d'écran. */
+  label: string;
+  /** Valeur annoncée (« 110 % »), à la place du numéro du cran. */
+  valueText: string;
   min: number;
   max: number;
   value: number;
@@ -669,6 +906,8 @@ function Slider({ min, max, value, onChange, ticks, defaultIndex }: {
         step={1}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
+        aria-label={label}
+        aria-valuetext={valueText}
         className="pref-slider w-full"
         style={{ "--fill": `${percent}%` } as React.CSSProperties}
       />

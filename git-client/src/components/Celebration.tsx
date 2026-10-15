@@ -132,7 +132,8 @@ function step(ctx: CanvasRenderingContext2D, p: Particle, dt: number, alpha: num
   if (p.flip !== undefined) p.flip += (p.flipSpeed ?? 0) * dt;
 
   let fade = Math.min(1, (p.life - p.age) / 30) * alpha;
-  if (p.twinkle !== undefined && p.age > p.life * 0.55) fade *= 0.55 + 0.45 * Math.sin(p.twinkle + p.age * 0.9);
+  // Scintillement sous 3 Hz (0,28 rad par image à 60 Hz) : en dessous du seuil de clignotement des WCAG (2.3.1).
+  if (p.twinkle !== undefined && p.age > p.life * 0.55) fade *= 0.55 + 0.45 * Math.sin(p.twinkle + p.age * 0.28);
   if (fade <= 0) return;
   ctx.save();
   ctx.globalAlpha = fade;
@@ -295,11 +296,26 @@ const BANNER_BORDER: Record<Tier, string> = {
   2: "border-amber-400 border-2 celebrate-glow celebrate-gold",
 };
 
+/** Ajoute un point final si la phrase n'a pas déjà sa ponctuation (« ! », « ? »…). */
+const sentence = (text: string) => (/[.!?…]$/.test(text.trim()) ? text : `${text}.`);
+
 /** Animation festive d'un palier, par-dessus toute l'interface ; ne bloque pas les clics. */
 export function Celebration() {
   const current = useCelebrationStore((s) => s.current);
   const dismiss = useCelebrationStore((s) => s.dismiss);
   const canvas = useRef<HTMLCanvasElement>(null);
+
+  // Échap ferme la célébration, avant toute autre fenêtre (WCAG 2.2.2 : un contenu animé doit pouvoir être arrêté).
+  useEffect(() => {
+    if (!current) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      dismiss();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [current, dismiss]);
 
   useEffect(() => {
     if (!current) return;
@@ -312,18 +328,24 @@ export function Celebration() {
     };
   }, [current, dismiss]);
 
-  if (!current) return null;
+  // Zone d'annonce toujours présente : une zone créée en même temps que son texte n'est souvent pas lue.
+  const announcement = current ? `${sentence(current.title)} ${current.reason} ${sentence(current.next)}` : "";
+  const live = <div role="status" aria-live="polite" className="sr-only">{announcement}</div>;
+  if (!current) return live;
   const duration = durationOf(current);
   const progress = Math.min(100, (current.count / current.nextCount) * 100);
   return (
-    <div className="fixed inset-0 z-[10002] pointer-events-none" aria-live="polite" style={{ "--celebrate-ms": `${duration}ms` } as React.CSSProperties}>
-      <canvas ref={canvas} className="absolute inset-0 w-full h-full" />
+    <div className="fixed inset-0 z-[10002] pointer-events-none" style={{ "--celebrate-ms": `${duration}ms` } as React.CSSProperties}>
+      {live}
+      <canvas ref={canvas} className="absolute inset-0 w-full h-full" aria-hidden />
       {current.effect === "trophy" && current.tier < 2 && !current.surprise && (
-        <div className="absolute left-1/2 top-[42%] text-[96px] leading-none celebrate-trophy celebrate-emoji">🏆</div>
+        <div className="absolute left-1/2 top-[42%] text-[96px] leading-none celebrate-trophy celebrate-emoji" aria-hidden>🏆</div>
       )}
+      {/* Doublon visuel de la zone d'annonce : masqué aux lecteurs d'écran ; Échap ou un clic le ferme. */}
       <div
         key={current.id}
-        role="status"
+        aria-hidden
+        title="Cliquer ou Échap pour fermer"
         onClick={dismiss}
         className={`pointer-events-auto cursor-pointer absolute left-1/2 top-6 celebrate-banner overflow-hidden flex items-center gap-3 pl-4 pr-5 pt-3 pb-3.5 rounded-xl border bg-[var(--color-bg-elevated)]/95 shadow-2xl w-max max-w-[min(520px,90vw)] ${BANNER_BORDER[current.tier]}`}
       >

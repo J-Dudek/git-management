@@ -9,6 +9,7 @@ import { errorMessage } from "../lib/actions";
 import { pullRequestTitle } from "../lib/branches";
 import type { ForgeAccount, ForgeMilestone, ForgeUser, PrTemplate, PullRequestOptions } from "../types/forge";
 import { Button, Modal, inputClass } from "./Modal";
+import { fieldLabel } from "../lib/fieldLabel";
 
 /** Pull request à préparer : branche source, projet visé et, pour une branche locale, de quoi la pousser avant. */
 export interface PullRequestTarget {
@@ -348,7 +349,7 @@ function TagPicker({ label, choices, value, onChange, action }: {
       <div className="flex items-center">
         <span className={labelClass}>{label}</span>
         {action && (
-          <button className="ml-auto text-[10px] text-[var(--color-accent)] hover:underline" onClick={action.run}>
+          <button className="ml-auto text-[10px] text-[var(--color-accent-text)] hover:underline" onClick={action.run}>
             {action.label}
           </button>
         )}
@@ -369,6 +370,7 @@ function TagPicker({ label, choices, value, onChange, action }: {
       <input
         className={inputClass}
         placeholder={choices.length ? "Rechercher…" : "Aucun choix disponible"}
+        {...fieldLabel(`${label} : ajouter`)}
         disabled={!choices.length}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
