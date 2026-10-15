@@ -16,6 +16,7 @@ import { CloneDialog } from "./components/CloneDialog";
 import { Welcome } from "./components/Welcome";
 import { Dialog } from "./components/Dialog";
 import { Toasts } from "./components/Toasts";
+import { Celebration, DevCelebrationButton } from "./components/Celebration";
 import { InteractiveRebaseDialog } from "./components/InteractiveRebaseDialog";
 import { useRepoStore } from "./store/useRepoStore";
 import { useAccountsStore } from "./store/useAccountsStore";
@@ -186,6 +187,8 @@ export default function App() {
       {rebaseBase && repoPath && <InteractiveRebaseDialog base={rebaseBase} onClose={() => setRebaseBase(null)} />}
       <Dialog />
       <Toasts />
+      <Celebration />
+      {import.meta.env.DEV && <DevCelebrationButton />}
     </div>
   );
 }

@@ -1,17 +1,22 @@
 import { useEffect, useState } from "react";
 import {
   Bell, BookOpen, Bug, Check, Copy, ExternalLink, FolderGit2, Info, Keyboard, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
-  SquareTerminal, Sun, type LucideIcon,
+  SquareTerminal, Sun, Trophy, type LucideIcon,
 } from "lucide-react";
 import { getTauriVersion, getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Modal } from "./Modal";
 import { Kbd } from "./Kbd";
+import { Tooltip } from "./Tooltip";
 import {
   ROW_HEIGHTS, SYNC_INTERVALS, TERMINAL_FONT_MAX, TERMINAL_FONT_MIN, ZOOM_STEPS, defaultDisplay, useDisplayStore, type Density,
   type NotificationSettings, type ThemePreference,
 } from "../store/useDisplayStore";
 import { useUiStore, type PreferencesSection as Section } from "../store/useUiStore";
+import { hasNewRewards, useCelebrationStore } from "../store/useCelebrationStore";
+import {
+  MILESTONE_KINDS, kindEmojis, milestoneTier, nextMilestone, rewardLabel, type MilestoneKind, type Reward, type Tier,
+} from "../lib/milestones";
 import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
 import { sendTestNotification } from "../lib/prNotifications";
 import { checkForUpdates } from "../lib/updater";
@@ -25,22 +30,27 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
   { id: "sync", label: "Synchronisation", icon: RefreshCw },
   { id: "shortcuts", label: "Raccourcis", icon: Keyboard },
+  { id: "activity", label: "Mon activité", icon: Trophy },
   { id: "about", label: "À propos", icon: Info },
 ];
 
 /** Rubriques sans réglage : pas de bouton « Réinitialiser ». */
-const READ_ONLY: Section[] = ["shortcuts", "about"];
+const READ_ONLY: Section[] = ["shortcuts", "activity", "about"];
 
 /** Préférences de l'application : appliquées immédiatement et partagées entre les fenêtres. */
 export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>(() => useUiStore.getState().preferencesSection);
   const reset = useDisplayStore((s) => s.reset);
+  // « Mon activité » n'apparaît qu'après la première récompense : avant, elle gâcherait la surprise.
+  const hasRewards = useCelebrationStore((s) => s.milestones.rewards.length > 0);
+  const newRewards = useCelebrationStore((s) => hasNewRewards(s.milestones));
+  const sections = SECTIONS.filter((s) => s.id !== "activity" || hasRewards);
 
   return (
     <Modal title="Préférences" onClose={onClose} width="w-[720px]">
       <div className="flex h-[460px] max-h-[64vh] text-xs text-[var(--color-text)]">
         <nav className="w-48 shrink-0 p-2 border-r border-overlay/10 bg-shade/10 flex flex-col gap-0.5">
-          {SECTIONS.map(({ id, label, icon: Icon }) => (
+          {sections.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setSection(id)}
@@ -52,6 +62,9 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
             >
               <Icon size={15} strokeWidth={1.75} className={section === id ? "text-[var(--color-accent)]" : ""} />
               {label}
+              {id === "activity" && newRewards && (
+                <span className="ml-auto h-2 w-2 rounded-full bg-[var(--color-accent)]" aria-label="Nouvelles récompenses" />
+              )}
             </button>
           ))}
           <p className="mt-auto px-2.5 pb-1 text-[10px] leading-relaxed text-[var(--color-muted)]">
@@ -65,6 +78,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
             {section === "terminal" && <TerminalSection />}
             {section === "sync" && <SyncSection />}
             {section === "shortcuts" && <ShortcutsSection />}
+            {section === "activity" && <ActivitySection />}
             {section === "about" && <AboutSection />}
           </div>
           {!READ_ONLY.includes(section) && (
@@ -501,6 +515,105 @@ function AboutSection() {
 
       <p className="text-[10px] text-[var(--color-muted)]">© 2026 Julien Dudek — distribué sous licence MIT.</p>
     </>
+  );
+}
+
+// ---------------------------------------------------------------- Mon activité
+
+const KIND_LABELS: Record<MilestoneKind, string> = { commit: "Commits", branch: "Branches", pr: "PR / MR", merge: "Fusions" };
+const KIND_UNITS: Record<MilestoneKind, string> = { commit: "commits", branch: "branches", pr: "PR / MR", merge: "fusions" };
+
+/** Couleur d'un badge selon l'ampleur du palier : accent, argent, or. */
+const BADGE_STYLES: Record<Tier, string> = {
+  0: "border-[var(--color-accent)]/60 bg-[var(--color-accent)]/15",
+  1: "border-sky-300/70 bg-sky-300/15",
+  2: "border-amber-400 bg-amber-400/20 shadow-[0_0_12px_rgb(251_191_36/0.35)]",
+};
+
+const rewardDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" });
+
+function ActivitySection() {
+  const milestones = useCelebrationStore((s) => s.milestones);
+  // Ce qui est nouveau l'est pour toute la visite : la date de dernière visite est relue à l'ouverture seulement.
+  const [seenAt] = useState(() => useCelebrationStore.getState().milestones.seenAt);
+  useEffect(() => () => useCelebrationStore.getState().markSeen(), []);
+  const surprises = milestones.rewards.filter((r) => r.surprise);
+
+  return (
+    <>
+      <SectionTitle title="Mon activité" subtitle="Vos récompenses obtenues avec Merathon. Les prochaines restent une surprise." />
+
+      <div className="mb-6 grid grid-cols-4 gap-2.5">
+        {MILESTONE_KINDS.map((kind) => (
+          <div key={kind} className="rounded-lg border border-overlay/10 bg-overlay/[0.03] px-3 py-2.5">
+            <p className="flex items-center gap-1.5 text-[var(--color-muted)]">
+              <span className="celebrate-emoji">{kindEmojis(kind)[0]}</span>
+              {KIND_LABELS[kind]}
+            </p>
+            <p className="mt-1 text-lg font-semibold tabular-nums">{milestones.counts[kind]}</p>
+          </div>
+        ))}
+      </div>
+
+      {MILESTONE_KINDS.map((kind) => {
+        const count = milestones.counts[kind];
+        const next = nextMilestone(kind, count);
+        const rewards = milestones.rewards.filter((r) => r.kind === kind && !r.surprise).sort((a, b) => a.count - b.count);
+        return (
+          <Group key={kind} title={KIND_LABELS[kind]} description={`Prochain palier : ${next} ${KIND_UNITS[kind]}`} value={`${count} / ${next}`}>
+            <div className="mb-3 h-1.5 rounded-full bg-overlay/10 overflow-hidden">
+              <div className="h-full rounded-full bg-[var(--color-accent)]" style={{ width: `${Math.min(100, (count / next) * 100)}%` }} />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {rewards.map((r) => <RewardBadge key={r.count} reward={r} isNew={r.at !== null && r.at > seenAt} />)}
+              <LockedBadge />
+            </div>
+          </Group>
+        );
+      })}
+
+      {surprises.length > 0 && (
+        <Group title="Surprises" description="Hors palier, un commit sur 100 en moyenne déclenche une surprise.">
+          <div className="flex flex-wrap gap-2">
+            {surprises.map((r) => <RewardBadge key={`${r.count}-${r.at}`} reward={r} isNew={r.at !== null && r.at > seenAt} />)}
+          </div>
+        </Group>
+      )}
+    </>
+  );
+}
+
+/** Médaille d'une récompense obtenue ; la date et le libellé sont dans l'infobulle. */
+function RewardBadge({ reward, isNew }: { reward: Reward; isNew: boolean }) {
+  const tier = reward.surprise ? 0 : milestoneTier(reward.kind, reward.count);
+  const date = reward.at === null ? "Date inconnue" : `Obtenu le ${rewardDate.format(reward.at)}`;
+  return (
+    <Tooltip title={rewardLabel(reward)} lines={[date]}>
+      <div
+        className={`relative flex h-11 min-w-11 flex-col items-center justify-center rounded-full border-2 px-1.5 ${
+          reward.surprise ? "border-green-400/60 bg-green-400/15" : BADGE_STYLES[tier]
+        }`}
+      >
+        <span className="celebrate-emoji text-sm leading-none">{reward.surprise ? "🍀" : kindEmojis(reward.kind)[0]}</span>
+        <span className="text-[10px] font-semibold leading-tight tabular-nums">{reward.count}</span>
+        {isNew && (
+          <span className="absolute -top-2.5 -right-2.5 rounded-full bg-[var(--color-accent)] px-1 text-[8px] font-bold uppercase leading-[14px] text-white">
+            nouveau
+          </span>
+        )}
+      </div>
+    </Tooltip>
+  );
+}
+
+/** Prochaine médaille, cachée pour garder la surprise. */
+function LockedBadge() {
+  return (
+    <Tooltip title="Prochaine récompense" lines={["Continuez pour la découvrir"]}>
+      <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-dashed border-overlay/20 text-[var(--color-muted)]">
+        <span className="celebrate-emoji text-sm opacity-60">🔒</span>
+      </div>
+    </Tooltip>
   );
 }
 

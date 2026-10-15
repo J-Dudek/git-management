@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRepoStore } from "../store/useRepoStore";
 import { confirmAction, useUiStore } from "../store/useUiStore";
+import { useCelebrationStore } from "../store/useCelebrationStore";
 import { forgeClient } from "../api/forge";
 import { push } from "../ipc/commands";
 import { errorMessage } from "../lib/actions";
@@ -154,6 +155,7 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
       });
       const ref = isGitHub ? `#${pr.number}` : `!${pr.number}`;
       notify("success", `${isGitHub ? "Pull request" : "Merge request"} ${ref} créée`);
+      useCelebrationStore.getState().track("pr");
       if (warnings.length) notify("error", `${ref} créée, mais échec pour ${warnings.join(" ; ")}`);
       if (openAfter && pr.url) openUrl(pr.url);
       onClose();
