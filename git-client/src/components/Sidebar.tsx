@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { EyeOff } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, Cloud, EyeOff, FileBox, GitBranch, Package, Plus, RefreshCw, Tag, type LucideIcon } from "lucide-react";
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore, confirmAction, promptText } from "../store/useUiStore";
 import {
@@ -231,7 +231,7 @@ export function Sidebar() {
           renderBranch={(b, label, depth) => (
             <Row
               key={b.name}
-              icon="⎇"
+              icon={GitBranch}
               label={label}
               depth={depth}
               active={b.is_head}
@@ -262,7 +262,7 @@ export function Sidebar() {
               renderBranch={(b, label, depth) => (
                 <Row
                   key={b.name}
-                  icon="⟳"
+                  icon={GitBranch}
                   label={label}
                   depth={depth}
                   {...inGraph(b)}
@@ -284,7 +284,7 @@ export function Sidebar() {
           count={forgePrs.prs.length}
           onAdd={forgePrs.reload}
           addTitle={`Rafraîchir (${forge.projectPath})`}
-          addLabel="↻"
+          addIcon={RefreshCw}
         >
           <li><PullRequestList forge={forge} list={forgePrs} indent={24} /></li>
         </Group>
@@ -305,7 +305,7 @@ export function Sidebar() {
         {tags.map((t) => (
           <Row
             key={t.name}
-            icon="⌂"
+            icon={Tag}
             label={t.name}
             title={t.message ?? undefined}
             onClick={() => selectHash(t.target_hash)}
@@ -320,14 +320,14 @@ export function Sidebar() {
           count={submodules.length}
           onAdd={() => runGit(() => updateSubmodules(path), { busy: "Sous-modules…", success: "Sous-modules à jour" })}
           addTitle="Initialiser et mettre à jour tous les sous-modules"
-          addLabel="⟳"
+          addIcon={RefreshCw}
         >
           {submodules.map((sm) => {
             const state = SUBMODULE_STATES[sm.state];
             return (
               <Row
                 key={sm.name}
-                icon="▣"
+                icon={Package}
                 label={sm.path}
                 title={submoduleTitle(sm)}
                 onDoubleClick={() => sm.state !== "uninitialized" && openRepoAt(`${path}/${sm.path}`)}
@@ -370,7 +370,7 @@ export function Sidebar() {
               {lfs.patterns.map((p) => (
                 <Row
                   key={p}
-                  icon="◆"
+                  icon={FileBox}
                   label={p}
                   title="Motif suivi par Git LFS"
                   onContextMenu={(e) => openMenu(e, [
@@ -388,7 +388,7 @@ export function Sidebar() {
         {stashes.map((s) => (
           <Row
             key={s.hash}
-            icon="⊟"
+            icon={Archive}
             label={s.message.replace(/^On [^:]+: /, "")}
             title={s.message}
             onDoubleClick={() => runGit(() => stashApply(path, s.index, false), { success: "Stash appliqué" })}
@@ -403,14 +403,15 @@ export function Sidebar() {
   );
 }
 
-function Group({ title, count, children, defaultOpen = true, onAdd, addTitle, addLabel = "+" }: {
+function Group({ title, count, children, defaultOpen = true, onAdd, addTitle, addIcon: AddIcon = Plus }: {
   title: string;
   count: number;
   children: React.ReactNode;
   defaultOpen?: boolean;
   onAdd?: () => void;
   addTitle?: string;
-  addLabel?: string;
+  /** Icône du bouton d'action de la section (+ par défaut). */
+  addIcon?: LucideIcon;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -423,7 +424,7 @@ function Group({ title, count, children, defaultOpen = true, onAdd, addTitle, ad
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
           >
-            <span className="w-2" aria-hidden>{open ? "▾" : "▸"}</span>
+            <Chevron open={open} />
             {title}
             <span className="ml-1 font-normal opacity-60">{count}</span>
           </button>
@@ -435,7 +436,7 @@ function Group({ title, count, children, defaultOpen = true, onAdd, addTitle, ad
             aria-label={addTitle}
             onClick={onAdd}
           >
-            <span aria-hidden>{addLabel}</span>
+            <AddIcon size={13} />
           </button>
         )}
       </div>
@@ -458,8 +459,8 @@ function SubGroup({ title, children, onContextMenu }: {
         onClick={() => setOpen((v) => !v)}
         onContextMenu={onContextMenu}
       >
-        <span className="w-2 text-[9px] text-[var(--color-muted)]" aria-hidden>{open ? "▾" : "▸"}</span>
-        <span className="opacity-60" aria-hidden>☁</span>
+        <Chevron open={open} />
+        <Cloud size={12} className="opacity-60 shrink-0" />
         <span className="sr-only">Remote </span>
         {title}
       </button>
@@ -500,7 +501,7 @@ function BranchFolder({ name, count, depth, children }: {
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className="w-2 text-[9px] text-[var(--color-muted)]" aria-hidden>{open ? "▾" : "▸"}</span>
+        <Chevron open={open} />
         <span className="truncate">{name}</span>
         <span className="ml-1 text-[10px] opacity-50">
           <span aria-hidden>{count}</span>
@@ -524,8 +525,8 @@ type ClickKeys = Pick<React.MouseEvent, "ctrlKey" | "metaKey" | "shiftKey">;
  * Ligne de la barre latérale, utilisable au clavier : Espace la sélectionne (comme un clic, Ctrl / Maj compris),
  * Entrée fait l'action du double clic (extraire une branche, appliquer un stash…), la touche Menu ou Maj+F10 ouvre son menu.
  */
-function Row({ icon, label, active, selected, dimmed, solo, depth = 0, title, trailing, action, onClick, onDoubleClick, onContextMenu }: {
-  icon: string;
+function Row({ icon: Icon, label, active, selected, dimmed, solo, depth = 0, title, trailing, action, onClick, onDoubleClick, onContextMenu }: {
+  icon: LucideIcon;
   label: string;
   active?: boolean;
   /** Branche absente du graphe (masquée, ou hors du solo). */
@@ -571,7 +572,7 @@ function Row({ icon, label, active, selected, dimmed, solo, depth = 0, title, tr
         onContextMenu={onContextMenu}
         onKeyDown={onKeyDown}
       >
-        <span className="shrink-0 opacity-50 text-xs" aria-hidden>{icon}</span>
+        <Icon size={12} strokeWidth={1.75} className="shrink-0 opacity-60" />
         <span className="truncate text-xs flex-1">{label}</span>
         {solo && <span className="text-[9px] px-1 rounded bg-[var(--color-accent)]/20 text-[var(--color-accent-text)] shrink-0">solo</span>}
         {trailing}
@@ -623,12 +624,18 @@ function AheadBehind({ ahead, behind }: { ahead: number; behind: number }) {
   return (
     <span className="shrink-0 text-[10px] font-mono text-[var(--color-muted)]" title={`${ahead} en avance, ${behind} en retard`}>
       <span aria-hidden>
-        {ahead > 0 && <span>↑{ahead}</span>}
-        {behind > 0 && <span className="ml-0.5">↓{behind}</span>}
+        {ahead > 0 && <span className="inline-flex items-center"><ArrowUp size={10} />{ahead}</span>}
+        {behind > 0 && <span className="ml-0.5 inline-flex items-center"><ArrowDown size={10} />{behind}</span>}
       </span>
       <span className="sr-only">
         {[ahead > 0 && `, ${ahead} en avance`, behind > 0 && `, ${behind} en retard`].filter(Boolean).join("")}
       </span>
     </span>
   );
+}
+
+/** Flèche d'une section dépliable : vers le bas si elle est ouverte. */
+function Chevron({ open }: { open: boolean }) {
+  const Icon = open ? ChevronDown : ChevronRight;
+  return <Icon size={11} className="shrink-0 text-[var(--color-muted)]" />;
 }

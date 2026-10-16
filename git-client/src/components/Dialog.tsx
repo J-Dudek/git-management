@@ -1,3 +1,4 @@
+import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useUiStore } from "../store/useUiStore";
@@ -77,7 +78,7 @@ export function Dialog() {
             title={dialog.link.url}
             onClick={() => openUrl(dialog.link!.url).catch(() => {})}
           >
-            {dialog.link.label} <span aria-hidden>↗</span>
+            {dialog.link.label} <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
           </button>
         )}
         {dialog.checkbox && (

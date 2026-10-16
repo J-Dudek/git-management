@@ -1,3 +1,4 @@
+import { ArrowLeft, Check, TriangleAlert } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
@@ -130,9 +131,9 @@ export function ConflictViewer({ path }: { path: string }) {
           onClick={() => setCenter({ kind: "graph" })}
           title="Revenir au graphe (Échap)"
         >
-          <span aria-hidden>← </span>Graphe
+          <ArrowLeft size={12} className="inline mr-1 -mt-0.5" />Graphe
         </button>
-        <h2 className="text-[10px] font-bold uppercase tracking-widest text-red-400"><span aria-hidden>⚠ </span>Conflit</h2>
+        <h2 className="text-[10px] font-bold uppercase tracking-widest text-red-400"><TriangleAlert size={11} className="inline mr-1 -mt-0.5" />Conflit</h2>
         <span className="text-xs font-mono text-[var(--color-text)] truncate flex-1">{path}</span>
         <span className="text-[11px] text-[var(--color-muted)]">
           {sections.length} bloc{sections.length > 1 ? "s" : ""} — choisis la version à garder
@@ -209,7 +210,7 @@ function SidePanel({ label, lines, chosen, side, onChoose, bg, activeBg }: {
         title={`Garder la version « ${label} »`}
         className={`w-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/60 ${active ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"}`}
       >
-        {active && <span aria-hidden>✓</span>}
+        {active && <Check size={10} strokeWidth={3} />}
         <span className="sr-only">Garder la version </span>
         {label}
       </button>

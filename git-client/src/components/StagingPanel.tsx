@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { List, ListTree } from "lucide-react";
+import { ChevronDown, ChevronRight, List, ListTree, Minus, Plus, Undo2, X } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { useRepoStore, type CenterView, type CommitDraft } from "../store/useRepoStore";
 import { useUiStore, confirmAction } from "../store/useUiStore";
@@ -420,12 +420,12 @@ export function StagingPanel() {
                 onClear={clearSelection}
                 fallback={
                   <>
-                    <HeaderBtn title="Annuler toutes les modifications" onClick={() => discard(unstaged)}>↺</HeaderBtn>
+                    <HeaderBtn title="Annuler toutes les modifications" onClick={() => discard(unstaged)}><Undo2 size={12} /></HeaderBtn>
                     <HeaderBtn title="Tout indexer" onClick={() => runGit(() => stageAll(path))}>Tout indexer</HeaderBtn>
                   </>
                 }
               >
-                <HeaderBtn title="Annuler les modifications de la sélection" onClick={() => discard(pickedIn("u"))}>↺</HeaderBtn>
+                <HeaderBtn title="Annuler les modifications de la sélection" onClick={() => discard(pickedIn("u"))}><Undo2 size={12} /></HeaderBtn>
                 <HeaderBtn title="Indexer la sélection" onClick={() => runGit(() => stageFiles(path, pathsOf(pickedIn("u"))))}>Indexer</HeaderBtn>
               </SelectionActions>
               {conflicted.length === 0 && viewToggle}
@@ -443,15 +443,15 @@ export function StagingPanel() {
               onContextMenu={(e) => openMenu(e, fileMenu(f))}
               actions={
                 <>
-                  <RowBtn title={`Annuler les modifications de ${f.path}`} onClick={() => discard(targets(f))}>↺</RowBtn>
-                  <RowBtn title={`Indexer ${f.path}`} onClick={() => runGit(() => stageFiles(path, pathsOf(targets(f))))}>+</RowBtn>
+                  <RowBtn title={`Annuler les modifications de ${f.path}`} onClick={() => discard(targets(f))}><Undo2 size={12} /></RowBtn>
+                  <RowBtn title={`Indexer ${f.path}`} onClick={() => runGit(() => stageFiles(path, pathsOf(targets(f))))}><Plus size={13} /></RowBtn>
                 </>
               }
             />
           ), (files) => (
             <>
-              <RowBtn title="Annuler les modifications du dossier" onClick={() => discard(files)}>↺</RowBtn>
-              <RowBtn title="Indexer le dossier" onClick={() => runGit(() => stageFiles(path, files.map((f) => f.path)))}>+</RowBtn>
+              <RowBtn title="Annuler les modifications du dossier" onClick={() => discard(files)}><Undo2 size={12} /></RowBtn>
+              <RowBtn title="Indexer le dossier" onClick={() => runGit(() => stageFiles(path, files.map((f) => f.path)))}><Plus size={13} /></RowBtn>
             </>
           ))}
         </FileSection>
@@ -481,10 +481,10 @@ export function StagingPanel() {
               picked={isPicked(f)}
               onClick={(e) => handleClick(e, f)}
               onContextMenu={(e) => openMenu(e, fileMenu(f))}
-              actions={<RowBtn title={`Désindexer ${f.path}`} onClick={() => runGit(() => unstageFiles(path, pathsOf(targets(f))))}>−</RowBtn>}
+              actions={<RowBtn title={`Désindexer ${f.path}`} onClick={() => runGit(() => unstageFiles(path, pathsOf(targets(f))))}><Minus size={13} /></RowBtn>}
             />
           ), (files) => (
-            <RowBtn title="Désindexer le dossier" onClick={() => runGit(() => unstageFiles(path, files.map((f) => f.path)))}>−</RowBtn>
+            <RowBtn title="Désindexer le dossier" onClick={() => runGit(() => unstageFiles(path, files.map((f) => f.path)))}><Minus size={13} /></RowBtn>
           ))}
         </FileSection>
 
@@ -626,7 +626,7 @@ function SelectionActions({ files, onClear, fallback, children }: {
     <>
       <span className="text-[10px] text-[var(--color-accent-text)] self-center">{plural(files.length, "sélectionné")}</span>
       {children}
-      <HeaderBtn title="Annuler la sélection" onClick={onClear}>✕</HeaderBtn>
+      <HeaderBtn title="Annuler la sélection" onClick={onClear}><X size={12} /></HeaderBtn>
     </>
   );
 }
@@ -659,7 +659,7 @@ function FileTree({ nodes, depth, isOpen, onToggle, onFolderMenu, row, folderAct
         >
           {/* Le clic remonte à la ligne ; ce bouton rend le dossier pliable au clavier. */}
           <button type="button" aria-expanded={open} className="flex-1 min-w-0 flex items-center gap-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-accent)]/60 rounded">
-            <span className="w-3 shrink-0 text-[9px] text-[var(--color-muted)]" aria-hidden>{open ? "▾" : "▸"}</span>
+            {open ? <ChevronDown size={11} className="w-3 shrink-0 text-[var(--color-muted)]" /> : <ChevronRight size={11} className="w-3 shrink-0 text-[var(--color-muted)]" />}
             <span className="flex-1 truncate text-[11px] font-mono text-[var(--color-muted)]">
               <span className="sr-only">Dossier </span>
               {node.name}
@@ -728,7 +728,7 @@ function FileRow({ file, depth, shown, picked, onClick, onContextMenu, actions }
   );
 }
 
-/** Libellé à donner aux technologies d'assistance quand le contenu du bouton n'est qu'un symbole (↺, +, −, ✕…). */
+/** Libellé à donner aux technologies d'assistance quand le bouton n'affiche qu'une icône. */
 const symbolLabel = (title: string, children: React.ReactNode) =>
   typeof children === "string" && /\p{L}/u.test(children) ? undefined : title;
 

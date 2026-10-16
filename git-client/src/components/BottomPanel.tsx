@@ -1,3 +1,4 @@
+import { Check, ChevronDown, ChevronUp, Ellipsis, Eraser, RotateCw, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRepoStore } from "../store/useRepoStore";
 import { useTabsStore } from "../store/useTabsStore";
@@ -97,7 +98,7 @@ export function BottomPanel() {
 
         <div className="ml-auto flex items-center gap-1 pr-2">
           {panel.open && panel.tab === "terminal" && (
-            <HeaderBtn onClick={() => restartTerminal(tabId)} title="Relancer le shell">↻</HeaderBtn>
+            <HeaderBtn onClick={() => restartTerminal(tabId)} title="Relancer le shell"><RotateCw size={13} className="mx-auto" /></HeaderBtn>
           )}
           {journalVisible && (
             <>
@@ -105,7 +106,7 @@ export function BottomPanel() {
                 <input type="checkbox" checked={onlyRepo} onChange={(e) => setOnlyRepo(e.target.checked)} />
                 Ce dépôt seulement
               </label>
-              <HeaderBtn onClick={clear} title="Effacer le journal">⌫</HeaderBtn>
+              <HeaderBtn onClick={clear} title="Effacer le journal"><Eraser size={13} className="mx-auto" /></HeaderBtn>
             </>
           )}
           <HeaderBtn
@@ -113,7 +114,7 @@ export function BottomPanel() {
             title={panel.open ? "Replier (Ctrl+J)" : "Déplier (Ctrl+J)"}
             expanded={panel.open}
           >
-            {panel.open ? "▾" : "▴"}
+            {panel.open ? <ChevronDown size={14} className="mx-auto" /> : <ChevronUp size={14} className="mx-auto" />}
           </HeaderBtn>
         </div>
       </div>
@@ -147,11 +148,11 @@ function TerminalView({ tabId, path }: { tabId: number; path: string }) {
   return <div ref={ref} className="h-full w-full pl-2 pt-1" />;
 }
 
-const STATUS: Record<JournalEntry["status"], { icon: string; color: string }> = {
-  running: { icon: "…", color: "text-[var(--color-muted)]" },
-  success: { icon: "✓", color: "text-green-400" },
-  warning: { icon: "!", color: "text-yellow-400" },
-  error: { icon: "✗", color: "text-red-400" },
+const STATUS: Record<JournalEntry["status"], { icon: LucideIcon; label: string; color: string }> = {
+  running: { icon: Ellipsis, label: "en cours", color: "text-[var(--color-muted)]" },
+  success: { icon: Check, label: "réussie", color: "text-green-400" },
+  warning: { icon: TriangleAlert, label: "avertissement", color: "text-yellow-400" },
+  error: { icon: X, label: "échec", color: "text-red-400" },
 };
 
 function formatTime(ms: number) {
@@ -200,7 +201,10 @@ function JournalView({ repo }: { repo: string | null }) {
                     [{e.repo.split(/[\\/]/).pop()}]
                   </span>
                 )}
-                <span className={`shrink-0 w-3 text-center ${status.color}`}>{status.icon}</span>
+                <span className={`shrink-0 w-3 self-center ${status.color}`}>
+                  <status.icon size={12} strokeWidth={2.25} />
+                  <span className="sr-only">{status.label} : </span>
+                </span>
                 <span className="text-[var(--color-text)] truncate" title={e.command}>
                   <span className="text-[var(--color-accent-text)]">$ </span>
                   {e.command}

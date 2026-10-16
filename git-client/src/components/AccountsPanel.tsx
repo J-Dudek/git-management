@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleDot } from "lucide-react";
+import { CircleCheck, CircleDot, Ellipsis, ExternalLink, RotateCw } from "lucide-react";
 import { useAccountsStore, defaultBaseUrl } from "../store/useAccountsStore";
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore, confirmAction } from "../store/useUiStore";
@@ -353,7 +353,7 @@ function DeviceCodePanel({ device, onCancel }: { device: DeviceCode; onCancel: (
         className="text-[10px] text-sky-400 hover:underline"
         onClick={() => openUrl(device.verification_uri_complete ?? device.verification_uri)}
       >
-        {device.verification_uri} ↗
+        {device.verification_uri} <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
       </button>
       <p className="text-[11px] text-[var(--color-muted)]">En attente de la validation…</p>
       <SmallButton onClick={onCancel}>Annuler</SmallButton>
@@ -385,7 +385,7 @@ function TokenFields({ kind, url, token, onToken }: {
         title={url ? tokenHelpUrl(kind, url) : MISSING_URL}
         onClick={() => url && openUrl(tokenHelpUrl(kind, url))}
       >
-        {tokenHelpLabel(kind)} ↗
+        {tokenHelpLabel(kind)} <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
       </button>
     </>
   );
@@ -419,7 +419,7 @@ function ClientIdFields({ kind, url, clientId, onClientId, onUseDefault }: {
           title={url ? oauthAppHelpUrl(kind, url) : MISSING_URL}
           onClick={() => url && openUrl(oauthAppHelpUrl(kind, url))}
         >
-          Enregistrer une application ↗
+          Enregistrer une application <ExternalLink size={10} className="inline ml-0.5 -mt-0.5" />
         </button>
         {onUseDefault && (
           <>
@@ -502,7 +502,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
           { label: "Supprimer", danger: true, action: handleRemove },
         ])}
       >
-        <span aria-hidden>⋯</span>
+        <Ellipsis size={14} />
       </button>
       {menu && <ContextMenu menu={menu} onClose={close} />}
     </div>
@@ -558,7 +558,7 @@ function RepoIssuesSection() {
       title={`Issues · ${forge.projectPath} (${accountData?.issues.length ?? 0})`}
       action={
         <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" aria-label="Rafraîchir les issues" onClick={loadIssues}>
-          <span aria-hidden>↻</span>
+          <RotateCw size={12} />
         </button>
       }
     >

@@ -1,3 +1,4 @@
+import { Cloud, GitBranch, Tag, type LucideIcon } from "lucide-react";
 import { useRef, useState, useEffect, useMemo } from "react";
 import { useRepoStore } from "../store/useRepoStore";
 import { MIN_GRAPH_WIDTH, useUiStore, confirmAction } from "../store/useUiStore";
@@ -289,7 +290,7 @@ export function CommitGraph() {
     const tips = commit.refs.map(branchOf).filter((b): b is BranchInfo => !!b && !b.is_head);
     const localNames = new Set(tips.filter((b) => !b.is_remote).map((b) => b.upstream ?? ""));
     const shown = tips.filter((b) => !b.is_remote || !localNames.has(b.name)).slice(0, 2);
-    return shown.flatMap((b): MenuEntry[] => [{ header: `${b.is_remote ? "☁" : "⎇"} ${b.name}` }, ...branchActions(b), "separator"]);
+    return shown.flatMap((b): MenuEntry[] => [{ header: b.is_remote ? `${b.name} (distante)` : b.name }, ...branchActions(b), "separator"]);
   }
 
   useEffect(() => {
@@ -692,7 +693,7 @@ const REF_STYLES: Record<RefLabel["kind"], string> = {
   tag: "bg-amber-500/15 text-amber-300 border-amber-400/40",
 };
 
-const REF_ICONS: Record<RefLabel["kind"], string> = { head: "⎇", local: "⎇", remote: "☁", tag: "⌂" };
+const REF_ICONS: Record<RefLabel["kind"], LucideIcon> = { head: GitBranch, local: GitBranch, remote: Cloud, tag: Tag };
 
 /** Nature de l'étiquette, restituée à la place de son icône. */
 const REF_KINDS: Record<RefLabel["kind"], string> = { head: "branche courante", local: "branche", remote: "branche distante", tag: "tag" };
@@ -703,13 +704,14 @@ function RefBadge({ label, localOnly, onContextMenu }: {
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
   const title = label.kind === "head" ? `${label.name} (branche courante)` : label.name;
+  const Icon = REF_ICONS[label.kind];
   return (
     <span
       className={`px-1 text-[10px] rounded font-mono border whitespace-nowrap ${REF_STYLES[label.kind]} ${localOnly ? "border-dashed" : ""}`}
       title={localOnly ? `${title} — uniquement en local, absente des remotes` : title}
       onContextMenu={onContextMenu}
     >
-      <span aria-hidden>{REF_ICONS[label.kind]} </span>
+      <Icon size={10} className="inline mr-0.5 -mt-0.5" />
       <span className="sr-only">{REF_KINDS[label.kind]} </span>
       {label.name}
       {localOnly && <span className="ml-1 italic"><span aria-hidden>local</span><span className="sr-only">, uniquement en local</span></span>}

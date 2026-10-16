@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MessageSquare } from "lucide-react";
+import { Check, MessageSquare, RotateCw } from "lucide-react";
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
 import { compareRefs, fetchRemote, getCompareFileDiff } from "../ipc/commands";
@@ -292,7 +292,7 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
             }}
             title={`Fetch ${remoteName} puis recalculer`}
           >
-            <span aria-hidden>↻ </span>Fetch
+            <RotateCw size={11} className="inline mr-1 -mt-0.5" />Fetch
           </button>
         </div>
       </div>
@@ -452,7 +452,7 @@ function Thread({ thread, busy, onReply, onResolve }: {
         className="self-start text-[11px] text-[var(--color-muted)] hover:text-[var(--color-text)]"
         onClick={() => setOpen(true)}
       >
-        ✓ Fil résolu · {plural(thread.comments.length, "commentaire")} — afficher
+        <Check size={11} className="inline mr-1 -mt-0.5" />Fil résolu · {plural(thread.comments.length, "commentaire")} — afficher
       </button>
     );
   }

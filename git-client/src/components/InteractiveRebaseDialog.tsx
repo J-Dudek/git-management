@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRepoStore } from "../store/useRepoStore";
 import { interactiveRebase, rebaseTodo, type RebaseAction, type RebaseMode } from "../ipc/commands";
@@ -167,7 +168,7 @@ export function InteractiveRebaseDialog({ base, onClose }: { base: string; onClo
 
         <p className="text-[11px] text-[var(--color-muted)]">
           Du plus ancien (en haut) au plus récent.{" "}
-          {canReorder ? "Réordonne en glissant la poignée ⠿ ou avec les flèches. " : ""}
+          {canReorder ? "Réordonne en glissant la poignée ou avec les flèches. " : ""}
           Le rebase s'arrête sur un conflit (à résoudre) ou sur un commit « Modifier » ; tu peux l'annuler à tout moment.
         </p>
 
@@ -201,11 +202,11 @@ export function InteractiveRebaseDialog({ base, onClose }: { base: string; onClo
                           onPointerMove={onHandleMove}
                           onPointerUp={onHandleUp}
                         >
-                          ⠿
+                          <GripVertical size={14} />
                         </span>
                         <div className="flex">
-                          <button className="h-6 w-6 text-[9px] leading-3 text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Monter ${row.commit.short_hash}`}>▲</button>
-                          <button className="h-6 w-6 text-[9px] leading-3 text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={i === rows.length - 1} onClick={() => move(i, 1)} aria-label={`Descendre ${row.commit.short_hash}`}>▼</button>
+                          <button className="h-6 w-6 text-[9px] leading-3 text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Monter ${row.commit.short_hash}`}><ChevronUp size={14} className="mx-auto" /></button>
+                          <button className="h-6 w-6 text-[9px] leading-3 text-[var(--color-muted)] hover:text-[var(--color-text)] disabled:opacity-30" disabled={i === rows.length - 1} onClick={() => move(i, 1)} aria-label={`Descendre ${row.commit.short_hash}`}><ChevronDown size={14} className="mx-auto" /></button>
                         </div>
                       </>
                     )}

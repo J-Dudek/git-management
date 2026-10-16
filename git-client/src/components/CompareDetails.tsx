@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRepoStore, type Comparison } from "../store/useRepoStore";
 import { diffCommits } from "../ipc/commands";
@@ -42,7 +43,7 @@ export function CompareDetails({ comparison }: { comparison: Comparison }) {
       <div className="flex items-center gap-2 px-3 py-2 border-b border-overlay/10 shrink-0">
         <h2 className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)]">Comparaison</h2>
         <button className="ml-auto text-[var(--color-muted)] hover:text-[var(--color-text)] text-xs" title="Fermer la comparaison" aria-label="Fermer la comparaison" onClick={close}>
-          <span aria-hidden>✕</span>
+          <X size={13} />
         </button>
       </div>
 

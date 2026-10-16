@@ -1,3 +1,4 @@
+import { Download, FolderOpen, FolderPlus, X, type LucideIcon } from "lucide-react";
 import { useRepoStore } from "../store/useRepoStore";
 import logo from "../assets/logo.webp";
 
@@ -26,9 +27,9 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
         <p className="text-xs text-[var(--color-muted)] mt-4">Ouvre, crée ou clone un dépôt pour commencer</p>
       </div>
       <div className="flex gap-3">
-        <WelcomeBtn onClick={onOpen} icon="📂" label="Ouvrir" />
-        <WelcomeBtn onClick={onClone} icon="⇣" label="Cloner" />
-        <WelcomeBtn onClick={onInit} icon="✚" label="Initialiser" />
+        <WelcomeBtn onClick={onOpen} icon={FolderOpen} label="Ouvrir" />
+        <WelcomeBtn onClick={onClone} icon={Download} label="Cloner" />
+        <WelcomeBtn onClick={onInit} icon={FolderPlus} label="Initialiser" />
       </div>
       {recent.length > 0 && (
         <div className="w-full max-w-lg">
@@ -46,7 +47,7 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
                   aria-label={`Retirer ${path.split(/[\\/]/).pop()} de la liste`}
                   onClick={() => forget(path)}
                 >
-                  <span aria-hidden>✕</span>
+                  <X size={14} />
                 </button>
               </li>
             ))}
@@ -57,13 +58,13 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
   );
 }
 
-function WelcomeBtn({ onClick, icon, label }: { onClick: () => void; icon: string; label: string }) {
+function WelcomeBtn({ onClick, icon: Icon, label }: { onClick: () => void; icon: LucideIcon; label: string }) {
   return (
     <button
       onClick={onClick}
       className="w-28 h-24 flex flex-col items-center justify-center gap-2 rounded-lg border border-overlay/10 bg-overlay/5 hover:bg-overlay/10 transition-colors"
     >
-      <span className="text-2xl" aria-hidden>{icon}</span>
+      <Icon size={26} strokeWidth={1.5} className="text-[var(--color-muted)]" />
       <span className="text-xs text-[var(--color-text)]">{label}</span>
     </button>
   );

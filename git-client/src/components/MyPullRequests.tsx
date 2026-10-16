@@ -1,3 +1,4 @@
+import { RotateCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { prFreshness, seenKey, useSeenPrsStore } from "../store/useSeenPrsStore";
@@ -98,7 +99,7 @@ export function MyPullRequestsSection({ account, showAccount }: {
 
   const refresh = (
     <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" aria-label={`Rafraîchir mes ${prLabel}s`} onClick={reload}>
-      <span aria-hidden>↻</span>
+      <RotateCw size={12} />
     </button>
   );
   const status = (

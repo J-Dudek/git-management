@@ -1,9 +1,7 @@
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
 import { useTabsStore } from "../store/useTabsStore";
-import {
-  AppWindow, BookOpen, CloudDownload, FolderOpen, FolderPlus, History, Info, Monitor, Moon, RefreshCw, Settings, SquarePlus, Sun, X, type LucideIcon,
-} from "lucide-react";
+import { AppWindow, Archive, ArchiveRestore, ArrowDown, ArrowUp, BookOpen, ChevronDown, CloudDownload, FolderOpen, FolderPlus, GitBranch, History, Info, Monitor, Moon, RefreshCw, Settings, SquarePlus, Sun, X, type LucideIcon } from "lucide-react";
 import {
   createBranch, fetchRemote, openNewWindow, pull, push, stashApply, stashSave,
 } from "../ipc/commands";
@@ -161,12 +159,12 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
             className="w-6 h-6 rounded-md ring-1 ring-overlay/10 shrink-0 select-none"
           />
           <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</span>
-          <span className="text-[10px] text-[var(--color-muted)]" aria-hidden>▾</span>
+          <ChevronDown size={12} className="text-[var(--color-muted)] shrink-0" />
         </button>
       </Tooltip>
       {info && (
         <span className="text-xs font-mono text-[var(--color-accent-text)] truncate max-w-48" title="Branche courante">
-          {!info.interactive_rebase && !info.head_detached && <span aria-hidden>⎇ </span>}
+          {!info.interactive_rebase && !info.head_detached && <GitBranch size={12} className="inline mr-1 -mt-0.5" />}
           <span className="sr-only">Branche courante : </span>
           {headLabel(info)}
         </span>
@@ -191,7 +189,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
 
       <ToolBtn
         label="Pull"
-        icon="⇣"
+        icon={ArrowDown}
         badge={head?.behind}
         badgeLabel={(n) => `${n} commit${n > 1 ? "s" : ""} à récupérer`}
         disabled={disabled || !head}
@@ -203,7 +201,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       />
       <ToolBtn
         label="Push"
-        icon="⇡"
+        icon={ArrowUp}
         badge={head?.ahead}
         badgeLabel={(n) => `${n} commit${n > 1 ? "s" : ""} à envoyer`}
         disabled={disabled || !head}
@@ -213,10 +211,10 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
           { label: "Push forcé…", action: () => doPush(true), danger: true },
         ])}
       />
-      <ToolBtn label="Fetch" icon="⟳" disabled={disabled} onClick={doFetch} />
-      <ToolBtn label="Branche" icon="⎇" disabled={disabled || !info?.head_hash} onClick={doBranch} />
-      <ToolBtn label="Stash" icon="⊟" disabled={disabled} onClick={doStash} />
-      <ToolBtn label="Pop" icon="⊞" badge={stashes.length || undefined} badgeLabel={(n) => `${n} stash${n > 1 ? "es" : ""}`} disabled={disabled || stashes.length === 0} onClick={doPop} />
+      <ToolBtn label="Fetch" icon={RefreshCw} disabled={disabled} onClick={doFetch} />
+      <ToolBtn label="Branche" icon={GitBranch} disabled={disabled || !info?.head_hash} onClick={doBranch} />
+      <ToolBtn label="Stash" icon={Archive} disabled={disabled} onClick={doStash} />
+      <ToolBtn label="Pop" icon={ArchiveRestore} badge={stashes.length || undefined} badgeLabel={(n) => `${n} stash${n > 1 ? "es" : ""}`} disabled={disabled || stashes.length === 0} onClick={doPop} />
 
       {/* Opération en cours (Fetch…, Push…) : annoncée par une zone de statut toujours présente. */}
       <span role="status" className="text-xs text-[var(--color-muted)] ml-2">{busy ?? ""}</span>
@@ -230,7 +228,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
           title="Ouvrir une nouvelle fenêtre"
           aria-label="Ouvrir une nouvelle fenêtre"
         >
-          <span aria-hidden>⧉</span>
+          <AppWindow size={14} strokeWidth={1.75} />
         </button>
       </div>
 
@@ -274,15 +272,15 @@ function ThemeButton({ onOpen }: { onOpen: (e: React.MouseEvent, items: MenuEntr
       >
         <Icon size={14} strokeWidth={1.75} />
         {label}
-        <span className="text-[9px]" aria-hidden>▾</span>
+        <ChevronDown size={11} />
       </button>
     </Tooltip>
   );
 }
 
-function ToolBtn({ label, icon, badge, badgeLabel, disabled, onClick, onMenu }: {
+function ToolBtn({ label, icon: Icon, badge, badgeLabel, disabled, onClick, onMenu }: {
   label: string;
-  icon: string;
+  icon: LucideIcon;
   badge?: number;
   /** Signification de la pastille, restituée aux technologies d'assistance. */
   badgeLabel?: (n: number) => string;
@@ -299,7 +297,7 @@ function ToolBtn({ label, icon, badge, badgeLabel, disabled, onClick, onMenu }: 
         disabled={disabled}
         title={badge && badgeLabel ? `${label} (${badgeLabel(badge)})` : label}
       >
-        <span className="opacity-80" aria-hidden>{icon}</span>
+        <Icon size={13} strokeWidth={1.75} className="opacity-80 shrink-0" />
         {label}
         {!!badge && (
           <span className="text-[9px] px-1 rounded-full bg-[var(--color-accent-solid)] text-white leading-4">
@@ -316,7 +314,7 @@ function ToolBtn({ label, icon, badge, badgeLabel, disabled, onClick, onMenu }: 
           aria-label={`Options ${label}`}
           aria-haspopup="menu"
         >
-          <span aria-hidden>▾</span>
+          <ChevronDown size={12} />
         </button>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Check, CircleDashed, CircleX, ExternalLink, MinusCircle } from "lucide-react";
+import { ArrowRight, Check, CircleDashed, CircleX, ExternalLink, MinusCircle, RotateCw } from "lucide-react";
 import { forgeClient } from "../api/forge";
 import { useUiStore, confirmAction } from "../store/useUiStore";
 import { seenKey, useSeenPrsStore } from "../store/useSeenPrsStore";
@@ -326,7 +326,7 @@ function Header({ details, account, forgeName, onCheckout }: {
       </div>
       <div className="flex items-center gap-2 min-w-0">
         <span className="font-mono text-xs text-[var(--color-text)] truncate">{pr.sourceBranch}</span>
-        <span className="text-[var(--color-muted)]" aria-hidden>→</span>
+        <ArrowRight size={12} className="text-[var(--color-muted)] shrink-0" />
         <span className="sr-only">vers</span>
         <span className="font-mono text-xs text-[var(--color-text)] truncate">{pr.targetBranch}</span>
         <div className="ml-auto flex gap-2 shrink-0">
@@ -507,7 +507,7 @@ function MergeBox({ details, isGitHub, method, onMethod, removeSource, onRemoveS
           title="Actualiser le statut"
           aria-label="Actualiser le statut"
         >
-          <span aria-hidden>↻</span>
+          <RotateCw size={12} />
         </button>
         {details.canUpdateBranch && (
           <Button onClick={onUpdateBranch} disabled={!!pending}>

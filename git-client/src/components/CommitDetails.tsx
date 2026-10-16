@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRepoStore } from "../store/useRepoStore";
 import { getCommitDetails } from "../ipc/commands";
@@ -82,7 +83,7 @@ export function CommitDetails({ commit }: { commit: CommitInfo }) {
             if (center.kind === "diff" && center.source.type === "commit") setCenter({ kind: "graph" });
           }}
         >
-          <span aria-hidden>✕</span>
+          <X size={13} />
         </button>
       </div>
 

@@ -1,3 +1,4 @@
+import { ArrowRight, X } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useRepoStore } from "../store/useRepoStore";
@@ -181,7 +182,7 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
             <span className={labelClass}>Branche source</span>
             <input className={`${inputClass} font-mono`} readOnly value={sourceBranch} />
           </label>
-          <span className="pb-1.5 text-[var(--color-muted)]" aria-hidden>→</span>
+          <ArrowRight size={14} className="mb-2 shrink-0 text-[var(--color-muted)]" />
           <label className="flex flex-col gap-1 flex-1 min-w-0">
             <span className={labelClass}>Branche cible</span>
             <select className={`${inputClass} font-mono`} value={targetBranch} onChange={(e) => setTargetBranch(e.target.value)}>
@@ -372,7 +373,7 @@ function TagPicker({ label, choices, value, onChange, action }: {
               {colorOf(key) && <span className="w-2 h-2 rounded-full" style={{ background: colorOf(key) }} aria-hidden />}
               {key}
               <button className="text-[var(--color-muted)] hover:text-[var(--color-text)]" aria-label={`Retirer ${key}`} onClick={() => onChange(value.filter((v) => v !== key))}>
-                <span aria-hidden>×</span>
+                <X size={11} />
               </button>
             </span>
           ))}

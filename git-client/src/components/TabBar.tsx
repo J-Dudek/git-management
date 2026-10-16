@@ -1,3 +1,4 @@
+import { Plus, X } from "lucide-react";
 import { useRepoStore } from "../store/useRepoStore";
 import { useTabsStore, type RepoTab } from "../store/useTabsStore";
 
@@ -44,7 +45,7 @@ export function TabBar() {
                 aria-label={`Fermer l'onglet ${name}`}
                 title="Fermer l'onglet (Ctrl+W)"
               >
-                <span aria-hidden>×</span>
+                <X size={12} className="mx-auto" />
               </button>
             </div>
           );
@@ -56,7 +57,7 @@ export function TabBar() {
         title="Nouvel onglet (Ctrl+T)"
         aria-label="Nouvel onglet"
       >
-        <span aria-hidden>+</span>
+        <Plus size={14} />
       </button>
     </div>
   );

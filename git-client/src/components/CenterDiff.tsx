@@ -1,3 +1,4 @@
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRepoStore, type CenterView } from "../store/useRepoStore";
 import { applyLines, getCommitFileDiff, getCompareFileDiff, getDiff } from "../ipc/commands";
@@ -86,7 +87,7 @@ export function CenterDiff({ view }: { view: DiffView }) {
           onClick={() => setCenter({ kind: "graph" })}
           title="Revenir au graphe (Échap)"
         >
-          <span aria-hidden>← </span>Graphe
+          <ArrowLeft size={12} className="inline mr-1 -mt-0.5" />Graphe
         </button>
         <span className="text-xs font-mono text-[var(--color-text)] truncate select-text">{view.path}</span>
         <span className="text-[10px] px-1.5 rounded bg-overlay/10 text-[var(--color-muted)] shrink-0">{sourceLabel}</span>

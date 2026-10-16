@@ -1,3 +1,4 @@
+import { Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { FileDiff, DiffLine } from "../types/git";
 import type { LineAction } from "../ipc/commands";
@@ -145,7 +146,7 @@ export function DiffViewer({ diff, loading, staging, annotations }: Props) {
             title="Annuler la sélection"
             aria-label="Annuler la sélection"
           >
-            <span aria-hidden>✕</span>
+            <X size={12} />
           </button>
         </div>
       )}
@@ -234,7 +235,7 @@ function DiffLineRow({ line, selectable, selected, onToggle, annotations }: {
                   onComment(line);
                 }}
               >
-                <span aria-hidden>+</span>
+                <Plus size={12} strokeWidth={2.5} className="mx-auto" />
               </button>
             )}
           </td>

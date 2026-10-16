@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useUiStore, type Toast } from "../store/useUiStore";
 
 const TOAST_STYLES: Record<Toast["kind"], string> = {
@@ -28,7 +29,7 @@ export function Toasts() {
         >
           <span className="flex-1 break-words whitespace-pre-line select-text">{t.message}</span>
           <button className="opacity-60 hover:opacity-100" onClick={() => dismiss(t.id)} aria-label="Fermer la notification">
-            <span aria-hidden>✕</span>
+            <X size={13} />
           </button>
         </div>
       ))}

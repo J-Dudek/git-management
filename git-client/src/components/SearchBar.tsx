@@ -1,3 +1,4 @@
+import { Search, X } from "lucide-react";
 import { useRepoStore } from "../store/useRepoStore";
 import { fieldLabel } from "../lib/fieldLabel";
 import { filterCommits } from "../search/filterCommits";
@@ -14,7 +15,7 @@ export function SearchBar() {
 
   return (
     <div className="relative flex items-center">
-      <span className="absolute left-2 text-[var(--color-muted)] text-xs pointer-events-none" aria-hidden>⌕</span>
+      <Search size={12} className="absolute left-2 text-[var(--color-muted)] pointer-events-none" />
       <input
         type="text"
         value={query}
@@ -29,7 +30,7 @@ export function SearchBar() {
           onClick={() => setQuery("")}
           aria-label="Effacer la recherche"
         >
-          <span aria-hidden>✕</span>
+          <X size={12} />
         </button>
       )}
       {/* Nombre de résultats, annoncé pendant la saisie (RGAA 7.5). */}
