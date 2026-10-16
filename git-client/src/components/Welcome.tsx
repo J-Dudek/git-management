@@ -32,7 +32,7 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
       </div>
       {recent.length > 0 && (
         <div className="w-full max-w-lg">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)] mb-1">Récents</p>
+          <h2 className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-muted)] mb-1">Récents</h2>
           <ul className="border border-overlay/10 rounded divide-y divide-overlay/5">
             {recent.map((path) => (
               <li key={path} className="flex items-center group hover:bg-overlay/5">
@@ -41,11 +41,12 @@ export function Welcome({ onOpen, onInit, onClone, onOpenPath }: Props) {
                   <p className="text-[10px] text-[var(--color-muted)] font-mono truncate">{path}</p>
                 </button>
                 <button
-                  className="px-3 text-[var(--color-muted)] opacity-0 group-hover:opacity-100 hover:text-[var(--color-text)]"
+                  className="px-3 text-[var(--color-muted)] opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-[var(--color-text)]"
                   title="Retirer de la liste"
+                  aria-label={`Retirer ${path.split(/[\\/]/).pop()} de la liste`}
                   onClick={() => forget(path)}
                 >
-                  ✕
+                  <span aria-hidden>✕</span>
                 </button>
               </li>
             ))}
@@ -62,7 +63,7 @@ function WelcomeBtn({ onClick, icon, label }: { onClick: () => void; icon: strin
       onClick={onClick}
       className="w-28 h-24 flex flex-col items-center justify-center gap-2 rounded-lg border border-overlay/10 bg-overlay/5 hover:bg-overlay/10 transition-colors"
     >
-      <span className="text-2xl">{icon}</span>
+      <span className="text-2xl" aria-hidden>{icon}</span>
       <span className="text-xs text-[var(--color-text)]">{label}</span>
     </button>
   );

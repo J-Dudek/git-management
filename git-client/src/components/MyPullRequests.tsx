@@ -97,13 +97,13 @@ export function MyPullRequestsSection({ account, showAccount }: {
   }
 
   const refresh = (
-    <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" onClick={reload}>
-      ↻
+    <button className="text-xs text-[var(--color-muted)] hover:text-[var(--color-text)]" title="Rafraîchir" aria-label={`Rafraîchir mes ${prLabel}s`} onClick={reload}>
+      <span aria-hidden>↻</span>
     </button>
   );
   const status = (
     <>
-      {loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)] animate-pulse">Chargement…</p>}
+      {loading && <p className="px-3 py-1 text-xs text-[var(--color-muted)]">Chargement…</p>}
       {error && <p className="px-3 py-1 text-xs text-red-400 break-words">{error}</p>}
     </>
   );
@@ -152,7 +152,7 @@ export function MyPullRequestsSection({ account, showAccount }: {
 const CI_DOTS: Record<NonNullable<PrSummary["ci"]>, { className: string; label: string }> = {
   success: { className: "bg-green-400", label: "réussie" },
   failure: { className: "bg-red-400", label: "en échec" },
-  pending: { className: "bg-amber-300 animate-pulse", label: "en cours" },
+  pending: { className: "bg-amber-300", label: "en cours" },
 };
 
 /** État principal (brouillon, conflits, changements demandés…) et pastille de CI. Le brouillon est déjà signalé par la ligne. */

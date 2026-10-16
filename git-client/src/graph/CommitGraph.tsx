@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { useRepoStore } from "../store/useRepoStore";
-import { useUiStore, confirmAction } from "../store/useUiStore";
+import { MIN_GRAPH_WIDTH, useUiStore, confirmAction } from "../store/useUiStore";
 import { computeGraphLayout } from "./layout";
 import { filterCommits } from "../search/filterCommits";
 import { GraphCanvas, H_PADDING, LANE_WIDTH } from "./GraphCanvas";
@@ -20,6 +20,7 @@ import { squashPlan } from "../lib/squash";
 import { clickModifiers, clickSelection, EMPTY_SELECTION, pruneSelection, type MultiSelection } from "../lib/multiSelect";
 import { dispatchContextMenu, isContextMenuKey, listKeyIndex } from "../lib/keyboardContextMenu";
 import type { BranchInfo, CommitInfo, MergeResult, RefLabel } from "../types/git";
+import { resizeKeyDelta } from "../lib/resizeKeys";
 
 const INFO_OFFSET = 20;
 const OVERSCAN = 10;
@@ -428,8 +429,9 @@ export function CommitGraph() {
       onClick={() => selectOne(null)}
       title="Afficher les modifications en cours"
     >
-      <span className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-[var(--color-accent)]" />
-      <span className="italic">// WIP</span>
+      <span className="w-2.5 h-2.5 rounded-full border-2 border-dashed border-[var(--color-accent)]" aria-hidden />
+      <span className="italic"><span aria-hidden>// </span>WIP</span>
+      <span className="sr-only">, modifications en cours :</span>
       <span className="text-[var(--color-muted)]">
         {status.length} fichier{status.length > 1 ? "s" : ""} modifié{status.length > 1 ? "s" : ""}
       </span>
@@ -569,13 +571,30 @@ function GraphResizer({ graphWidth, fullWidth }: { graphWidth: number; fullWidth
     window.addEventListener("pointerup", up);
   }
 
+  // Au clavier : flèches gauche / droite (Maj : pas plus grand), Entrée : tout afficher.
+  function onKeyDown(e: React.KeyboardEvent) {
+    const delta = resizeKeyDelta(e, "x");
+    if (e.key === "Enter") setGraphWidth(null);
+    else if (delta === null) return;
+    else setGraphWidth(graphWidth + delta >= fullWidth ? null : graphWidth + delta);
+    e.preventDefault();
+  }
+
   return (
     <div
-      className="group absolute inset-y-0 w-1 -ml-0.5 cursor-col-resize z-10 hover:bg-sky-400/40 active:bg-sky-400/60"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Largeur de l'arbre des branches"
+      aria-valuenow={graphWidth}
+      aria-valuemin={MIN_GRAPH_WIDTH}
+      aria-valuemax={Math.max(fullWidth, graphWidth)}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className="group absolute inset-y-0 w-1 -ml-0.5 cursor-col-resize z-10 hover:bg-sky-400/40 active:bg-sky-400/60 focus-visible:bg-[var(--color-accent)] outline-none"
       style={{ left: graphWidth }}
       onPointerDown={startResize}
       onDoubleClick={() => setGraphWidth(null)}
-      title="Redimensionner l'arbre des branches (double-clic : tout afficher)"
+      title="Redimensionner l'arbre des branches (double-clic ou Entrée : tout afficher ; flèches au clavier)"
     >
       {/* Fine bordure toujours visible pour repérer la poignée, comme celle des panneaux latéraux. */}
       <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-overlay/10 group-hover:bg-transparent" />
@@ -646,13 +665,22 @@ function CommitRow({
               localOnly={(ref.kind === "head" || ref.kind === "local") && localOnly.has(ref.name)}
               onContextMenu={(e) => onRefMenu(e, ref)}
             />)}
-          {commit.refs.length > 4 && <span className="text-[10px] text-[var(--color-muted)]">+{commit.refs.length - 4}</span>}
+          {commit.refs.length > 4 && (
+            <span className="text-[10px] text-[var(--color-muted)]" title={commit.refs.slice(4).map((r) => r.name).join("\n")}>
+              <span aria-hidden>+{commit.refs.length - 4}</span>
+              <span className="sr-only">et {commit.refs.slice(4).map((r) => `${REF_KINDS[r.kind]} ${r.name}`).join(", ")}</span>
+            </span>
+          )}
         </div>
       )}
-      <span className="text-xs text-[var(--color-text)] truncate flex-1">{commit.message}</span>
-      <span className="text-[11px] text-[var(--color-muted)] shrink-0 max-w-32 truncate">{commit.author}</span>
-      <span className="text-[11px] text-[var(--color-muted)] shrink-0 font-mono">{commit.short_hash}</span>
-      <span className="text-[11px] text-[var(--color-muted)] shrink-0 w-24 text-right">{date}</span>
+      <span className="text-xs text-[var(--color-text)] truncate flex-1">
+        {commit.parents.length > 1 && <span className="sr-only">Commit de fusion : </span>}
+        {commit.message}
+      </span>
+      {/* Fenêtre étroite : auteur, hash et date restent lus par les lecteurs d'écran et affichés dans le détail du commit. */}
+      <span className="text-[11px] text-[var(--color-muted)] shrink-0 max-w-32 truncate max-[760px]:sr-only">{commit.author}</span>
+      <span className="text-[11px] text-[var(--color-muted)] shrink-0 font-mono max-[760px]:sr-only">{commit.short_hash}</span>
+      <span className="text-[11px] text-[var(--color-muted)] shrink-0 w-24 text-right max-[760px]:sr-only">{date}</span>
     </div>
   );
 }
@@ -666,6 +694,9 @@ const REF_STYLES: Record<RefLabel["kind"], string> = {
 
 const REF_ICONS: Record<RefLabel["kind"], string> = { head: "⎇", local: "⎇", remote: "☁", tag: "⌂" };
 
+/** Nature de l'étiquette, restituée à la place de son icône. */
+const REF_KINDS: Record<RefLabel["kind"], string> = { head: "branche courante", local: "branche", remote: "branche distante", tag: "tag" };
+
 function RefBadge({ label, localOnly, onContextMenu }: {
   label: RefLabel;
   localOnly: boolean;
@@ -678,8 +709,11 @@ function RefBadge({ label, localOnly, onContextMenu }: {
       title={localOnly ? `${title} — uniquement en local, absente des remotes` : title}
       onContextMenu={onContextMenu}
     >
-      {REF_ICONS[label.kind]} {label.name}
-      {localOnly && <span className="ml-1 italic">local</span>}
+      <span aria-hidden>{REF_ICONS[label.kind]} </span>
+      <span className="sr-only">{REF_KINDS[label.kind]} </span>
+      {label.name}
+      {localOnly && <span className="ml-1 italic"><span aria-hidden>local</span><span className="sr-only">, uniquement en local</span></span>}
+      <span className="sr-only">, </span>
     </span>
   );
 }

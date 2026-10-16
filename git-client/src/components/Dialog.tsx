@@ -61,6 +61,8 @@ export function Dialog() {
             autoFocus
             className={inputClass}
             type={dialog.input.secret ? "password" : "text"}
+            required
+            aria-required
             autoComplete={dialog.input.secret ? "off" : undefined}
             placeholder={dialog.input.placeholder}
             {...fieldLabel(dialog.title)}
@@ -75,7 +77,7 @@ export function Dialog() {
             title={dialog.link.url}
             onClick={() => openUrl(dialog.link!.url).catch(() => {})}
           >
-            {dialog.link.label} ↗
+            {dialog.link.label} <span aria-hidden>↗</span>
           </button>
         )}
         {dialog.checkbox && (

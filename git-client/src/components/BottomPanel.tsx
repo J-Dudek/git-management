@@ -5,6 +5,7 @@ import { useUiStore, type BottomPanelState } from "../store/useUiStore";
 import { useJournalStore, type JournalEntry } from "../store/useJournalStore";
 import { errorMessage } from "../lib/actions";
 import { attachTerminal, LEAVE_TERMINAL_HINT, restartTerminal } from "../lib/terminals";
+import { resizeKeyDelta } from "../lib/resizeKeys";
 
 const HEADER_HEIGHT = 28;
 const MIN_HEIGHT = 120;
@@ -58,9 +59,22 @@ export function BottomPanel() {
       <div className="flex items-center shrink-0 relative" style={{ height: HEADER_HEIGHT }}>
         {panel.open && (
           <div
-            className="absolute -top-1 left-0 right-0 h-2 cursor-row-resize z-10"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="Hauteur du panneau du bas"
+            aria-valuenow={panel.height}
+            aria-valuemin={MIN_HEIGHT}
+            tabIndex={0}
+            onKeyDown={(e) => {
+              const delta = resizeKeyDelta(e, "y");
+              if (delta === null) return;
+              e.preventDefault();
+              const max = (e.currentTarget.closest("main")?.clientHeight ?? window.innerHeight) * 0.8;
+              setPanel({ height: Math.round(Math.min(max, Math.max(MIN_HEIGHT, panel.height - delta))) });
+            }}
+            className="absolute -top-1 left-0 right-0 h-2 cursor-row-resize z-10 outline-none focus-visible:bg-[var(--color-accent)]"
             onPointerDown={startResize}
-            title="Redimensionner"
+            title="Redimensionner (flèches haut / bas au clavier)"
           />
         )}
         <PanelTab
@@ -73,7 +87,12 @@ export function BottomPanel() {
         </PanelTab>
         <PanelTab name="journal" active={journalVisible} onClick={() => select("journal")}>
           Journal
-          {newErrors > 0 && <span className="ml-1.5 text-[9px] px-1 rounded-full bg-red-500/80 text-white leading-4">{newErrors}</span>}
+          {newErrors > 0 && (
+            <span className="ml-1.5 text-[9px] px-1 rounded-full bg-red-700 text-white leading-4">
+              <span aria-hidden>{newErrors}</span>
+              <span className="sr-only">, {newErrors} nouvelle{newErrors > 1 ? "s" : ""} erreur{newErrors > 1 ? "s" : ""}</span>
+            </span>
+          )}
         </PanelTab>
 
         <div className="ml-auto flex items-center gap-1 pr-2">
@@ -92,6 +111,7 @@ export function BottomPanel() {
           <HeaderBtn
             onClick={() => setPanel({ open: !panel.open })}
             title={panel.open ? "Replier (Ctrl+J)" : "Déplier (Ctrl+J)"}
+            expanded={panel.open}
           >
             {panel.open ? "▾" : "▴"}
           </HeaderBtn>
@@ -128,7 +148,7 @@ function TerminalView({ tabId, path }: { tabId: number; path: string }) {
 }
 
 const STATUS: Record<JournalEntry["status"], { icon: string; color: string }> = {
-  running: { icon: "…", color: "text-[var(--color-muted)] animate-pulse" },
+  running: { icon: "…", color: "text-[var(--color-muted)]" },
   success: { icon: "✓", color: "text-green-400" },
   warning: { icon: "!", color: "text-yellow-400" },
   error: { icon: "✗", color: "text-red-400" },
@@ -213,6 +233,7 @@ function PanelTab({ name, active, onClick, title, children }: {
   return (
     <button
       data-panel-tab={name}
+      aria-pressed={active}
       title={title}
       onClick={onClick}
       className={`flex items-center h-full px-3 text-[10px] font-bold uppercase tracking-widest border-b-2 transition-colors ${
@@ -226,12 +247,13 @@ function PanelTab({ name, active, onClick, title, children }: {
   );
 }
 
-function HeaderBtn({ onClick, title, children }: { onClick: () => void; title: string; children: React.ReactNode }) {
+function HeaderBtn({ onClick, title, expanded, children }: { onClick: () => void; title: string; expanded?: boolean; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
       title={title}
       aria-label={title}
+      aria-expanded={expanded}
       className="w-6 h-6 rounded text-xs text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
     >
       {children}

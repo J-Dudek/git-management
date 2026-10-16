@@ -136,7 +136,7 @@ export function PullRequestBranchSync({ details, remoteName, onCheckout, onPushe
 
   return (
     <section className="flex flex-col gap-2 rounded border border-overlay/10 p-3 text-xs">
-      {state.kind === "checking" && <p className="text-[var(--color-muted)] animate-pulse">Vérification du retard sur {targetBranch}…</p>}
+      {state.kind === "checking" && <p className="text-[var(--color-muted)]">Vérification du retard sur {targetBranch}…</p>}
 
       {state.kind === "unavailable" && (
         <p className="text-[var(--color-muted)]">Retard sur {targetBranch} non vérifiable : {state.reason}</p>
