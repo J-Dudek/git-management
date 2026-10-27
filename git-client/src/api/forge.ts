@@ -3,7 +3,7 @@ import { GitLabClient } from "./gitlab";
 import { forgeApi, forgeApiSend, forgeGraphql } from "../ipc/commands";
 import type {
   CreatedPullRequest, ForgeAccount, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeOptions, MyPullRequests, NewPullRequest, PrTemplates,
-  PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread,
+  PullRequestDetails, PullRequestEdit, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread,
   SubmittedReview,
 } from "../types/forge";
 
@@ -33,6 +33,8 @@ export interface ForgeClient {
   review(projectPath: string, number: number, event: ReviewEvent, body: string): Promise<void>;
   merge(projectPath: string, number: number, options: MergeOptions): Promise<void>;
   setState(projectPath: string, number: number, state: "open" | "closed"): Promise<void>;
+  /** Nouveau titre et nouvelle description (réservé à l'auteur dans l'interface). */
+  updatePullRequest(projectPath: string, number: number, edit: PullRequestEdit): Promise<void>;
   /** Passe la PR / MR en brouillon ou la marque prête pour la relecture. */
   setDraft(projectPath: string, number: number, draft: boolean): Promise<void>;
   /** Fils de commentaires attachés aux lignes du diff. */
@@ -79,6 +81,7 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
       setState: (path, n, state) => client.setState(...split(path), n, state),
       updateBranch: (path, n, sha) => client.updateBranch(...split(path), n, sha),
       setDraft: (path, n, draft) => client.setDraft(...split(path), n, draft),
+      updatePullRequest: (path, n, edit) => client.updatePullRequest(...split(path), n, edit),
       getReviewThreads: (path, n) => client.getReviewThreads(...split(path), n),
       addLineComment: (path, n, ctx, pos, body) => client.addLineComment(...split(path), n, ctx, pos, body),
       replyToThread: (path, n, thread, body) => client.replyToThread(...split(path), n, thread.replyTo, body),
@@ -106,6 +109,7 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
     setState: (path, n, state) => client.setState(path, n, state),
     updateBranch: (path, n) => client.rebase(path, n),
     setDraft: (path, n, draft) => client.setDraft(path, n, draft),
+    updatePullRequest: (path, n, edit) => client.updateMergeRequest(path, n, edit),
     getReviewThreads: (path, n) => client.getReviewThreads(path, n),
     addLineComment: (path, n, ctx, pos, body) => client.addLineComment(path, n, ctx, pos, body),
     replyToThread: (path, n, thread, body) => client.replyToThread(path, n, thread.replyTo, body),

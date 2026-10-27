@@ -1,6 +1,6 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgeLabel, ForgeMilestone, ForgePR, ForgeRepo, ForgeUser,
-  LinePosition, MergeMethod, MergeOptions, MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState,
+  LinePosition, MergeMethod, MergeOptions, MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestEdit, PullRequestOptions, PullRequestState,
   ReviewContext, ReviewEvent, ReviewSubmission, ReviewThread, SubmittedReview,
 } from "../types/forge";
 import { PR_PAGE_SIZE } from "../types/forge";
@@ -364,6 +364,10 @@ export class GitHubClient {
 
   async setState(owner: string, repo: string, number: number, state: "open" | "closed"): Promise<void> {
     await this.send("PATCH", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}`, { state });
+  }
+
+  async updatePullRequest(owner: string, repo: string, number: number, edit: PullRequestEdit): Promise<void> {
+    await this.send("PATCH", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}`, { title: edit.title, body: edit.description });
   }
 
   /** Brouillon ↔ prête : uniquement disponible en GraphQL. */

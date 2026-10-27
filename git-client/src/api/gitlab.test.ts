@@ -233,6 +233,17 @@ describe("GitLab draft titles", () => {
     expect(draftTitle("feat: draft mode", false)).toBe("feat: draft mode");
   });
 
+  it("updateMergeRequest keeps the draft prefix GitLab knows", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    const get = vi.fn().mockResolvedValue({ ...rawMR, title: "Draft: Add feature", draft: true });
+    await new GitLabClient(get as never, send as never).updateMergeRequest("group/app", 12, { title: "Add feature v2", description: "d" });
+    expect(send).toHaveBeenCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { title: "Draft: Add feature v2", description: "d" });
+
+    get.mockResolvedValue({ ...rawMR, title: "Add feature", draft: false });
+    await new GitLabClient(get as never, send as never).updateMergeRequest("group/app", 12, { title: "Draft: oups", description: "" });
+    expect(send).toHaveBeenLastCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { title: "oups", description: "" });
+  });
+
   it("setDraft rewrites the merge request title", async () => {
     const get = vi.fn().mockResolvedValue({ ...rawMR, title: "Draft: Add feature" });
     const send = vi.fn().mockResolvedValue(null);

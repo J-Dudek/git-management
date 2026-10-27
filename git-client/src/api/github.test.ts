@@ -259,6 +259,14 @@ describe("GitHubClient pull request review", () => {
   });
 });
 
+describe("GitHubClient.updatePullRequest", () => {
+  it("sends the new title and body", async () => {
+    const send = vi.fn().mockResolvedValue(null);
+    await new GitHubClient(vi.fn() as never, send as never).updatePullRequest("o", "r", 7, { title: "Nouveau", description: "Closes #3" });
+    expect(send).toHaveBeenCalledWith("PATCH", "/repos/o/r/pulls/7", { title: "Nouveau", body: "Closes #3" });
+  });
+});
+
 describe("GitHubClient.setDraft", () => {
   it("uses the GraphQL mutation matching the requested state", async () => {
     const get = vi.fn().mockResolvedValue({ number: 7, node_id: "PR_kw" });

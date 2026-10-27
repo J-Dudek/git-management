@@ -1,6 +1,6 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeMethod, MergeOptions,
-  MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
+  MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestEdit, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
   ReviewThread, SubmittedReview,
 } from "../types/forge";
 import { PR_PAGE_SIZE } from "../types/forge";
@@ -389,6 +389,14 @@ export class GitLabClient {
     const path = `/projects/${this.encodeProject(project)}/merge_requests/${iid}`;
     const raw = await this.get<RawMergeRequest>(path);
     await this.send("PUT", path, { title: draftTitle(raw.title, draft) });
+  }
+
+  /** Le brouillon tient au préfixe du titre (« Draft: ») : il est conservé tel que GitLab le connaît. */
+  async updateMergeRequest(project: string, iid: number, edit: PullRequestEdit): Promise<void> {
+    const path = `/projects/${this.encodeProject(project)}/merge_requests/${iid}`;
+    const raw = await this.get<RawMergeRequest>(path);
+    const draft = raw.draft ?? DRAFT_PREFIX.test(raw.title);
+    await this.send("PUT", path, { title: draftTitle(edit.title, draft), description: edit.description });
   }
 
   /** Lance un rebase de la branche source sur la cible, côté GitLab (asynchrone). */
