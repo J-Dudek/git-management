@@ -46,6 +46,14 @@ describe("GitLabClient", () => {
     expect(issue).toMatchObject({ number: 5, state: "open", author: "bob", labels: ["bug"] });
   });
 
+  it("searchIssues looks up an iid or words, open and closed issues", async () => {
+    const { gl, get } = client([{ iid: 5, title: "Bug", state: "closed", web_url: "u", created_at: "d" }]);
+    expect(await gl.searchIssues("g/p", "5")).toMatchObject([{ number: 5, state: "closed" }]);
+    expect(get).toHaveBeenCalledWith("/projects/g%2Fp/issues?iids[]=5&state=all&per_page=20");
+    await gl.searchIssues("g/p", "crash & co");
+    expect(get).toHaveBeenCalledWith("/projects/g%2Fp/issues?search=crash%20%26%20co&state=all&per_page=20");
+  });
+
   it("encodes path-based project IDs", async () => {
     const { gl, get } = client([]);
     await gl.getMergeRequests("group/sub/repo");

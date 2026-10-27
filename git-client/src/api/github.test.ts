@@ -58,6 +58,22 @@ describe("GitHubClient", () => {
     expect(issues[0].number).toBe(1);
   });
 
+  it("searchIssues fetches an issue by number, and finds nothing for a pull request or a missing issue", async () => {
+    const { gh, get } = client({ number: 9, title: "Bug", state: "closed", user: { login: "bob" }, labels: [] });
+    expect(await gh.searchIssues("o", "r", " 9 ")).toMatchObject([{ number: 9, state: "closed" }]);
+    expect(get).toHaveBeenCalledWith("/repos/o/r/issues/9");
+    get.mockResolvedValueOnce({ number: 10, title: "PR", state: "open", pull_request: {} });
+    expect(await gh.searchIssues("o", "r", "10")).toEqual([]);
+    get.mockRejectedValueOnce("Introuvable (404)");
+    expect(await gh.searchIssues("o", "r", "11")).toEqual([]);
+  });
+
+  it("searchIssues searches words among the repository's issues", async () => {
+    const { gh, get } = client({ items: [{ number: 3, title: "Crash", state: "open", labels: [] }] });
+    expect((await gh.searchIssues("o", "r", "crash login")).map((i) => i.number)).toEqual([3]);
+    expect(get).toHaveBeenCalledWith(`/search/issues?q=${encodeURIComponent("repo:o/r is:issue crash login")}&per_page=20`);
+  });
+
   it("encodes owner and repo in the path", async () => {
     const { gh, get } = client([]);
     await gh.getIssues("o/../x", "r?y");

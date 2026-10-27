@@ -17,6 +17,8 @@ export interface ForgeClient {
   /** Une PR / MR ; sur GitHub, seule cette requête donne le nombre de commentaires. */
   getPullRequest(projectPath: string, number: number): Promise<ForgePR>;
   getIssues(projectPath: string): Promise<ForgeIssue[]>;
+  /** Recherche d'issues ouvertes ou fermées, par numéro ou par mots. */
+  searchIssues(projectPath: string, term: string): Promise<ForgeIssue[]>;
   /** Branche par défaut, membres, labels, jalons du projet pour le formulaire de création. */
   getPullRequestOptions(projectPath: string): Promise<PullRequestOptions>;
   /** Modèles de description du projet, pour pré-remplir le formulaire de création. */
@@ -65,6 +67,7 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
       getPullRequest: (path, n) => client.getPullRequest(...split(path), n),
       getMyPullRequests: () => client.getMyPullRequests(),
       getIssues: (path) => client.getIssues(...split(path)),
+      searchIssues: (path, term) => client.searchIssues(...split(path), term),
       getPullRequestOptions: (path) => client.getPullRequestOptions(...split(path)),
       getPullRequestTemplates: (path) => client.getPullRequestTemplates(...split(path)),
       createPullRequest: (path, input) => client.createPullRequest(...split(path), input),
@@ -91,6 +94,7 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
     getPullRequest: (path, n) => client.getMergeRequest(path, n),
     getMyPullRequests: () => client.getMyMergeRequests(account.username),
     getIssues: (path) => client.getIssues(path),
+    searchIssues: (path, term) => client.searchIssues(path, term),
     getPullRequestOptions: (path) => client.getMergeRequestOptions(path),
     getPullRequestTemplates: (path) => client.getMergeRequestTemplates(path),
     createPullRequest: (path, input) => client.createMergeRequest(path, input),

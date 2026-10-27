@@ -404,6 +404,14 @@ export class GitLabClient {
     return data.map(parseIssue);
   }
 
+  /** Issues ouvertes ou fermées : celle du numéro donné, sinon celles dont le titre ou la description contient les mots. */
+  async searchIssues(project: string, term: string): Promise<ForgeIssue[]> {
+    const t = term.trim();
+    const filter = /^\d+$/.test(t) ? `iids[]=${t}` : `search=${encodeURIComponent(t)}`;
+    const data = await this.get<RawIssue[]>(`/projects/${this.encodeProject(project)}/issues?${filter}&state=all&per_page=20`);
+    return data.map(parseIssue);
+  }
+
   /**
    * Modèles de description de MR (.gitlab/merge_request_templates/, plus ceux hérités du groupe ou de l'instance).
    * Appliqué d'office : celui saisi dans les réglages du projet, sinon celui nommé « Default ».

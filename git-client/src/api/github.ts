@@ -441,6 +441,19 @@ export class GitHubClient {
     return data.filter((i) => !i.pull_request).map(parseIssue);
   }
 
+  /** Issues ouvertes ou fermées : celle du numéro donné, sinon celles dont le titre ou le corps contient les mots. */
+  async searchIssues(owner: string, repo: string, term: string): Promise<ForgeIssue[]> {
+    const t = term.trim();
+    if (/^\d+$/.test(t)) {
+      // Une issue absente répond 404 : pas de résultat.
+      const raw = await this.get<RawIssue>(`/repos/${seg(owner)}/${seg(repo)}/issues/${t}`).catch(() => null);
+      return raw && !raw.pull_request ? [parseIssue(raw)] : [];
+    }
+    const q = encodeURIComponent(`repo:${owner}/${repo} is:issue ${t}`);
+    const data = await this.get<{ items: RawIssue[] }>(`/search/issues?q=${q}&per_page=20`);
+    return data.items.map(parseIssue);
+  }
+
   /**
    * Modèles de description, sur la branche par défaut : le fichier `pull_request_template.md` (dans .github/, à la racine
    * ou dans docs/, casse indifférente), appliqué d'office par GitHub, et les modèles du dossier .github/PULL_REQUEST_TEMPLATE/.
