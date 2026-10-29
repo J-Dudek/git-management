@@ -490,6 +490,15 @@ export class GitHubClient {
     await this.send("PUT", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}/update-branch`, { expected_head_sha: sha });
   }
 
+  async getBranches(owner: string, repo: string): Promise<string[]> {
+    const branches = await this.get<{ name: string }[]>(`/repos/${seg(owner)}/${seg(repo)}/branches?per_page=100`);
+    return branches.map((b) => b.name);
+  }
+
+  async setTargetBranch(owner: string, repo: string, number: number, branch: string): Promise<void> {
+    await this.send("PATCH", `/repos/${seg(owner)}/${seg(repo)}/pulls/${number}`, { base: branch });
+  }
+
   async getIssues(owner: string, repo: string, state: "open" | "closed" | "all" = "open"): Promise<ForgeIssue[]> {
     const data = await this.get<RawIssue[]>(`/repos/${seg(owner)}/${seg(repo)}/issues?state=${state}&per_page=50`);
     return data.filter((i) => !i.pull_request).map(parseIssue);

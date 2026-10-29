@@ -10,6 +10,8 @@ const forge = vi.hoisted(() => ({
   updatePullRequest: vi.fn(),
   getPullRequestOptions: vi.fn(),
   setPeople: vi.fn(),
+  getBranches: vi.fn(),
+  setTargetBranch: vi.fn(),
   getIssues: vi.fn(),
   searchIssues: vi.fn(),
 }));
@@ -46,6 +48,8 @@ beforeEach(() => {
   forge.getIssues.mockResolvedValue([]);
   forge.searchIssues.mockResolvedValue([]);
   forge.setPeople.mockResolvedValue(undefined);
+  forge.getBranches.mockResolvedValue(["main", "develop", "feature/newsletter"]);
+  forge.setTargetBranch.mockResolvedValue(undefined);
   forge.getPullRequestOptions.mockResolvedValue({
     defaultBranch: "main", labels: [], milestones: [], squashDefault: false, removeSourceBranchDefault: false,
     users: [
@@ -164,5 +168,36 @@ describe("PullRequestReviewDialog : modification par l'auteur", () => {
     await waitFor(() => expect(useUiStore.getState().dialog?.title).toBe("Abandonner les modifications ?"));
     expect(onClose).not.toHaveBeenCalled();
     useUiStore.getState().dialog?.resolve(null);
+  });
+});
+
+describe("PullRequestReviewDialog : branche cible", () => {
+  it("n'est modifiable que sur une PR ouverte", async () => {
+    forge.getPullRequestDetails.mockResolvedValue(details({ state: "closed" }));
+    renderDialog();
+    await screen.findByText("Bloc dans le pied de page.");
+    expect(screen.queryByRole("button", { name: "Changer la branche cible" })).toBeNull();
+  });
+
+  it("propose les branches sauf la source, puis enregistre la nouvelle cible", async () => {
+    const { onChanged } = renderDialog();
+    fireEvent.click(await screen.findByRole("button", { name: "Changer la branche cible" }));
+    const select = screen.getByRole("combobox", { name: "Branche cible" }) as HTMLSelectElement;
+    await waitFor(() => expect(select.disabled).toBe(false));
+    expect([...select.options].map((o) => o.value)).toEqual(["develop", "main"]);
+
+    fireEvent.change(select, { target: { value: "develop" } });
+    fireEvent.click(screen.getByRole("button", { name: "Valider" }));
+    await waitFor(() => expect(forge.setTargetBranch).toHaveBeenCalledWith("o/r", 13, "develop"));
+    await waitFor(() => expect(onChanged).toHaveBeenCalled());
+  });
+
+  it("n'appelle pas la forge si la cible ne change pas", async () => {
+    renderDialog();
+    fireEvent.click(await screen.findByRole("button", { name: "Changer la branche cible" }));
+    await waitFor(() => expect(forge.getBranches).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Valider" }));
+    await waitFor(() => expect(screen.queryByRole("combobox", { name: "Branche cible" })).toBeNull());
+    expect(forge.setTargetBranch).not.toHaveBeenCalled();
   });
 });

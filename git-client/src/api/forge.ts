@@ -35,6 +35,9 @@ export interface ForgeClient {
   setState(projectPath: string, number: number, state: "open" | "closed"): Promise<void>;
   /** Nouveau titre et nouvelle description (réservé à l'auteur dans l'interface). */
   updatePullRequest(projectPath: string, number: number, edit: PullRequestEdit): Promise<void>;
+  /** Branches du projet (100 premières), pour choisir une branche cible. */
+  getBranches(projectPath: string): Promise<string[]>;
+  setTargetBranch(projectPath: string, number: number, branch: string): Promise<void>;
   /** Remplace relecteurs et assignés. */
   setPeople(projectPath: string, number: number, people: PullRequestPeople): Promise<void>;
   /** Passe la PR / MR en brouillon ou la marque prête pour la relecture. */
@@ -85,6 +88,8 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
       setDraft: (path, n, draft) => client.setDraft(...split(path), n, draft),
       updatePullRequest: (path, n, edit) => client.updatePullRequest(...split(path), n, edit),
       setPeople: (path, n, people) => client.setPeople(...split(path), n, people),
+      getBranches: (path) => client.getBranches(...split(path)),
+      setTargetBranch: (path, n, branch) => client.setTargetBranch(...split(path), n, branch),
       getReviewThreads: (path, n) => client.getReviewThreads(...split(path), n),
       addLineComment: (path, n, ctx, pos, body) => client.addLineComment(...split(path), n, ctx, pos, body),
       replyToThread: (path, n, thread, body) => client.replyToThread(...split(path), n, thread.replyTo, body),
@@ -114,6 +119,8 @@ export function forgeClient(account: ForgeAccount): ForgeClient {
     setDraft: (path, n, draft) => client.setDraft(path, n, draft),
     updatePullRequest: (path, n, edit) => client.updateMergeRequest(path, n, edit),
     setPeople: (path, n, people) => client.setPeople(path, n, people),
+    getBranches: (path) => client.getBranches(path),
+    setTargetBranch: (path, n, branch) => client.setTargetBranch(path, n, branch),
     getReviewThreads: (path, n) => client.getReviewThreads(path, n),
     addLineComment: (path, n, ctx, pos, body) => client.addLineComment(path, n, ctx, pos, body),
     replyToThread: (path, n, thread, body) => client.replyToThread(path, n, thread.replyTo, body),

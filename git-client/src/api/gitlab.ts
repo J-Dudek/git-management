@@ -420,6 +420,15 @@ export class GitLabClient {
     await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}/rebase`, null);
   }
 
+  async getBranches(project: string): Promise<string[]> {
+    const branches = await this.get<{ name: string }[]>(`/projects/${this.encodeProject(project)}/repository/branches?per_page=100`);
+    return branches.map((b) => b.name);
+  }
+
+  async setTargetBranch(project: string, iid: number, branch: string): Promise<void> {
+    await this.send("PUT", `/projects/${this.encodeProject(project)}/merge_requests/${iid}`, { target_branch: branch });
+  }
+
   async getIssues(project: string, state: "opened" | "closed" | "all" = "opened"): Promise<ForgeIssue[]> {
     const id = this.encodeProject(project);
     const data = await this.get<RawIssue[]>(

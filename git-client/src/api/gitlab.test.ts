@@ -254,6 +254,16 @@ describe("GitLab draft titles", () => {
     expect(send).toHaveBeenCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { reviewer_ids: [5, 9], assignee_ids: [0] });
   });
 
+  it("lists branches and changes the target branch", async () => {
+    const get = vi.fn().mockResolvedValue([{ name: "main" }, { name: "develop" }]);
+    const send = vi.fn().mockResolvedValue(null);
+    const gl = new GitLabClient(get as never, send as never);
+    expect(await gl.getBranches("group/app")).toEqual(["main", "develop"]);
+    expect(get).toHaveBeenCalledWith("/projects/group%2Fapp/repository/branches?per_page=100");
+    await gl.setTargetBranch("group/app", 12, "develop");
+    expect(send).toHaveBeenCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { target_branch: "develop" });
+  });
+
   it("setDraft rewrites the merge request title", async () => {
     const get = vi.fn().mockResolvedValue({ ...rawMR, title: "Draft: Add feature" });
     const send = vi.fn().mockResolvedValue(null);

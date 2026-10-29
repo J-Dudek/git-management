@@ -302,6 +302,18 @@ describe("GitHubClient.setPeople", () => {
   });
 });
 
+describe("GitHubClient target branch", () => {
+  it("lists branches and changes the base of the pull request", async () => {
+    const get = vi.fn().mockResolvedValue([{ name: "main" }, { name: "develop" }]);
+    const send = vi.fn().mockResolvedValue(null);
+    const gh = new GitHubClient(get as never, send as never);
+    expect(await gh.getBranches("o", "r")).toEqual(["main", "develop"]);
+    expect(get).toHaveBeenCalledWith("/repos/o/r/branches?per_page=100");
+    await gh.setTargetBranch("o", "r", 7, "develop");
+    expect(send).toHaveBeenCalledWith("PATCH", "/repos/o/r/pulls/7", { base: "develop" });
+  });
+});
+
 describe("GitHubClient.setDraft", () => {
   it("uses the GraphQL mutation matching the requested state", async () => {
     const get = vi.fn().mockResolvedValue({ number: 7, node_id: "PR_kw" });

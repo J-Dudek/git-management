@@ -71,6 +71,10 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
   const [people, setPeople] = useState<PullRequestPeople | null>(null);
   /** Membres du projet proposables, chargés à la première modification des relecteurs ou assignés. */
   const [members, setMembers] = useState<ForgeUser[] | null>(null);
+  /** Branche cible en cours de modification ; null hors édition. */
+  const [target, setTarget] = useState<string | null>(null);
+  /** Branches du projet, chargées à la première modification de la cible. */
+  const [branches, setBranches] = useState<string[] | null>(null);
   /** Les choix de merge ne sont initialisés qu'au premier chargement, pas à chaque actualisation. */
   const initialized = useRef(false);
 
@@ -244,6 +248,32 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
     }, "Relecteurs et assignés mis à jour", true);
   }
 
+  function startTargetEdit() {
+    if (!details) return;
+    setTarget(details.pr.targetBranch);
+    if (!branches) {
+      client().getBranches(projectPath)
+        .then(setBranches)
+        .catch((e) => {
+          setBranches([]);
+          notify("error", `Branches du projet indisponibles : ${errorMessage(e)}`);
+        });
+    }
+  }
+
+  function saveTarget() {
+    if (!details || !target) return;
+    if (target === details.pr.targetBranch) {
+      setTarget(null);
+      return;
+    }
+    const branch = target;
+    run("target", async () => {
+      await client().setTargetBranch(projectPath, number, branch);
+      setTarget(null);
+    }, `${ref} cible maintenant ${branch}`, true);
+  }
+
   async function requestClose() {
     if (pending) return;
     if (peopleDirty && !(await confirmAction(
@@ -279,7 +309,19 @@ export function PullRequestReviewDialog({ account, projectPath, remoteName, numb
       {!details && !loadError && <p className="p-4 text-xs text-[var(--color-muted)]">Chargement…</p>}
       {details && (
         <div className={`p-4 flex flex-col gap-4 ${tab === "files" ? "h-full" : ""}`}>
-          <Header details={details} account={account} forgeName={forgeName} onCheckout={onCheckout && (() => onCheckout(details.pr))} />
+          <Header
+            details={details}
+            account={account}
+            forgeName={forgeName}
+            onCheckout={onCheckout && (() => onCheckout(details.pr))}
+            target={target}
+            branches={branches}
+            onTargetChange={setTarget}
+            onEditTarget={startTargetEdit}
+            onSaveTarget={saveTarget}
+            onCancelTarget={() => setTarget(null)}
+            pending={pending}
+          />
 
 <div className="flex gap-1 border-b border-overlay/10 -mx-4 px-4">
             <TabButton active={tab === "conversation"} onClick={() => setTab("conversation")}>
@@ -483,11 +525,21 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-function Header({ details, account, forgeName, onCheckout }: {
+function Header({ details, account, forgeName, onCheckout, target, branches, onTargetChange, onEditTarget, onSaveTarget, onCancelTarget, pending }: {
   details: PullRequestDetails;
   account: ForgeAccount;
   forgeName: string;
   onCheckout?: () => void;
+  /** Branche cible choisie pendant la modification ; null hors édition. */
+  target: string | null;
+  /** null : branches en cours de chargement. */
+  branches: string[] | null;
+  onTargetChange: (branch: string) => void;
+  /** Proposé tant que la PR / MR est ouverte et qu'aucune action n'est en cours. */
+  onEditTarget: () => void;
+  onSaveTarget: () => void;
+  onCancelTarget: () => void;
+  pending: string | null;
 }) {
   const { pr } = details;
   const state = STATE_STYLES[pr.state];
@@ -504,7 +556,32 @@ function Header({ details, account, forgeName, onCheckout }: {
         <span className="font-mono text-xs text-[var(--color-text)] truncate">{pr.sourceBranch}</span>
         <ArrowRight size={12} className="text-[var(--color-muted)] shrink-0" />
         <span className="sr-only">vers</span>
-        <span className="font-mono text-xs text-[var(--color-text)] truncate">{pr.targetBranch}</span>
+        {target === null ? (
+          <>
+            <span className="font-mono text-xs text-[var(--color-text)] truncate">{pr.targetBranch}</span>
+            {pr.state === "open" && !pending && (
+              <button
+                className="shrink-0 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                onClick={onEditTarget}
+                aria-label="Changer la branche cible"
+                title="Changer la branche cible"
+              >
+                <Pencil size={11} />
+              </button>
+            )}
+          </>
+        ) : (
+          <TargetPicker
+            value={target}
+            current={pr.targetBranch}
+            source={pr.sourceBranch}
+            branches={branches}
+            onChange={onTargetChange}
+            onSave={onSaveTarget}
+            onCancel={onCancelTarget}
+            pending={pending}
+          />
+        )}
         <div className="ml-auto flex gap-2 shrink-0">
           {pr.state === "open" && onCheckout && <Button onClick={onCheckout}>Checkout</Button>}
           <Button onClick={() => openUrl(pr.url)} title={`Ouvrir sur ${forgeName}`}>
@@ -519,6 +596,48 @@ function Header({ details, account, forgeName, onCheckout }: {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Choix d'une nouvelle branche cible ; Entrée enregistre, Échap annule. */
+function TargetPicker({ value, current, source, branches, onChange, onSave, onCancel, pending }: {
+  value: string;
+  current: string;
+  source: string;
+  branches: string[] | null;
+  onChange: (branch: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  pending: string | null;
+}) {
+  // La cible actuelle reste proposée même hors des 100 premières branches ; la source ne peut pas être sa propre cible.
+  const choices = [...new Set([current, ...(branches ?? [])])].filter((b) => b !== source).sort((a, b) => a.localeCompare(b));
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <select
+        autoFocus
+        className={`${inputClass} font-mono w-56!`}
+        aria-label="Branche cible"
+        value={value}
+        disabled={!branches || pending === "target"}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSave();
+          } else if (e.key === "Escape") {
+            e.stopPropagation();
+            onCancel();
+          }
+        }}
+      >
+        {choices.map((b) => <option key={b} value={b}>{b}</option>)}
+      </select>
+      <Button variant="primary" onClick={onSave} disabled={!!pending || !branches}>
+        {pending === "target" ? "…" : "Valider"}
+      </Button>
+      <Button onClick={onCancel} disabled={pending === "target"}>Annuler</Button>
     </div>
   );
 }
