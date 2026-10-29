@@ -246,9 +246,9 @@ Les installeurs sont générés dans `git-client/src-tauri/target/release/bundle
 
 ## Intégration continue et releases
 
-- **À chaque push** (toutes branches) et sur les pull requests : tests Rust et frontend, lint, audit des dépendances (`.github/workflows/ci.yml`).
+- **Sur les pull requests** : tests Rust et frontend sous Linux, lint, audit des dépendances (`.github/workflows/ci.yml`). Un nouveau push annule les tests du précédent, et une PR qui ne modifie que de la documentation (`*.md`, `docs/`) ne les lance pas. Les tests sous Windows tournent au merge, avec la release.
 - **À chaque merge sur `main`** (`.github/workflows/release.yml`) :
-  1. les mêmes tests et, **en parallèle**, le calcul de la prochaine version et la génération des paquets ;
+  1. les mêmes tests, sous Linux et Windows, et, **en parallèle**, le calcul de la prochaine version et la génération des paquets ;
   2. calcul de la version d'après les messages de commit depuis le dernier tag ([Conventional Commits](https://www.conventionalcommits.org)) :
      - `feat!:` ou `BREAKING CHANGE:` → version majeure,
      - `feat:` → version mineure,
