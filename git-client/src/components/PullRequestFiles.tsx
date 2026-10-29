@@ -121,14 +121,16 @@ export function PullRequestFiles({ account, projectPath, remoteName, details, dr
       setSelected((current) => (current && result.files.some((f) => f.path === current) ? current : result.files[0]?.path ?? null));
     } catch (e) {
       setComparison(null);
-      setError(
-        `${errorMessage(e)} — les commits de la branche ${pr.sourceBranch} sont introuvables après un fetch de ${remoteName}. ` +
-          "Une PR venant d'un fork n'est pas récupérée par ce fetch : ouvre-la dans le navigateur.",
-      );
+      // PR / MR fermée : sa branche a le plus souvent été supprimée, ses commits ne sont plus récupérables par un fetch.
+      const after = pr.state === "merged" ? "le merge" : "la fermeture";
+      const cause = pr.state === "open"
+        ? "Une PR venant d'un fork n'est pas récupérée par ce fetch : ouvre-la dans le navigateur."
+        : `La branche ${pr.sourceBranch} a sans doute été supprimée après ${after} : consulte les fichiers dans le navigateur.`;
+      setError(`Les commits de la branche ${pr.sourceBranch} sont introuvables après un fetch de ${remoteName}. ${cause} (${errorMessage(e)})`);
     } finally {
       setLoading(false);
     }
-  }, [repoPath, remoteName, base, head, pr.sourceBranch]);
+  }, [repoPath, remoteName, base, head, pr.sourceBranch, pr.state]);
 
   const loadThreads = useCallback(async () => {
     try {
