@@ -32,6 +32,8 @@ jobs:
     # Le commit de version poussé par ce workflow ne relance pas de release.
     if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
     uses: ./.github/workflows/ci.yml
+    with:
+      windows: true
 
   plan:
     name: Prochaine version

@@ -1,15 +1,29 @@
 name: CI
 
-# Tests à chaque push, quelle que soit la branche. Sur main, ils sont lancés par le workflow
-# Release (avant toute montée de version) : on ne les lance pas deux fois.
+# Tests des pull requests, sous Linux seulement. Sur main, ils sont lancés par le workflow Release
+# (avant toute montée de version), avec Windows en plus : une régression propre à Windows bloque la release.
+# Ce dépôt est privé : chaque minute compte (et une minute Windows plus qu'une minute Linux).
 on:
-  push:
-    branches-ignore: [main]
   pull_request:
+    # Une PR qui ne touche que la documentation ne relance pas la compilation.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   workflow_call:
+    inputs:
+      windows:
+        description: Lancer aussi les tests sous Windows
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+# Un nouveau push sur une PR annule les tests du précédent. Les tests d'une release ne sont jamais annulés :
+# celle-ci échouerait.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -17,7 +31,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: ${{ fromJSON(inputs.windows && '["ubuntu-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
 
     steps:
       - uses: actions/checkout@v5
