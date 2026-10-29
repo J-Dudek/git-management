@@ -199,8 +199,8 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
   }
 
   return (
-    <Modal title={`Nouvelle ${noun} ${forgeName}`} onClose={() => !creating && onClose()} width="w-[620px]">
-      <div className="p-4 flex flex-col gap-3">
+    <Modal title={`Nouvelle ${noun} ${forgeName}`} onClose={() => !creating && onClose()} width="w-[620px]" resizeKey="pull-request-create">
+      <div className="p-4 flex flex-col gap-3 min-h-full">
         <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
           <span className="px-1.5 py-0.5 rounded bg-overlay/10 text-[var(--color-text)] font-semibold">{forgeName}</span>
           <span className="font-mono truncate">{projectPath}</span>
@@ -229,7 +229,7 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
           <input autoFocus className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
         </label>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex-1 flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <span className={labelClass}>Description (Markdown)</span>
             {templates.length > 0 && (
@@ -271,7 +271,8 @@ export function PullRequestDialog({ target, onClose }: { target: PullRequestTarg
           )}
           <IssueRefTextarea
             label="Description"
-            className={`${inputClass} ${templateName ? "h-56" : "h-28"} resize-y font-mono`}
+            wrapperClassName="flex-1 flex flex-col"
+            className={`${inputClass} ${templateName ? "h-56" : "h-28"} flex-auto resize-y font-mono`}
             placeholder="Contexte, changements, comment tester… « # » pour citer une issue"
             value={description}
             onChange={setDescription}
