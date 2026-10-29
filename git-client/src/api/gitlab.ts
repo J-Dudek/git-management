@@ -1,6 +1,6 @@
 import type {
   CreatedPullRequest, ForgeCheck, ForgeComment, ForgeIssue, ForgePR, ForgeRepo, LinePosition, MergeMethod, MergeOptions,
-  MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestEdit, PullRequestOptions, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
+  MyPullRequests, NewPullRequest, PrSummary, PrTemplate, PrTemplates, PullRequestDetails, PullRequestEdit, PullRequestOptions, PullRequestPeople, PullRequestState, ReviewContext, ReviewEvent, ReviewSubmission,
   ReviewThread, SubmittedReview,
 } from "../types/forge";
 import { PR_PAGE_SIZE } from "../types/forge";
@@ -397,6 +397,22 @@ export class GitLabClient {
     const raw = await this.get<RawMergeRequest>(path);
     const draft = raw.draft ?? DRAFT_PREFIX.test(raw.title);
     await this.send("PUT", path, { title: draftTitle(edit.title, draft), description: edit.description });
+  }
+
+  /** Remplace relecteurs et assignés ; l'id d'un utilisateur déjà en place est repris de la MR quand il manque. */
+  async setPeople(project: string, iid: number, people: PullRequestPeople): Promise<void> {
+    const path = `/projects/${this.encodeProject(project)}/merge_requests/${iid}`;
+    const raw = await this.get<RawMergeRequest>(path);
+    const known = new Map([...(raw.reviewers ?? []), ...(raw.assignees ?? [])].map((u) => [u.username, u.id]));
+    // 0 vide la liste (documenté par GitLab) ; un tableau vide n'est pas toujours compris.
+    const ids = (users: PullRequestPeople["reviewers"]) => {
+      const list = users.flatMap((u) => {
+        const id = u.id || known.get(u.username);
+        return id ? [id] : [];
+      });
+      return list.length ? list : [0];
+    };
+    await this.send("PUT", path, { reviewer_ids: ids(people.reviewers), assignee_ids: ids(people.assignees) });
   }
 
   /** Lance un rebase de la branche source sur la cible, côté GitLab (asynchrone). */

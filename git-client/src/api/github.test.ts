@@ -267,6 +267,41 @@ describe("GitHubClient.updatePullRequest", () => {
   });
 });
 
+describe("GitHubClient.setPeople", () => {
+  const user = (username: string) => ({ id: 1, username, name: username });
+  const current = { number: 7, assignees: [{ login: "ana" }], requested_reviewers: [{ login: "bob" }] };
+
+  it("replaces the assignees and only adds reviewers through REST", async () => {
+    const get = vi.fn().mockResolvedValue(current);
+    const send = vi.fn().mockResolvedValue(null);
+    const graphql = vi.fn();
+    await new GitHubClient(get as never, send as never, graphql as never)
+      .setPeople("o", "r", 7, { assignees: [], reviewers: [user("bob"), user("cleo")] });
+    expect(send.mock.calls).toEqual([
+      ["PATCH", "/repos/o/r/issues/7", { assignees: [] }],
+      ["POST", "/repos/o/r/pulls/7/requested_reviewers", { reviewers: ["cleo"] }],
+    ]);
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it("removes a reviewer with the GraphQL mutation, keeping requested teams", async () => {
+    const get = vi.fn().mockResolvedValue(current);
+    const send = vi.fn().mockResolvedValue(null);
+    const graphql = vi.fn()
+      .mockResolvedValueOnce({
+        repository: { pullRequest: { id: "PR_1", reviewRequests: { nodes: [{ requestedReviewer: { id: "T_1" } }, { requestedReviewer: {} }] } } },
+        u0: { id: "U_cleo" },
+      })
+      .mockResolvedValueOnce({});
+    await new GitHubClient(get as never, send as never, graphql as never)
+      .setPeople("o", "r", 7, { assignees: [user("ana")], reviewers: [user("cleo")] });
+    expect(send).not.toHaveBeenCalled();
+    expect(graphql.mock.calls[0][1]).toEqual({ owner: "o", repo: "r", number: 7, u0: "cleo" });
+    expect(graphql.mock.calls[1][0]).toContain("union: false");
+    expect(graphql.mock.calls[1][1]).toEqual({ id: "PR_1", users: ["U_cleo"], teams: ["T_1"] });
+  });
+});
+
 describe("GitHubClient.setDraft", () => {
   it("uses the GraphQL mutation matching the requested state", async () => {
     const get = vi.fn().mockResolvedValue({ number: 7, node_id: "PR_kw" });

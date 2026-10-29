@@ -285,6 +285,12 @@ export interface PullRequestEdit {
   description: string;
 }
 
+/** Relecteurs et assignés d'une PR / MR existante : remplacent ceux en place. */
+export interface PullRequestPeople {
+  reviewers: ForgeUser[];
+  assignees: ForgeUser[];
+}
+
 export interface CreatedPullRequest {
   pr: ForgePR;
   /** Étapes secondaires échouées (relecteurs, labels…) : la PR existe quand même. */

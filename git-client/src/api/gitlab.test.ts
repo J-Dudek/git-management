@@ -244,6 +244,16 @@ describe("GitLab draft titles", () => {
     expect(send).toHaveBeenLastCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { title: "oups", description: "" });
   });
 
+  it("setPeople sends the ids, taking missing ones from the merge request and 0 to clear", async () => {
+    const get = vi.fn().mockResolvedValue({ ...rawMR, reviewers: [{ id: 5, username: "bob" }], assignees: [{ id: 6, username: "ana" }] });
+    const send = vi.fn().mockResolvedValue(null);
+    await new GitLabClient(get as never, send as never).setPeople("group/app", 12, {
+      reviewers: [{ id: 0, username: "bob", name: "bob" }, { id: 9, username: "cleo", name: "Cléo" }],
+      assignees: [],
+    });
+    expect(send).toHaveBeenCalledWith("PUT", "/projects/group%2Fapp/merge_requests/12", { reviewer_ids: [5, 9], assignee_ids: [0] });
+  });
+
   it("setDraft rewrites the merge request title", async () => {
     const get = vi.fn().mockResolvedValue({ ...rawMR, title: "Draft: Add feature" });
     const send = vi.fn().mockResolvedValue(null);
