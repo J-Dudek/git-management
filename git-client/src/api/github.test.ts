@@ -412,7 +412,8 @@ describe("GitHubClient inline review", () => {
       mergeable: "MERGEABLE", commits: { nodes: [{ commit: { statusCheckRollup: { state: "SUCCESS" } } }] }, ...extra,
     });
     const graphql = vi.fn().mockResolvedValue({
-      assigned: { nodes: [node(1), {}] },
+      viewer: { login: "me" },
+      assigned: { nodes: [node(1, { commits: { nodes: [{ commit: { statusCheckRollup: null, committer: { user: { login: "me" } } } }] } }), {}] },
       reviewing: { nodes: [node(1), node(2, { reviewDecision: "CHANGES_REQUESTED" })] },
       authored: { nodes: [node(3, { latestOpinionatedReviews: { nodes: [{ state: "APPROVED" }] }, mergeable: "CONFLICTING" })] },
     });
@@ -420,7 +421,7 @@ describe("GitHubClient inline review", () => {
     const mine = await gh.getMyPullRequests();
 
     expect(graphql.mock.calls[0][1]).toMatchObject({ assigned: expect.stringContaining("assignee:@me"), authored: expect.stringContaining("author:@me") });
-    expect(mine.assigned.map((p) => [p.number, p.review])).toEqual([[1, "pending"], [2, "changes_requested"]]);
+    expect(mine.assigned.map((p) => [p.number, p.review, p.pushedByMe])).toEqual([[1, "pending", true], [2, "changes_requested", false]]);
     expect(mine.authored[0]).toMatchObject({ number: 3, projectPath: "o/r", review: "approved", ci: "success", conflicts: true, headSha: "sha" });
   });
 });

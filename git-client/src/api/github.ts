@@ -132,7 +132,7 @@ interface RawSearchPullRequest {
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   latestOpinionatedReviews: { nodes: { state: string }[] };
   mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
-  commits: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] };
+  commits: { nodes: { commit: { statusCheckRollup: { state: string } | null; committer?: { user: { login: string } | null } | null } }[] };
 }
 
 const SEARCH_FIELDS = `
@@ -146,10 +146,11 @@ const SEARCH_FIELDS = `
     reviewDecision
     latestOpinionatedReviews(first: 20) { nodes { state } }
     mergeable
-    commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+    commits(last: 1) { nodes { commit { statusCheckRollup { state } committer { user { login } } } } }
   }`;
 
 const MY_PRS_QUERY = `query($assigned: String!, $reviewing: String!, $authored: String!) {
+  viewer { login }
   assigned: search(query: $assigned, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
   reviewing: search(query: $reviewing, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
   authored: search(query: $authored, type: ISSUE, first: ${PR_PAGE_SIZE}) { nodes { ${SEARCH_FIELDS} } }
@@ -230,12 +231,12 @@ export class GitHubClient {
   async getMyPullRequests(): Promise<MyPullRequests> {
     const open = "is:pr is:open archived:false";
     type Result = { nodes: RawSearchPullRequest[] };
-    const data = await this.graphql<{ assigned: Result; reviewing: Result; authored: Result }>(MY_PRS_QUERY, {
+    const data = await this.graphql<{ viewer?: { login: string }; assigned: Result; reviewing: Result; authored: Result }>(MY_PRS_QUERY, {
       assigned: `${open} assignee:@me`,
       reviewing: `${open} review-requested:@me`,
       authored: `${open} author:@me`,
     });
-    const parse = (r: Result) => r.nodes.filter((n) => n.number !== undefined).map(parseSearchPR);
+    const parse = (r: Result) => r.nodes.filter((n) => n.number !== undefined).map((n) => parseSearchPR(n, data.viewer?.login));
     return { assigned: uniquePrs([...parse(data.assigned), ...parse(data.reviewing)]), authored: parse(data.authored) };
   }
 
@@ -637,8 +638,11 @@ function reviewState(raw: RawReviewState): PrSummary["review"] {
   return "pending";
 }
 
-function parseSearchPR(raw: RawSearchPullRequest): PrSummary {
-  const rollup = raw.commits.nodes[0]?.commit.statusCheckRollup;
+/** `me` : login connecté ; GitHub ne dit pas qui a poussé, le committer du dernier commit en tient lieu. */
+function parseSearchPR(raw: RawSearchPullRequest, me?: string): PrSummary {
+  const head = raw.commits.nodes[0]?.commit;
+  const rollup = head?.statusCheckRollup;
+  const committer = head?.committer?.user?.login;
   return {
     number: raw.number!,
     title: raw.title,
@@ -658,6 +662,7 @@ function parseSearchPR(raw: RawSearchPullRequest): PrSummary {
     review: reviewState(raw),
     ci: rollup ? CI_STATES[rollup.state] ?? null : null,
     conflicts: raw.mergeable === "CONFLICTING",
+    pushedByMe: !!me && committer === me,
   };
 }
 

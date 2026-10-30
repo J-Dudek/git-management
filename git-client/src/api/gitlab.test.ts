@@ -364,7 +364,8 @@ describe("GitLabClient inline review", () => {
       iid, title: `MR ${iid}`, state: "opened", project_id: 9, references: { full: "grp/proj!" + iid }, ...extra,
     });
     const get = vi.fn((path: string) => {
-      if (path.startsWith("/merge_requests?scope=assigned_to_me")) return Promise.resolve([mr(1)]);
+      if (path.startsWith("/merge_requests?scope=assigned_to_me")) return Promise.resolve([mr(1, { sha: "pushed" })]);
+      if (path.startsWith("/events?action=pushed")) return Promise.resolve([{ push_data: { commit_to: "pushed" } }, {}]);
       if (path.startsWith("/merge_requests?scope=all&reviewer_username=me")) return Promise.resolve([mr(1), mr(2)]);
       if (path.startsWith("/merge_requests?scope=created_by_me")) return Promise.resolve([mr(3)]);
       if (path === "/projects/9/merge_requests/3") return Promise.resolve(mr(3, { head_pipeline: { id: 1, status: "failed", web_url: "" }, has_conflicts: false }));
@@ -374,7 +375,7 @@ describe("GitLabClient inline review", () => {
     });
     const mine = await new GitLabClient(get as never).getMyMergeRequests("me");
 
-    expect(mine.assigned.map((m) => [m.projectPath, m.number, m.review])).toEqual([["grp/proj", 1, "pending"], ["grp/proj", 2, "approved"]]);
+    expect(mine.assigned.map((m) => [m.projectPath, m.number, m.review, m.pushedByMe])).toEqual([["grp/proj", 1, "pending", true], ["grp/proj", 2, "approved", false]]);
     expect(mine.authored[0]).toMatchObject({ number: 3, projectPath: "grp/proj", review: "approved", ci: "failure", conflicts: false });
   });
 });

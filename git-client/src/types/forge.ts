@@ -70,6 +70,8 @@ export interface PrSummary extends ForgePR {
   /** null : pas de CI sur le dernier commit (ou état inconnu). */
   ci: "success" | "failure" | "pending" | null;
   conflicts: boolean;
+  /** Commit de tête poussé par moi (GitLab : mes pushs récents ; GitHub : committé par moi). */
+  pushedByMe?: boolean;
 }
 
 /** PR / MR ouvertes, tous projets confondus : à traiter (assigné ou relecteur demandé) et ouvertes par moi. */

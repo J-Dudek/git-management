@@ -72,6 +72,11 @@ interface RawMergeRequestDetails extends RawMergeRequest {
   user?: { can_merge?: boolean };
 }
 
+/** Événement « pushed » de l'utilisateur connecté ; `commit_to` : commit de tête après le push. */
+interface RawPushEvent {
+  push_data?: { commit_to?: string | null };
+}
+
 interface RawApprovals {
   approved_by?: { user: RawUser }[];
   approvals_left?: number;
@@ -186,26 +191,31 @@ export class GitLabClient {
   /**
    * MR ouvertes de tous les projets : assignées, relecture demandée (fusionnées sans doublon) et ouvertes par moi.
    * Une requête d'approbations par MR, et pour les miennes une de détail (pipeline) : la liste ne les donne pas.
+   * Mes derniers pushs disent quelles MR ont pour tête un commit que j'ai poussé moi-même.
    */
   async getMyMergeRequests(me: string): Promise<MyPullRequests> {
     const open = `state=opened&per_page=${PR_PAGE_SIZE}`;
-    const [assigned, reviewing, authored] = await Promise.all([
+    const [assigned, reviewing, authored, pushes] = await Promise.all([
       this.get<RawMergeRequest[]>(`/merge_requests?scope=assigned_to_me&${open}`),
       this.get<RawMergeRequest[]>(`/merge_requests?scope=all&reviewer_username=${encodeURIComponent(me)}&${open}`),
       this.get<RawMergeRequest[]>(`/merge_requests?scope=created_by_me&${open}`),
+      this.get<RawPushEvent[]>("/events?action=pushed&per_page=100").catch((): RawPushEvent[] => []),
     ]);
+    const pushed = new Set(pushes.flatMap((e) => (e.push_data?.commit_to ? [e.push_data.commit_to] : [])));
     const mrPath = (raw: RawMergeRequest) => `/projects/${raw.project_id}/merge_requests/${raw.iid}`;
     const approvalsOf = (raw: RawMergeRequest) => this.get<RawApprovals>(`${mrPath(raw)}/approvals`).catch((): RawApprovals => ({}));
+    const summary = (raw: RawMergeRequest & Partial<RawMergeRequestDetails>, approvals: RawApprovals): PrSummary =>
+      ({ ...parseSummary(raw, approvals), pushedByMe: !!raw.sha && pushed.has(raw.sha) });
     const [mine, toProcess] = await Promise.all([
       Promise.all(authored.map(async (raw) => {
         const [details, approvals] = await Promise.all([
           this.get<RawMergeRequestDetails>(mrPath(raw)).catch(() => null),
           approvalsOf(raw),
         ]);
-        return parseSummary(details ?? raw, approvals);
+        return summary(details ?? raw, approvals);
       })),
       Promise.all(uniquePrs([...assigned, ...reviewing].map((raw) => ({ raw, ...parseSummary(raw) })))
-        .map(async ({ raw }) => parseSummary(raw, await approvalsOf(raw)))),
+        .map(async ({ raw }) => summary(raw, await approvalsOf(raw)))),
     ]);
     return { assigned: toProcess, authored: mine };
   }
