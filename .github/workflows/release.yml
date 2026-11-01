@@ -2,7 +2,7 @@ name: Release
 
 # À chaque merge sur main :
 #   1. en parallèle : les tests (workflow CI) et, si les commits justifient une release, la génération
-#      des paquets Linux / Windows avec la nouvelle version appliquée (rien n'est encore publié) ;
+#      des paquets Linux / Windows / macOS avec la nouvelle version appliquée (rien n'est encore publié) ;
 #   2. seulement si tests et paquets réussissent : mise à jour des fichiers et du CHANGELOG.md, commit sur
 #      main, tag vX.Y.Z et brouillon de release avec les paquets ;
 #   3. publication de la release, puis copie sur le dépôt public (vitrine) : c'est lui qui sert les
@@ -155,9 +155,20 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Paquet macOS universel : même principe (version appliquée localement, rien n'est publié), dans un workflow
+  # réutilisable. Placé dans les `needs` du job de version : s'il échoue, rien n'est tagué ni publié.
+  build-macos:
+    name: Paquet macOS
+    needs: plan
+    if: needs.plan.outputs.version != ''
+    uses: ./.github/workflows/build-macos.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+    secrets: inherit
+
   release:
     name: Version, tag et brouillon
-    needs: [tests, plan, build]
+    needs: [tests, plan, build, build-macos]
     if: needs.plan.outputs.version != ''
     runs-on: ubuntu-latest
     permissions:
@@ -183,6 +194,13 @@ jobs:
         with:
           pattern: paquets-*
           path: paquets
+
+      # Artefact du workflow réutilisable : son version-tree.txt est vérifié avec ceux des autres paquets.
+      - name: Télécharger le paquet macOS
+        uses: actions/download-artifact@v7
+        with:
+          name: macos
+          path: paquets/macos
 
       - name: Mise à jour des fichiers et du changelog, commit et tag
         id: release
@@ -260,7 +278,7 @@ jobs:
           rm -f assets/SHA256SUMS.txt assets/latest.json
 
       # Manifeste des mises à jour automatiques, d'après les signatures de tous les paquets.
-      # Entrées génériques : AppImage sous Linux, installateur NSIS sous Windows.
+      # Entrées génériques : AppImage sous Linux, installateur NSIS sous Windows, archive .app.tar.gz sous macOS.
       - name: Manifeste des mises à jour (latest.json)
         env:
           VERSION: ${{ needs.plan.outputs.version }}
@@ -278,6 +296,11 @@ jobs:
           add windows-x86_64        "Merathon_${VERSION}_x64-setup.exe"
           add windows-x86_64-nsis   "Merathon_${VERSION}_x64-setup.exe"
           add windows-x86_64-msi    "Merathon_${VERSION}_x64_en-US.msi"
+          # macOS : une seule archive universelle sert aux deux architectures.
+          add darwin-aarch64        "Merathon_${VERSION}_universal.app.tar.gz"
+          add darwin-aarch64-app    "Merathon_${VERSION}_universal.app.tar.gz"
+          add darwin-x86_64         "Merathon_${VERSION}_universal.app.tar.gz"
+          add darwin-x86_64-app     "Merathon_${VERSION}_universal.app.tar.gz"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
           # Notes lues par l'application : celles de la release, puis le CHANGELOG.md du tag après un marqueur,
           # pour afficher toutes les versions publiées depuis celle installée (voir git-client/src/lib/updater.ts).

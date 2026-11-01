@@ -262,10 +262,10 @@ Sous macOS, `npm run tauri build -- --target universal-apple-darwin` produit un 
      - `feat:` → version mineure,
      - `fix:`, `perf:`, `refactor:`, `build:` ou message libre → correctif,
      - uniquement `docs:`, `ci:`, `test:`, `chore:`, `style:` → pas de release ;
-  3. génération des paquets Linux (`.deb`, `.AppImage`) et Windows (`.msi`, `.exe`) avec la nouvelle version appliquée (`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`), pendant que les tests tournent ; rien n'est encore publié ;
+  3. génération des paquets Linux (`.deb`, `.AppImage`), Windows (`.msi`, `.exe`) et macOS (`.dmg`, archive de mise à jour `.app.tar.gz`) avec la nouvelle version appliquée (`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock`, `tauri.conf.json`), pendant que les tests tournent ; rien n'est encore publié ;
   4. seulement si **les tests et tous les paquets** réussissent : commit `chore(release): vX.Y.Z` sur `main`, tag `vX.Y.Z` et release GitHub, publiée automatiquement. Le commit de version est vérifié identique aux fichiers dont les paquets ont été générés. Si un test ou une plateforme échoue, rien n'est tagué ni publié.
 
-Le paquet macOS (`.dmg` universel et archive de mise à jour `.app.tar.gz`) est produit par le workflow réutilisable `.github/workflows/build-macos.yml`, sur un runner macOS. L'en-tête du fichier indique comment l'appeler depuis `release.yml` et l'ajouter à la publication.
+Le paquet macOS (`.dmg` universel et archive de mise à jour `.app.tar.gz`) est produit sur un runner macOS par le workflow réutilisable `.github/workflows/build-macos.yml`, appelé par `release.yml` comme les autres paquets : s'il échoue, rien n'est publié.
 
 La branche `main` étant protégée, le commit de version est poussé avec le secret `RELEASE_TOKEN` : un token autorisé à contourner la protection (GitHub App ou token *fine-grained* limité à ce dépôt, permission « Contents : read and write »).
 

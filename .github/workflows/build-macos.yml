@@ -1,21 +1,12 @@
-# Paquet macOS universel (Apple Silicon + Intel), à appeler depuis release.yml :
+# Paquet macOS universel (Apple Silicon + Intel), appelé par release.yml (job « Paquet macOS »).
 #
-#   build-macos:
-#     needs: version                      # le job qui calcule la prochaine version
-#     uses: ./.github/workflows/build-macos.yml
-#     with:
-#       version: ${{ needs.version.outputs.version }}
-#     secrets: inherit
+# Comme pour Linux et Windows, le paquet est généré avant tout commit de version, à partir du même contenu
+# (version appliquée localement) : release.yml le place dans les `needs` du job de version, donc rien n'est
+# tagué ni publié s'il échoue. L'artefact `macos` contient le .dmg, le .app.tar.gz (mises à jour automatiques),
+# sa signature .sig et l'empreinte des fichiers versionnés ; release.yml joint les paquets à la release, ajoute
+# l'entrée darwin de latest.json et leurs empreintes SHA-256.
 #
-# puis ajouter `build-macos` aux `needs` du job de publication. Ainsi, comme pour Linux et Windows,
-# rien n'est tagué ni publié si le paquet macOS échoue.
-#
-# Le job de publication récupère l'artefact `macos` (actions/download-artifact) et :
-#   - joint à la release le .dmg, le .app.tar.gz et sa signature .sig ;
-#   - fusionne `latest-darwin.json` dans `latest.json`, sinon l'application installée sur Mac
-#     ne trouve jamais ses mises à jour :
-#       jq -s '.[0].platforms += .[1].platforms | .[0]' latest.json latest-darwin.json > latest.merged.json
-#   - ajoute ces fichiers à SHA256SUMS.txt.
+# Lancement manuel possible pour tester le build seul : rien n'est publié.
 name: build-macos
 
 on:
@@ -41,9 +32,9 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -58,8 +49,19 @@ jobs:
         with:
           workspaces: git-client/src-tauri
 
+      # Empreinte (arbre git) des fichiers versionnés : le job de release la compare à son commit de version,
+      # comme pour les paquets Linux et Windows.
       - name: Appliquer la version
-        run: node git-client/scripts/version.mjs apply "$VERSION"
+        env:
+          VERSIONED_FILES: >-
+            git-client/package.json git-client/package-lock.json git-client/src-tauri/Cargo.toml
+            git-client/src-tauri/Cargo.lock git-client/src-tauri/tauri.conf.json
+        run: |
+          node git-client/scripts/version.mjs apply "$VERSION"
+          git add -- $VERSIONED_FILES
+          mkdir -p out
+          git write-tree > out/version-tree.txt
+          echo "Arbre versionné : $(cat out/version-tree.txt)"
 
       - name: Installer les dépendances
         working-directory: git-client
@@ -70,8 +72,10 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          MERATHON_GITHUB_CLIENT_ID: ${{ vars.MERATHON_GITHUB_CLIENT_ID || secrets.MERATHON_GITHUB_CLIENT_ID }}
-          MERATHON_GITLAB_CLIENT_ID: ${{ vars.MERATHON_GITLAB_CLIENT_ID || secrets.MERATHON_GITLAB_CLIENT_ID }}
+          # Identifiants client OAuth intégrés au binaire (mêmes variables que les autres plateformes,
+          # anciens noms GIT_CLIENT_* compris).
+          MERATHON_GITHUB_CLIENT_ID: ${{ vars.MERATHON_GITHUB_CLIENT_ID || secrets.MERATHON_GITHUB_CLIENT_ID || vars.GIT_CLIENT_GITHUB_CLIENT_ID || secrets.GIT_CLIENT_GITHUB_CLIENT_ID }}
+          MERATHON_GITLAB_CLIENT_ID: ${{ vars.MERATHON_GITLAB_CLIENT_ID || secrets.MERATHON_GITLAB_CLIENT_ID || vars.GIT_CLIENT_GITLAB_CLIENT_ID || secrets.GIT_CLIENT_GITLAB_CLIENT_ID }}
         run: npm run tauri build -- --target universal-apple-darwin
 
       # Noms alignés sur les autres paquets (Merathon_X.Y.Z_…) ; la signature porte sur le contenu,
@@ -79,18 +83,15 @@ jobs:
       - name: Rassembler les paquets
         run: |
           bundle=git-client/src-tauri/target/universal-apple-darwin/release/bundle
-          mkdir out
+          mkdir -p out
           cp "$bundle"/dmg/*.dmg "out/Merathon_${VERSION}_universal.dmg"
           cp "$bundle/macos/Merathon.app.tar.gz" "out/Merathon_${VERSION}_universal.app.tar.gz"
           cp "$bundle/macos/Merathon.app.tar.gz.sig" "out/Merathon_${VERSION}_universal.app.tar.gz.sig"
-          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/Merathon_${VERSION}_universal.app.tar.gz"
-          sig=$(cat "out/Merathon_${VERSION}_universal.app.tar.gz.sig")
-          jq -n --arg url "$url" --arg sig "$sig" \
-            '{platforms: {"darwin-aarch64": {url: $url, signature: $sig}, "darwin-x86_64": {url: $url, signature: $sig}}}' \
-            > out/latest-darwin.json
+          ls -l out
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: macos
           path: out/
           if-no-files-found: error
+          retention-days: 7
