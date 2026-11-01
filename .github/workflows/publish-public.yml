@@ -36,6 +36,10 @@ jobs:
           git archive HEAD | tar -x -C ../snapshot
           # Retirer ce qui ne doit pas être public : de .github, seuls les modèles d'issues sont gardés
           find ../snapshot/.github -mindepth 1 -maxdepth 1 ! -name ISSUE_TEMPLATE -exec rm -rf {} +
+          # Workflows propres au dépôt public (miroir des PR) : maintenus dans .github/public-workflows
+          # pour ne pas être supprimés à chaque release, puisque le contenu du dépôt public est remplacé.
+          mkdir -p ../snapshot/.github/workflows
+          cp .github/public-workflows/*.yml ../snapshot/.github/workflows/
           rm -rf ../snapshot/docs-internes
 
       - name: Clone public repo

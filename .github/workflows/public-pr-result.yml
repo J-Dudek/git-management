@@ -1,0 +1,42 @@
+name: Résultat vers merathon
+
+# Quand la PR miroir (public-pr/<N>) est mergée ou fermée, renvoie le résultat à la PR publique, où le
+# workflow « Résultat git-management » pose le statut et le commentaire.
+#
+# Secret : MERATHON_TOKEN (merathon : Contents en lecture/écriture, pour repository_dispatch)
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: startsWith(github.event.pull_request.head.ref, 'public-pr/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Renvoyer le résultat
+        env:
+          GH_TOKEN: ${{ secrets.MERATHON_TOKEN }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+
+          # Fermeture provoquée par le miroir lui-même (PR publique déjà fermée) : rien à renvoyer.
+          if [[ ",$LABELS," == *",closed-by-mirror,"* ]]; then
+            exit 0
+          fi
+
+          number="${HEAD_REF#public-pr/}"
+          [[ "$number" =~ ^[0-9]+$ ]] || { echo "numéro invalide"; exit 1; }
+
+          state=closed
+          [ "$MERGED" = "true" ] && state=merged
+
+          gh api repos/J-Dudek/merathon/dispatches \
+            -f event_type=git-management-result \
+            -f "client_payload[number]=${number}" \
+            -f "client_payload[state]=${state}"

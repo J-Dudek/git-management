@@ -1,0 +1,127 @@
+name: Miroir des PR de merathon
+
+# Rejoue ici une PR ouverte sur le dépôt public (merathon).
+#
+# Le dépôt public est un instantané (un commit par release) : son historique n'a aucun ancêtre commun avec
+# celui-ci, une branche poussée telle quelle ne pourrait pas devenir une PR. Les commits de la PR sont donc
+# appliqués sur main avec git am --3way (auteurs conservés), sur la branche public-pr/<N>, puis une PR
+# interne est ouverte. Le code de la PR n'est jamais exécuté dans ce workflow.
+#
+# Une PR qui modifie .github/ n'est PAS rejouée automatiquement : sa PR interne exécuterait ses propres
+# workflows avec les secrets du dépôt. Après relecture, la lancer à la main (Run workflow, allow_workflows).
+#
+# Secrets : MIRROR_TOKEN (ce dépôt : Contents, Pull requests, Workflows en lecture/écriture)
+#           MERATHON_TOKEN (merathon : Contents en lecture/écriture, pour repository_dispatch)
+on:
+  repository_dispatch:
+    types: [public-pr]
+  workflow_dispatch:
+    inputs:
+      number:
+        description: Numéro de la PR sur merathon
+        required: true
+        type: string
+      allow_workflows:
+        description: Rejouer même si la PR modifie .github/ (à n'utiliser qu'après relecture)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-pr-${{ github.event.client_payload.number || inputs.number }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.MIRROR_TOKEN }}
+
+      - name: Rejouer la PR
+        env:
+          GH_TOKEN: ${{ secrets.MIRROR_TOKEN }}
+          NOTIFY_TOKEN: ${{ secrets.MERATHON_TOKEN }}
+          NUMBER: ${{ github.event.client_payload.number || inputs.number }}
+          ALLOW_WORKFLOWS: ${{ inputs.allow_workflows }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          [[ "$NUMBER" =~ ^[0-9]+$ ]] || { echo "numéro invalide"; exit 1; }
+          public=J-Dudek/merathon
+          branch="public-pr/${NUMBER}"
+
+          notify() { # notify <état> : renvoie un résultat à la PR publique
+            GH_TOKEN="$NOTIFY_TOKEN" gh api "repos/${public}/dispatches" \
+              -f event_type=git-management-result \
+              -f "client_payload[number]=${NUMBER}" \
+              -f "client_payload[state]=$1"
+          }
+
+          # Source de vérité : l'état actuel de la PR publique, pas le contenu de l'événement.
+          meta="$(gh api "repos/${public}/pulls/${NUMBER}")"
+          state="$(jq -r .state <<< "$meta")"
+          title="$(jq -r .title <<< "$meta")"
+          author="$(jq -r .user.login <<< "$meta")"
+          url="$(jq -r .html_url <<< "$meta")"
+          base_ref="$(jq -r .base.ref <<< "$meta")"
+          [[ "$base_ref" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "branche de base invalide"; exit 1; }
+
+          if [ "$state" != "open" ]; then
+            # PR publique fermée ou mergée : la PR miroir est fermée sans renvoyer de résultat.
+            if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" != "0" ]; then
+              gh label create closed-by-mirror --force > /dev/null 2>&1 || true
+              gh pr edit "$branch" --add-label closed-by-mirror
+              gh pr close "$branch" --delete-branch \
+                --comment "PR publique fermée ou mergée côté merathon."
+            fi
+            exit 0
+          fi
+
+          git remote add public "https://github.com/${public}.git" 2> /dev/null || true
+          git fetch --no-tags public \
+            "+refs/pull/${NUMBER}/head:refs/remotes/public/pr-${NUMBER}" \
+            "+refs/heads/${base_ref}:refs/remotes/public/base"
+          head="refs/remotes/public/pr-${NUMBER}"
+          base="$(git merge-base refs/remotes/public/base "$head")"
+
+          if [ "$(git rev-list --count "${base}..${head}")" = "0" ]; then
+            echo "Aucun commit à rejouer."
+            exit 0
+          fi
+
+          # Variable plutôt que tube : grep -q fermerait le tube trop tôt et pipefail ferait échouer le test.
+          changed="$(git diff --name-only "$base" "$head")"
+          if [ "$ALLOW_WORKFLOWS" != "true" ] && grep -q '^\.github/' <<< "$changed"; then
+            echo "::warning::La PR #${NUMBER} modifie .github/ : relecture manuelle requise."
+            notify manual
+            exit 0
+          fi
+
+          git config user.name "mirror-bot"
+          git config user.email "mirror-bot@users.noreply.github.com"
+          git checkout -B "$branch" "origin/${DEFAULT_BRANCH}"
+
+          patch="$(mktemp)"
+          git format-patch --stdout --binary "${base}..${head}" > "$patch"
+          if ! git -c core.hooksPath=/dev/null am --3way --quiet < "$patch"; then
+            git am --abort || true
+            echo "::error::Conflit lors du rejeu de la PR #${NUMBER} sur ${DEFAULT_BRANCH}."
+            notify conflict
+            exit 0
+          fi
+
+          git push --force origin "$branch"
+
+          pr_title="[merathon#${NUMBER}] ${title}"
+          pr_body="$(printf 'Miroir de %s (auteur : %s).\n\nMerger ou fermer cette PR répercute le résultat sur la PR publique (statut et commentaire). La PR publique n’est pas mergée automatiquement.' "$url" "$author")"
+
+          if [ "$(gh pr list --head "$branch" --state open --json number --jq length)" = "0" ]; then
+            gh pr create --base "$DEFAULT_BRANCH" --head "$branch" --title "$pr_title" --body "$pr_body"
+          else
+            gh pr edit "$branch" --title "$pr_title"
+          fi
