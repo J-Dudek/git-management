@@ -103,9 +103,11 @@ jobs:
         with:
           node-version: 22
 
+      # Seules les dépendances livrées dans l'application sont auditées (--omit=dev) : l'outillage de lint et de
+      # test (ESLint, Vitest…) n'est pas embarqué, et un avis sur ses dépendances ne doit pas bloquer les releases.
       - name: npm audit
         working-directory: git-client
-        run: npm audit --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2
