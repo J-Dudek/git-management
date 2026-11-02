@@ -12,6 +12,7 @@ import { inputClass } from "./Modal";
 import { useLinkedForge } from "./PullRequestList";
 import { MyPullRequestsSection } from "./MyPullRequests";
 import { SshSetupDialog } from "./SshSetupDialog";
+import { IdentityProblem } from "./IdentityProblem";
 import { PanelSection as Section } from "./PanelSection";
 import type { DeviceCode, ForgeAccount, ForgeIssue, Provider } from "../types/forge";
 import { fieldLabel } from "../lib/fieldLabel";
@@ -60,6 +61,9 @@ function IdentitySection() {
   const [editing, setEditing] = useState(false);
   const [current, setCurrent] = useState<{ name: string | null; email: string | null } | null>(null);
 
+  const status = useRepoStore((s) => s.identity);
+  const openProfiles = useUiStore((s) => s.setPreferencesOpen);
+
   useEffect(() => {
     getIdentity(repoPath)
       .then((id) => {
@@ -69,7 +73,7 @@ function IdentitySection() {
         if (!id.name || !id.email) setEditing(true);
       })
       .catch(() => setCurrent({ name: null, email: null }));
-  }, [repoPath]);
+  }, [repoPath, status?.email, status?.name]);
 
   async function save() {
     try {
@@ -96,6 +100,14 @@ function IdentitySection() {
           {current.name} <span className="text-[var(--color-muted)]">&lt;{current.email}&gt;</span>
         </p>
       )}
+      {!editing && repoPath && status && (status.profile || status.outside) && (
+        <p className="px-3 pb-2 -mt-1 text-[11px] text-[var(--color-muted)]">
+          {status.profile ? `Profil : ${status.profile.label}` : "Ce dépôt n'est couvert par aucun profil"}
+          {" · "}
+          <button className="underline hover:text-[var(--color-text)]" onClick={() => openProfiles(true, "profiles")}>Gérer les profils</button>
+        </p>
+      )}
+      {!editing && <div className="px-3 pb-2 empty:hidden"><IdentityProblem /></div>}
       {editing && (
         <div className="px-3 pb-2 flex flex-col gap-1.5">
           {!current?.name && <p className="text-[11px] text-amber-300">Requis pour commiter.</p>}

@@ -463,8 +463,38 @@ pub fn ssh_setup_info() -> Result<ssh_setup::SshSetupInfo, String> {
 }
 
 #[tauri::command(async)]
-pub fn ssh_create_key(comment: String, passphrase: Option<String>) -> Result<ssh_setup::SshKeyInfo, String> {
-    ssh_setup::create_key(&ssh_setup::ssh_dir()?, &comment, passphrase.as_deref())
+pub fn ssh_create_key(name: Option<String>, comment: String, passphrase: Option<String>) -> Result<ssh_setup::SshKeyInfo, String> {
+    ssh_setup::create_key(&ssh_setup::ssh_dir()?, name.as_deref(), &comment, passphrase.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn ssh_all_keys() -> Result<Vec<ssh_setup::SshKeyInfo>, String> {
+    Ok(ssh_setup::all_keys(&ssh_setup::ssh_dir()?))
+}
+
+#[tauri::command(async)]
+pub fn list_git_profiles() -> Result<git::ProfilesInfo, GitError> {
+    git::list_profiles(&git::home_dir()?)
+}
+
+#[tauri::command(async)]
+pub fn save_git_profile(profile: git::ProfileInput) -> Result<git::GitProfile, GitError> {
+    git::save_profile(&git::home_dir()?, &profile)
+}
+
+#[tauri::command(async)]
+pub fn delete_git_profile(id: String) -> Result<(), GitError> {
+    git::delete_profile(&git::home_dir()?, &id)
+}
+
+#[tauri::command(async)]
+pub fn git_identity_status(path: String) -> Result<git::IdentityStatus, GitError> {
+    with_repo(&path, |r| git::identity_status(&git::home_dir()?, r))
+}
+
+#[tauri::command(async)]
+pub fn clear_local_identity(path: String) -> Result<(), GitError> {
+    with_repo(&path, git::clear_local_identity)
 }
 
 #[tauri::command(async)]

@@ -163,7 +163,7 @@ pub fn force_push_pull_request(
     let url = remote.url().unwrap_or("").to_string();
     let stale: Cell<Option<Oid>> = Cell::new(None);
     let rejected: RefCell<Vec<String>> = RefCell::new(Vec::new());
-    let mut callbacks = remote_callbacks(creds(&url));
+    let mut callbacks = remote_callbacks(creds(&url), repo.path());
     callbacks.push_negotiation(|updates| {
         for update in updates {
             if update.dst_refname().ok() == Some(target.as_str()) && update.src() != expected {

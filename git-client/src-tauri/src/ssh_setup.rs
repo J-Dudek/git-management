@@ -9,6 +9,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use serde::Serialize;
+use crate::git::is_plain_file_name;
 use ssh_key::{rand_core::OsRng, Algorithm, HashAlg, LineEnding, PrivateKey, PublicKey};
 
 /// Fichiers essayés par défaut, dans l'ordre de `git/auth.rs`.
@@ -88,18 +89,33 @@ pub fn setup_info(dir: &Path) -> SshSetupInfo {
     SshSetupInfo { keys, new_key_path: (!taken).then(|| target.to_string_lossy().to_string()), machine: machine_name() }
 }
 
-/// Clé existante désignée par son nom : aucun chemin arbitraire n'est accepté.
+/// Toutes les clés de `~/.ssh` (fichier privé et `.pub`), pour en choisir une par profil.
+pub fn all_keys(dir: &Path) -> Vec<SshKeyInfo> {
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let mut names: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| e.file_name().to_string_lossy().strip_suffix(".pub").map(str::to_string))
+        .collect();
+    names.sort();
+    names.iter().filter_map(|name| key_info(dir, name)).collect()
+}
+
+/// Clé existante désignée par son nom de fichier dans `~/.ssh` : aucun chemin arbitraire n'est accepté.
 pub fn existing_key(dir: &Path, name: &str) -> Result<SshKeyInfo, String> {
-    if !KEY_NAMES.contains(&name) {
+    if !is_plain_file_name(name) {
         return Err(format!("Clé SSH refusée : {name}"));
     }
     key_info(dir, name).ok_or_else(|| format!("Clé SSH introuvable ou sans fichier .pub : {name}"))
 }
 
-/// Crée `id_ed25519` (et `.pub`) sans jamais écraser un fichier existant.
-pub fn create_key(dir: &Path, comment: &str, passphrase: Option<&str>) -> Result<SshKeyInfo, String> {
-    let private_path = dir.join(NEW_KEY);
-    let public_path = dir.join(format!("{NEW_KEY}.pub"));
+/// Crée la clé `name` (`id_ed25519` par défaut) et son `.pub` sans jamais écraser un fichier existant.
+pub fn create_key(dir: &Path, name: Option<&str>, comment: &str, passphrase: Option<&str>) -> Result<SshKeyInfo, String> {
+    let name = name.unwrap_or(NEW_KEY);
+    if !is_plain_file_name(name) || name.ends_with(".pub") {
+        return Err(format!("Nom de clé SSH refusé : {name}"));
+    }
+    let private_path = dir.join(name);
+    let public_path = dir.join(format!("{name}.pub"));
     if private_path.exists() || public_path.exists() {
         return Err(format!("{} existe déjà : elle n'est jamais écrasée", private_path.display()));
     }
@@ -119,7 +135,7 @@ pub fn create_key(dir: &Path, comment: &str, passphrase: Option<&str>) -> Result
         let _ = fs::remove_file(&private_path);
         return Err(e);
     }
-    key_info(dir, NEW_KEY).ok_or_else(|| "Clé créée mais illisible".to_string())
+    key_info(dir, name).ok_or_else(|| "Clé créée mais illisible".to_string())
 }
 
 fn create_private_dir(dir: &Path) -> Result<(), String> {
@@ -294,7 +310,7 @@ mod tests {
     fn creates_a_key_that_openssh_can_read() {
         let dir = TempDir::new().unwrap();
         let ssh = dir.path().join(".ssh");
-        let key = create_key(&ssh, "Merathon - poste", None).unwrap();
+        let key = create_key(&ssh, None, "Merathon - poste", None).unwrap();
         assert_eq!(key.name, "id_ed25519");
         assert_eq!(key.encrypted, Some(false));
         assert!(key.public_key.starts_with("ssh-ed25519 ") && key.public_key.ends_with("Merathon - poste"));
@@ -313,9 +329,19 @@ mod tests {
     }
 
     #[test]
+    fn creates_a_named_key_next_to_the_default_one() {
+        let dir = TempDir::new().unwrap();
+        create_key(dir.path(), None, "défaut", None).unwrap();
+        let key = create_key(dir.path(), Some("id_ed25519_pro"), "pro", None).unwrap();
+        assert_eq!(key.name, "id_ed25519_pro");
+        assert!(create_key(dir.path(), Some("id_ed25519_pro"), "pro", None).is_err());
+        assert!(existing_key(dir.path(), "id_ed25519_pro").is_ok());
+    }
+
+    #[test]
     fn protects_the_key_with_the_passphrase() {
         let dir = TempDir::new().unwrap();
-        let key = create_key(dir.path(), "poste", Some("secret de test")).unwrap();
+        let key = create_key(dir.path(), None, "poste", Some("secret de test")).unwrap();
         assert_eq!(key.encrypted, Some(true));
         let read = |pass: &str| Command::new("ssh-keygen").args(["-y", "-P", pass, "-f"]).arg(&key.path).output();
         if let (Ok(good), Ok(bad)) = (read("secret de test"), read("mauvaise")) {
@@ -329,20 +355,20 @@ mod tests {
     fn never_overwrites_an_existing_key() {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("id_ed25519"), "précieuse").unwrap();
-        assert!(create_key(dir.path(), "x", None).unwrap_err().contains("jamais écrasée"));
+        assert!(create_key(dir.path(), None, "x", None).unwrap_err().contains("jamais écrasée"));
         assert_eq!(fs::read_to_string(dir.path().join("id_ed25519")).unwrap(), "précieuse");
         assert!(setup_info(dir.path()).new_key_path.is_none());
 
         let other = TempDir::new().unwrap();
         fs::write(other.path().join("id_ed25519.pub"), "seule").unwrap();
-        assert!(create_key(other.path(), "x", None).is_err());
+        assert!(create_key(other.path(), None, "x", None).is_err());
         assert!(!other.path().join("id_ed25519").exists());
     }
 
     #[test]
     fn lists_only_default_keys_with_their_public_part() {
         let dir = TempDir::new().unwrap();
-        create_key(dir.path(), "poste", None).unwrap();
+        create_key(dir.path(), None, "poste", None).unwrap();
         fs::copy(dir.path().join("id_ed25519"), dir.path().join("travail")).unwrap();
         fs::copy(dir.path().join("id_ed25519.pub"), dir.path().join("travail.pub")).unwrap();
         fs::copy(dir.path().join("id_ed25519"), dir.path().join("id_rsa")).unwrap(); // sans .pub
@@ -350,14 +376,18 @@ mod tests {
         assert_eq!(info.keys.iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["id_ed25519"]);
         assert!(info.keys[0].fingerprint.starts_with("SHA256:"));
         assert!(!serde_json::to_string(&info).unwrap().contains("PRIVATE KEY"));
+        // Pour un profil, toutes les clés complètes sont proposées.
+        assert_eq!(all_keys(dir.path()).iter().map(|k| k.name.as_str()).collect::<Vec<_>>(), ["id_ed25519", "travail"]);
     }
 
     #[test]
     fn refuses_any_other_key_path() {
         let dir = TempDir::new().unwrap();
-        for bad in ["../secret", "/etc/passwd", "travail", ""] {
+        for bad in ["../secret", "/etc/passwd", "a/b", ""] {
             assert!(existing_key(dir.path(), bad).unwrap_err().contains("refusée"), "{bad}");
+            assert!(create_key(dir.path(), Some(bad), "x", None).unwrap_err().contains("refusé"), "{bad}");
         }
+        assert!(!dir.path().join("secret").exists());
     }
 
     #[test]

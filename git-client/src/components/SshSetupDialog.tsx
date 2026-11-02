@@ -37,7 +37,12 @@ const buttonClass = "px-3 py-1.5 text-xs rounded bg-overlay/10 hover:bg-overlay/
 const primaryClass = "px-3 py-1.5 text-xs rounded bg-[var(--color-accent-solid)] text-white disabled:opacity-50";
 
 /** Assistant « Configurer SSH » d'un compte. Rien n'est écrit avant la validation du formulaire. */
-export function SshSetupDialog({ account, onClose }: { account: ForgeAccount; onClose: () => void }) {
+export function SshSetupDialog({ account, fixedKey, onClose }: {
+  account: ForgeAccount;
+  /** Clé d'un profil Git : la seule proposée. */
+  fixedKey?: SshKeyInfo;
+  onClose: () => void;
+}) {
   const host = hostOf(account.base_url) ?? "";
   const notify = useUiStore((s) => s.notify);
   const [info, setInfo] = useState<SshSetupInfo | null>(null);
@@ -55,8 +60,9 @@ export function SshSetupDialog({ account, onClose }: { account: ForgeAccount; on
   useEffect(() => {
     closed.current = false;
     sshSetupInfo()
-      .then((loaded) => {
+      .then((found) => {
         if (closed.current) return;
+        const loaded = fixedKey ? { ...found, keys: [fixedKey], new_key_path: null } : found;
         setInfo(loaded);
         setChoice(loaded.keys[0]?.name ?? NEW_KEY);
         setTitle(defaultKeyTitle(loaded.machine));
@@ -65,7 +71,7 @@ export function SshSetupDialog({ account, onClose }: { account: ForgeAccount; on
     return () => {
       closed.current = true;
     };
-  }, []);
+  }, [fixedKey]);
 
   const creating = choice === NEW_KEY;
   const mismatch = creating ? passphraseProblem(passphrase, confirmation) : null;

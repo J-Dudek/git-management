@@ -251,6 +251,47 @@ export interface SshCheck {
   message: string;
 }
 
+export interface GitProfile {
+  /** Vide pour une règle écrite à la main, non modifiable ici. */
+  id: string;
+  label: string;
+  dir: string;
+  user_name: string | null;
+  user_email: string | null;
+  account_id: string | null;
+  /** Chemin de la clé SSH du dossier ; null : clés par défaut. */
+  ssh_key: string | null;
+  managed: boolean;
+}
+
+export interface GitProfileInput {
+  id: string | null;
+  label: string;
+  dir: string;
+  user_name: string;
+  user_email: string;
+  account_id: string | null;
+  ssh_key: string | null;
+}
+
+export interface GitProfilesInfo {
+  profiles: GitProfile[];
+  /** Règles que Merathon ne sait pas associer à un dossier, conservées telles quelles. */
+  other_rules: string[];
+}
+
+export interface IdentityStatus {
+  name: string | null;
+  email: string | null;
+  /** D'où vient l'e-mail : le dépôt, un fichier inclus par une règle, `~/.gitconfig`, ou nulle part. */
+  origin: "repo" | "profile" | "global" | "none";
+  profile: GitProfile | null;
+  /** Le dépôt est dans un profil, mais ses commits ne seraient pas signés avec l'e-mail du profil. */
+  mismatch: boolean;
+  /** Des profils existent, mais aucun ne couvre ce dépôt. */
+  outside: boolean;
+}
+
 export interface LfsStatus {
   uses_lfs: boolean;
   /** Version de git-lfs, null s'il n'est pas installé. */

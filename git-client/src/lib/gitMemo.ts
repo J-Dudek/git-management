@@ -238,6 +238,22 @@ export const GIT_MEMO: MemoGroup[] = [
         ],
       },
       {
+        title: "Avoir une identité par dossier",
+        command: 'git config --global includeIf."gitdir:~/dev/pro/".path ~/.gitconfig-pro',
+        summary:
+          "Une règle includeIf applique un fichier de configuration à tous les dépôts d'un dossier : même e-mail de commit et même clé SSH (core.sshCommand) sans rien régler dépôt par dépôt. " +
+          "Pour Merathon comme pour git en ligne de commande, le réglage propre à un dépôt passe avant la règle.",
+        example: "Sur ton poste pro, ~/dev/pro/ utilise ton compte GitLab, ~/dev/client/ une instance auto-hébergée et ~/dev/perso/ GitHub, chacun avec son e-mail et sa clé.",
+        steps: [
+          "Préférences → « Profils Git » → « Nouveau profil ».",
+          "Choisis le dossier, le nom et l'e-mail des commits, puis le compte et la clé SSH (existante, ou à créer).",
+          "Si le dépôt ouvert signe avec un autre e-mail que son profil, une alerte apparaît au-dessus du résumé du commit ; « Utiliser le profil » retire le réglage propre au dépôt.",
+          "En HTTPS, le token reste choisi d'après l'instance du remote, et non d'après le dossier.",
+        ],
+        warning:
+          "Si [user] est écrit après une règle includeIf dans ~/.gitconfig, il passe avant le profil : l'alerte le signale. Une copie de ~/.gitconfig est gardée dans ~/.gitconfig.merathon-original et ~/.gitconfig.merathon-backup.",
+      },
+      {
         title: "Configurer une clé SSH",
         command: "ssh-keygen -t ed25519",
         summary:
