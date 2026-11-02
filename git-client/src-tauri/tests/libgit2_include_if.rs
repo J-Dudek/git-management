@@ -7,7 +7,10 @@ use std::fs;
 #[test]
 fn libgit2_applies_include_if_gitdir() {
     let tmp = tempfile::TempDir::new().unwrap();
-    let home = tmp.path().canonicalize().unwrap();
+    // Sous Windows : sans le préfixe `\\?\` de `canonicalize`, et séparateurs `/` dans la configuration.
+    let home = std::path::PathBuf::from(tmp.path().canonicalize().unwrap().to_string_lossy().trim_start_matches(r"\\?\").to_string());
+    let config_path = |path: &std::path::Path| path.to_string_lossy().replace('\\', "/");
+    let condition = if cfg!(windows) { "gitdir/i" } else { "gitdir" };
     let pro = home.join("dev/pro");
     let autre = home.join("dev/autre");
     fs::create_dir_all(&pro).unwrap();
@@ -16,9 +19,9 @@ fn libgit2_applies_include_if_gitdir() {
     fs::write(
         home.join(".gitconfig"),
         format!(
-            "[user]\n\temail = global@example.com\n[includeIf \"gitdir:{}/\"]\n\tpath = {}\n",
-            pro.display(),
-            home.join(".gitconfig-pro").display()
+            "[user]\n\temail = global@example.com\n[includeIf \"{condition}:{}/\"]\n\tpath = {}\n",
+            config_path(&pro),
+            config_path(&home.join(".gitconfig-pro"))
         ),
     )
     .unwrap();

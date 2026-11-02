@@ -90,11 +90,17 @@ fn slashes(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-/// `\\?\C:\…` renvoyé par `canonicalize` sous Windows n'est pas compris par `gitdir:`.
+/// Retire le préfixe `\\?\` de `canonicalize` sous Windows, que `gitdir:` ne comprend pas.
+/// `\\?\UNC\serveur\partage` (dépôt WSL ouvert depuis Windows) redevient `\\serveur\partage`.
+fn without_verbatim_prefix(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+}
+
 fn canonical(path: &Path) -> Option<PathBuf> {
-    let full = path.canonicalize().ok()?;
-    let text = full.to_string_lossy();
-    Some(text.strip_prefix(r"\\?\").map_or_else(|| full.clone(), PathBuf::from))
+    Some(PathBuf::from(without_verbatim_prefix(&path.canonicalize().ok()?.to_string_lossy())))
 }
 
 /// Forme canonique du plus proche parent existant : la cible d'un clone n'existe pas encore.
@@ -275,11 +281,12 @@ fn validate(home: &Path, input: &ProfileInput, others: &[GitProfile]) -> Result<
     if !email.contains('@') || email.contains(['\n', '\r', ' ']) {
         return Err(invalid("Indique une adresse e-mail valide"));
     }
-    if input.dir.contains(['*', '?', '[', '"', '\n', '\r']) {
+    let requested = without_verbatim_prefix(&input.dir);
+    if requested.contains(['*', '?', '[', '"', '\n', '\r']) {
         return Err(invalid(format!("Ce nom de dossier n'est pas utilisable dans une règle Git : {}", input.dir)));
     }
-    let dir = canonical(Path::new(&input.dir)).filter(|d| d.is_dir()).ok_or_else(|| invalid(format!("Dossier introuvable : {}", input.dir)))?;
-    if dir.components().count() < 2 || home.canonicalize().is_ok_and(|h| h == dir) {
+    let dir = canonical(Path::new(&requested)).filter(|d| d.is_dir()).ok_or_else(|| invalid(format!("Dossier introuvable : {}", input.dir)))?;
+    if dir.parent().is_none() || canonical(home).is_some_and(|h| h == dir) {
         return Err(invalid("Choisis un dossier de projets : le dossier personnel entier couvrirait tous tes dépôts"));
     }
     for other in others {
@@ -292,14 +299,22 @@ fn validate(home: &Path, input: &ProfileInput, others: &[GitProfile]) -> Result<
         }
     }
     if let Some(key) = &input.ssh_key {
-        if key.contains(['"', '$', '`', '\\', '\n', '\r']) {
-            return Err(invalid(format!("Chemin de clé SSH non utilisable : {key}")));
-        }
-        if !Path::new(key).is_file() {
+        let key = ssh_key_path(key)?;
+        if !Path::new(&key).is_file() {
             return Err(invalid(format!("Clé SSH introuvable : {key}")));
         }
     }
     Ok(dir)
+}
+
+/// Chemin de clé tel qu'il sera écrit dans `core.sshCommand` : séparateurs `/` (Windows), et aucun caractère que le
+/// shell lancé par Git interpréterait entre guillemets.
+fn ssh_key_path(key: &str) -> Result<String, GitError> {
+    let path = slashes(Path::new(&without_verbatim_prefix(key)));
+    if path.contains(['"', '$', '`', '\\', '\n', '\r']) {
+        return Err(invalid(format!("Chemin de clé SSH non utilisable : {key}")));
+    }
+    Ok(path)
 }
 
 /// `~/.gitconfig` avant la première écriture de Merathon, puis avant chacune : rien n'est perdu en cas de surprise.
@@ -356,7 +371,7 @@ pub fn save_profile(home: &Path, input: &ProfileInput) -> Result<GitProfile, Git
         config.set_str("user.name", input.user_name.trim())?;
         config.set_str("user.email", input.user_email.trim())?;
         set_or_remove(&mut config, "merathon.account", input.account_id.as_deref())?;
-        let command = input.ssh_key.as_ref().map(|key| format!("ssh -i \"{}\" -o IdentitiesOnly=yes", slashes(Path::new(key))));
+        let command = input.ssh_key.as_deref().map(ssh_key_path).transpose()?.map(|key| format!("ssh -i \"{key}\" -o IdentitiesOnly=yes"));
         set_or_remove(&mut config, "core.sshCommand", command.as_deref())?;
     }
 
@@ -439,7 +454,7 @@ mod tests {
 
     fn poste() -> Poste {
         let tmp = TempDir::new().unwrap();
-        let home = tmp.path().canonicalize().unwrap().join("home");
+        let home = canonical(tmp.path()).unwrap().join("home");
         let projets = home.join("dev");
         fs::create_dir_all(projets.join("pro/app")).unwrap();
         fs::create_dir_all(projets.join("perso/site")).unwrap();
@@ -557,15 +572,30 @@ mod tests {
         fs::create_dir_all(key.parent().unwrap()).unwrap();
         fs::write(&key, "x").unwrap();
         let saved = save_profile(&p.home, &ProfileInput { ssh_key: Some(key.to_string_lossy().to_string()), ..input(&p, "Pro", "pro", "a@b.c") }).unwrap();
-        assert_eq!(saved.ssh_key.as_deref(), Some(key.to_str().unwrap()));
+        assert_eq!(saved.ssh_key, Some(slashes(&key)));
         git(&p, &p.projets.join("pro/app"), &["init", "-q"]);
         let command = git(&p, &p.projets.join("pro/app"), &["config", "core.sshCommand"]);
-        assert_eq!(command, format!("ssh -i \"{}\" -o IdentitiesOnly=yes", key.display()));
+        assert_eq!(command, format!("ssh -i \"{}\" -o IdentitiesOnly=yes", slashes(&key)));
 
         let info = list_profiles(&p.home).unwrap();
         // Les sous-dossiers et la cible d'un clone (pas encore créée) sont couverts ; le dossier voisin non.
         assert!(matching(&info.profiles, &p.projets.join("pro/nouveau/depot")).is_some());
         assert!(matching(&info.profiles, &p.projets.join("pro-bis/depot")).is_none());
+    }
+
+    /// Chemins Windows, vérifiables sur tous les systèmes : une clé de `~/.ssh` y contient des `\\`.
+    #[test]
+    fn accepts_windows_paths_for_folders_and_keys() {
+        assert_eq!(without_verbatim_prefix(r"\\?\C:\Users\a\dev"), r"C:\Users\a\dev");
+        assert_eq!(without_verbatim_prefix(r"\\?\UNC\wsl.localhost\Ubuntu\dev"), r"\\wsl.localhost\Ubuntu\dev");
+        assert_eq!(without_verbatim_prefix("/home/a/dev"), "/home/a/dev");
+
+        assert_eq!(ssh_key_path(r"C:\Users\a\.ssh\id_pro").unwrap(), "C:/Users/a/.ssh/id_pro");
+        assert_eq!(ssh_key_path(r"\\?\C:\Users\a\.ssh\id_pro").unwrap(), "C:/Users/a/.ssh/id_pro");
+        assert_eq!(ssh_key_path("/home/a/.ssh/cle pro").unwrap(), "/home/a/.ssh/cle pro");
+        for bad in ["/a/$(reboot)", "/a/`reboot`", "/a/\"b", "/a/b\nc"] {
+            assert!(ssh_key_path(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
