@@ -57,6 +57,9 @@ export async function deleteWorktree(w: WorktreeInfo) {
     success: `Worktree ${name} supprimé`,
   });
   if (!removed) return;
+  // Le dossier n'existe plus : il ne doit pas rester proposé dans les dépôts récents.
+  const { recentRepos, forgetRecent } = useRepoStore.getState();
+  recentRepos.filter((p) => samePath(p, w.path)).forEach(forgetRecent);
   const { tabs, activeId, closeTab } = useTabsStore.getState();
   const tab = tabs.find((t) => samePath(tabPath(t, activeId), w.path));
   if (tab) closeTab(tab.id);

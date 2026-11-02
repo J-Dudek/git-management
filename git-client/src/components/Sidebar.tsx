@@ -248,7 +248,8 @@ export function Sidebar() {
   const remoteNames = Array.from(new Set([...remotes.map((r) => r.name), ...remoteBranches.map((b) => b.name.split("/")[0])]));
 
   return (
-    <div className="flex flex-col h-full bg-[var(--color-bg-secondary)] text-sm select-none overflow-y-auto py-1">
+    // pr-4 : sous Linux, la barre de défilement superposée capte les clics sur les ~20 px du bord droit (boutons + des sections…).
+    <div className="flex flex-col h-full bg-[var(--color-bg-secondary)] text-sm select-none overflow-y-auto py-1 pr-4">
       <Group title="Local" count={local.length}>
         <BranchTree
           nodes={localTree}
