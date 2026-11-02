@@ -227,6 +227,30 @@ export interface WorktreeInfo {
   valid: boolean;
 }
 
+export interface SshKeyInfo {
+  name: string;
+  path: string;
+  public_key: string;
+  fingerprint: string;
+  /** null : format de fichier non reconnu. */
+  encrypted: boolean | null;
+}
+
+export interface SshSetupInfo {
+  keys: SshKeyInfo[];
+  /** Chemin de la clé à créer ; null si `id_ed25519` existe déjà : rien n'est jamais écrasé. */
+  new_key_path: string | null;
+  machine: string;
+}
+
+export type SshHostStatus = { state: "known" } | { state: "unknown"; fingerprint: string; published: boolean };
+
+export interface SshCheck {
+  authenticated: boolean;
+  username: string | null;
+  message: string;
+}
+
 export interface LfsStatus {
   uses_lfs: boolean;
   /** Version de git-lfs, null s'il n'est pas installé. */

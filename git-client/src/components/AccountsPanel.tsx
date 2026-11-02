@@ -11,6 +11,7 @@ import { ContextMenu, useContextMenu } from "./ContextMenu";
 import { inputClass } from "./Modal";
 import { useLinkedForge } from "./PullRequestList";
 import { MyPullRequestsSection } from "./MyPullRequests";
+import { SshSetupDialog } from "./SshSetupDialog";
 import { PanelSection as Section } from "./PanelSection";
 import type { DeviceCode, ForgeAccount, ForgeIssue, Provider } from "../types/forge";
 import { fieldLabel } from "../lib/fieldLabel";
@@ -442,6 +443,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
   const notify = useUiStore((s) => s.notify);
   const { menu, open, close } = useContextMenu();
   const host = hostOf(account.base_url);
+  const [sshSetup, setSshSetup] = useState(false);
 
   async function changeToken() {
     const result = await ask({
@@ -476,6 +478,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
       className="flex items-center gap-2 px-3 py-1.5 hover:bg-overlay/5 group"
       onContextMenu={(e) => open(e, [
         ...(account.auth === "pat" ? [{ label: "Changer le token…", action: changeToken }] : []),
+        { label: "Configurer SSH…", action: () => setSshSetup(true) },
         { label: "Renommer…", action: rename },
         { label: "Ouvrir le profil", action: () => openUrl(`${account.base_url}/${account.username}`) },
         "separator",
@@ -497,6 +500,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
         aria-haspopup="menu"
         onClick={(e) => open(e, [
           ...(account.auth === "pat" ? [{ label: "Changer le token…", action: changeToken }] : []),
+          { label: "Configurer SSH…", action: () => setSshSetup(true) },
           { label: "Renommer…", action: rename },
           "separator",
           { label: "Supprimer", danger: true, action: handleRemove },
@@ -505,6 +509,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
         <Ellipsis size={14} />
       </button>
       {menu && <ContextMenu menu={menu} onClose={close} />}
+      {sshSetup && <SshSetupDialog account={account} onClose={() => setSshSetup(false)} />}
     </div>
   );
 }

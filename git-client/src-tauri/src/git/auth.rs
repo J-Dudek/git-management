@@ -61,7 +61,7 @@ fn candidates(allowed: CredentialType, has_token: bool, ssh_keys: &[PathBuf]) ->
 fn default_ssh_keys() -> Vec<PathBuf> {
     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"));
     let Some(home) = home else { return Vec::new() };
-    ["id_ed25519", "id_ecdsa", "id_rsa"]
+    crate::ssh_setup::KEY_NAMES
         .iter()
         .map(|name| PathBuf::from(&home).join(".ssh").join(name))
         .filter(|p| p.exists())

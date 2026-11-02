@@ -238,6 +238,22 @@ export const GIT_MEMO: MemoGroup[] = [
         ],
       },
       {
+        title: "Configurer une clé SSH",
+        command: "ssh-keygen -t ed25519",
+        summary:
+          "Une clé SSH remplace le token pour les dépôts dont le remote est en SSH (git@hôte:…). La clé privée reste sur ta machine ; seule la clé publique est enregistrée sur GitHub ou GitLab. " +
+          "À la première connexion, l'empreinte du serveur est vérifiée puis mémorisée dans ~/.ssh/known_hosts.",
+        example: "Tes dépôts sont clonés en git@github.com:… et tu veux que fetch et push fonctionnent aussi en ligne de commande, sans saisir de token.",
+        steps: [
+          "Onglet « Comptes » : clic droit sur le compte → « Configurer SSH… ».",
+          "Choisis une clé existante, ou crée ~/.ssh/id_ed25519 s'il n'existe pas. Une clé existante n'est jamais écrasée.",
+          "Valide : la clé est enregistrée sur le compte, puis la connexion est testée.",
+          "Si le token n'a pas le droit d'ajouter des clés (GitHub : scope write:public_key), copie la clé publique et ajoute-la sur la page proposée.",
+        ],
+        warning:
+          "Sans passphrase, quiconque copie le fichier de la clé privée accède à tes dépôts. Avec une passphrase, ajoute la clé à ton agent SSH (ssh-add) : Merathon ne la demande pas lors des fetch et push.",
+      },
+      {
         title: "Récupérer les nouveautés sans les intégrer",
         command: "git fetch",
         summary: "Télécharge les commits et branches du remote sans modifier ta branche ni tes fichiers.",

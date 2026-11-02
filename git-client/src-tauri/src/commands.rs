@@ -9,6 +9,7 @@ use git2::Repository;
 use tauri::{AppHandle, Manager};
 use crate::accounts::{Account, AccountStore, AuthKind, Provider, SavedAccount};
 use crate::oauth;
+use crate::ssh_setup;
 use crate::git::{self, GitError};
 
 fn with_repo<T>(path: &str, f: impl FnOnce(&Repository) -> Result<T, GitError>) -> Result<T, GitError> {
@@ -454,6 +455,36 @@ pub async fn clone_repository(app: AppHandle, url: String, path: String) -> Resu
         Ok((!warnings.is_empty()).then(|| format!("Dépôt cloné, mais {}", warnings.join(" ; "))))
     })
     .await
+}
+
+#[tauri::command(async)]
+pub fn ssh_setup_info() -> Result<ssh_setup::SshSetupInfo, String> {
+    Ok(ssh_setup::setup_info(&ssh_setup::ssh_dir()?))
+}
+
+#[tauri::command(async)]
+pub fn ssh_create_key(comment: String, passphrase: Option<String>) -> Result<ssh_setup::SshKeyInfo, String> {
+    ssh_setup::create_key(&ssh_setup::ssh_dir()?, &comment, passphrase.as_deref())
+}
+
+#[tauri::command(async)]
+pub fn ssh_existing_key(name: String) -> Result<ssh_setup::SshKeyInfo, String> {
+    ssh_setup::existing_key(&ssh_setup::ssh_dir()?, &name)
+}
+
+#[tauri::command(async)]
+pub fn ssh_host_status(host: String) -> Result<ssh_setup::HostStatus, String> {
+    ssh_setup::host_status(&ssh_setup::ssh_dir()?, &host)
+}
+
+#[tauri::command(async)]
+pub fn ssh_trust_host(host: String, fingerprint: String) -> Result<(), String> {
+    ssh_setup::trust_host(&ssh_setup::ssh_dir()?, &host, &fingerprint)
+}
+
+#[tauri::command(async)]
+pub fn ssh_check_connection(host: String, key: String) -> Result<ssh_setup::SshCheck, String> {
+    ssh_setup::check_connection(&ssh_setup::ssh_dir()?, &host, &key)
 }
 
 #[tauri::command(async)]

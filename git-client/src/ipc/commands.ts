@@ -1,7 +1,7 @@
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type {
   BranchDivergence, BranchInfo, CommitDetails, CommitFile, CommitTrailers, PrPush, PrRebase, CommitInfo, FileDiff, FileStatus, Identity, MergeResult,
-  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit, WorktreeInfo,
+  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, SshCheck, SshHostStatus, SshKeyInfo, SshSetupInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit, WorktreeInfo,
 } from "../types/git";
 import type { DeviceCode, ForgeAccount, Provider, SavedAccount } from "../types/forge";
 import { describeCommand } from "../lib/journal";
@@ -178,6 +178,13 @@ export const addRemote = (path: string, name: string, url: string) => invoke<voi
 export const removeRemote = (path: string, name: string) => invoke<void>("remove_remote", { path, name });
 /** Renvoie un avertissement si les sous-modules n'ont pas pu être récupérés. */
 export const cloneRepository = (url: string, path: string) => invoke<string | null>("clone_repository", { url, path });
+// Hors journal (`tauriInvoke`) : ces commandes ne touchent pas au dépôt, et la passphrase ne doit être conservée nulle part.
+export const sshSetupInfo = () => tauriInvoke<SshSetupInfo>("ssh_setup_info");
+export const sshCreateKey = (comment: string, passphrase: string | null) => tauriInvoke<SshKeyInfo>("ssh_create_key", { comment, passphrase });
+export const sshExistingKey = (name: string) => tauriInvoke<SshKeyInfo>("ssh_existing_key", { name });
+export const sshHostStatus = (host: string) => tauriInvoke<SshHostStatus>("ssh_host_status", { host });
+export const sshTrustHost = (host: string, fingerprint: string) => tauriInvoke<void>("ssh_trust_host", { host, fingerprint });
+export const sshCheckConnection = (host: string, key: string) => tauriInvoke<SshCheck>("ssh_check_connection", { host, key });
 export const listSubmodules = (path: string) => invoke<SubmoduleInfo[]>("list_submodules", { path });
 /** `names` vide : tous les sous-modules. */
 export const updateSubmodules = (path: string, names: string[] = []) => invoke<void>("update_submodules", { path, names });

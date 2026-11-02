@@ -6,6 +6,7 @@ mod forge;
 mod http;
 mod notifications;
 mod oauth;
+mod ssh_setup;
 mod git;
 mod terminal;
 mod window;
@@ -90,6 +91,12 @@ pub fn run() {
             commands::add_remote,
             commands::remove_remote,
             commands::clone_repository,
+            commands::ssh_setup_info,
+            commands::ssh_create_key,
+            commands::ssh_existing_key,
+            commands::ssh_host_status,
+            commands::ssh_trust_host,
+            commands::ssh_check_connection,
             commands::list_submodules,
             commands::update_submodules,
             commands::list_worktrees,
