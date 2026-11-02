@@ -14,6 +14,7 @@ mod paths;
 mod interactive;
 mod pr_rebase;
 mod submodule;
+mod worktree;
 pub mod lfs;
 
 pub use error::GitError;
@@ -42,5 +43,6 @@ pub use pr_rebase::{
     PrRebase, PrPush,
 };
 pub use submodule::{list_submodules, update_submodules, SubmoduleInfo};
+pub use worktree::{list_worktrees, add_worktree, remove_worktree, WorktreeInfo};
 pub use patch::{apply_lines, LineAction};
 pub use stash::{list_stashes, stash_save, stash_apply, stash_drop, StashInfo};

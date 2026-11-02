@@ -467,6 +467,24 @@ pub async fn update_submodules(app: AppHandle, path: String, names: Vec<String>)
     network(&app, move |creds| with_repo(&path, |r| git::update_submodules(r, &names, creds))).await
 }
 
+#[tauri::command(async)]
+pub fn list_worktrees(path: String) -> Result<Vec<git::WorktreeInfo>, GitError> {
+    with_repo(&path, git::list_worktrees)
+}
+
+/// `create` : crée d'abord `branch` depuis HEAD. Les fichiers LFS écrits par libgit2 sont des pointeurs : on remet leur contenu.
+#[tauri::command(async)]
+pub fn add_worktree(path: String, target: String, branch: String, create: bool) -> Result<(), GitError> {
+    with_repo(&path, |r| git::add_worktree(r, &target, &branch, create))?;
+    let _ = with_repo(&target, git::lfs::lfs_checkout);
+    Ok(())
+}
+
+#[tauri::command(async)]
+pub fn remove_worktree(path: String, name: String) -> Result<(), GitError> {
+    with_repo(&path, |r| git::remove_worktree(r, &name))
+}
+
 /// `remote` absent : fetch de tous les remotes.
 #[tauri::command]
 pub async fn fetch_remote(app: AppHandle, path: String, remote: Option<String>) -> Result<(), GitError> {

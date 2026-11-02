@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import type {
-  BranchInfo, CommitInfo, FileStatus, LfsStatus, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo,
+  BranchInfo, CommitInfo, FileStatus, LfsStatus, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, WorktreeInfo,
 } from "../types/git";
 import {
-  getBranches, getCommits, getRepoInfo, getStatus, getTags, lfsStatus, listRemotes, listStashes, listSubmodules, openRepository,
+  getBranches, getCommits, getRepoInfo, getStatus, getTags, lfsStatus, listRemotes, listStashes, listSubmodules, listWorktrees, openRepository,
 } from "../ipc/commands";
 import type { ThreadLinks } from "../lib/threadTrailers";
 
@@ -61,6 +61,7 @@ interface RepoStore {
   stashes: StashInfo[];
   remotes: RemoteInfo[];
   submodules: SubmoduleInfo[];
+  worktrees: WorktreeInfo[];
   lfs: LfsStatus | null;
   status: FileStatus[];
   selectedCommit: CommitInfo | null;
@@ -103,6 +104,7 @@ export const emptyRepo: RepoState = {
   stashes: [],
   remotes: [],
   submodules: [],
+  worktrees: [],
   lfs: null,
   status: [],
   selectedCommit: null,
@@ -134,7 +136,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
   refresh: async () => {
     const path = get().repoPath;
     if (!path) return;
-    const [info, commits, branches, tags, stashes, remotes, submodules, lfs, status] = await Promise.all([
+    const [info, commits, branches, tags, stashes, remotes, submodules, worktrees, lfs, status] = await Promise.all([
       getRepoInfo(path),
       getCommits(path),
       getBranches(path),
@@ -142,13 +144,14 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
       listStashes(path),
       listRemotes(path),
       listSubmodules(path),
+      listWorktrees(path).catch(() => []),
       lfsStatus(path).catch(() => null),
       getStatus(path),
     ]);
     if (get().repoPath !== path) return; // un autre dépôt a été ouvert entre-temps
     const selected = get().selectedCommit;
     set({
-      info, commits, branches, tags, stashes, remotes, submodules, lfs, status,
+      info, commits, branches, tags, stashes, remotes, submodules, worktrees, lfs, status,
       selectedCommit: selected ? commits.find((c) => c.hash === selected.hash) ?? null : null,
     });
   },
@@ -177,7 +180,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
     const s = get();
     return {
       repoPath: s.repoPath, info: s.info, commits: s.commits, branches: s.branches, tags: s.tags, stashes: s.stashes,
-      remotes: s.remotes, submodules: s.submodules, lfs: s.lfs, status: s.status, selectedCommit: s.selectedCommit,
+      remotes: s.remotes, submodules: s.submodules, worktrees: s.worktrees, lfs: s.lfs, status: s.status, selectedCommit: s.selectedCommit,
       comparison: s.comparison, searchQuery: s.searchQuery, center: s.center, commitDraft: s.commitDraft,
     };
   },

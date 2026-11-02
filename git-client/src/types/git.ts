@@ -213,6 +213,20 @@ export interface SubmoduleInfo {
   state: "uninitialized" | "commit_changed" | "dirty" | "ok";
 }
 
+export interface WorktreeInfo {
+  /** Nom interne de git, null pour le worktree principal. */
+  name: string | null;
+  path: string;
+  /** null : HEAD détaché, ou dossier introuvable. */
+  branch: string | null;
+  head_hash: string | null;
+  is_main: boolean;
+  is_current: boolean;
+  locked: boolean;
+  /** Faux : le dossier a été déplacé ou supprimé hors de Merathon. */
+  valid: boolean;
+}
+
 export interface LfsStatus {
   uses_lfs: boolean;
   /** Version de git-lfs, null s'il n'est pas installé. */

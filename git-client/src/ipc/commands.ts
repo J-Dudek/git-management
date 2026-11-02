@@ -1,7 +1,7 @@
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type {
   BranchDivergence, BranchInfo, CommitDetails, CommitFile, CommitTrailers, PrPush, PrRebase, CommitInfo, FileDiff, FileStatus, Identity, MergeResult,
-  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit,
+  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit, WorktreeInfo,
 } from "../types/git";
 import type { DeviceCode, ForgeAccount, Provider, SavedAccount } from "../types/forge";
 import { describeCommand } from "../lib/journal";
@@ -181,6 +181,12 @@ export const cloneRepository = (url: string, path: string) => invoke<string | nu
 export const listSubmodules = (path: string) => invoke<SubmoduleInfo[]>("list_submodules", { path });
 /** `names` vide : tous les sous-modules. */
 export const updateSubmodules = (path: string, names: string[] = []) => invoke<void>("update_submodules", { path, names });
+export const listWorktrees = (path: string) => invoke<WorktreeInfo[]>("list_worktrees", { path });
+/** `create` : crée d'abord `branch` depuis HEAD. */
+export const addWorktree = (path: string, target: string, branch: string, create: boolean) =>
+  invoke<void>("add_worktree", { path, target, branch, create });
+/** Supprime le worktree lié et son dossier. */
+export const removeWorktree = (path: string, name: string) => invoke<void>("remove_worktree", { path, name });
 /** `remote` null : tous les remotes. */
 export const fetchRemote = (path: string, remote: string | null = null) =>
   invoke<void>("fetch_remote", { path, remote });

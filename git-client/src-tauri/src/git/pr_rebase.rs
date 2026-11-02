@@ -211,6 +211,10 @@ fn update_local_branch(repo: &Repository, branch: &str, old: Oid, new: Oid) -> R
     if local.get().target() != Some(old) {
         return Ok(LocalBranchUpdate::Diverged);
     }
+    // Extraite dans un autre worktree : la déplacer désynchroniserait ses fichiers.
+    if super::worktree::checked_out_elsewhere(repo, branch)?.is_some() {
+        return Ok(LocalBranchUpdate::Dirty);
+    }
     let mut reference = local.into_reference();
     if repo.head().ok().and_then(|h| h.name().ok().map(str::to_string)).as_deref() == reference.name().ok() {
         // Extraction « safe » : refusée si elle écraserait une modification locale.
