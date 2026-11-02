@@ -28,6 +28,8 @@ interface Draft {
 
 const emptyDraft: Draft = { id: null, label: "", dir: "", userName: "", userEmail: "", accountId: "", key: "" };
 const fileName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+/** Sous Windows, le profil garde `C:/…` et la liste des clés `C:\…` : même fichier. */
+const samePath = (a: string, b: string) => a.replace(/\\/g, "/") === b.replace(/\\/g, "/");
 
 /** Rubrique des préférences : une configuration Git par dossier, écrite avec les règles `includeIf` de Git. */
 export function GitProfilesSection() {
@@ -69,7 +71,7 @@ export function GitProfilesSection() {
       userName: profile.user_name ?? "",
       userEmail: profile.user_email ?? "",
       accountId: profile.account_id ?? "",
-      key: profile.ssh_key ?? "",
+      key: keys.find((k) => profile.ssh_key && samePath(k.path, profile.ssh_key))?.path ?? profile.ssh_key ?? "",
     });
   }
 

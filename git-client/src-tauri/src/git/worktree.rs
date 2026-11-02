@@ -202,7 +202,8 @@ mod tests {
         let list = list_worktrees(&repo).unwrap();
         assert_eq!(list.len(), 2);
         assert!(list[0].is_main && list[0].is_current);
-        assert_eq!(list[1].path, path);
+        // Même dossier, sous sa forme normalisée (sous Windows : `/`, sans nom court 8.3).
+        assert!(same_dir(Path::new(&list[1].path), Path::new(&path)), "{} / {path}", list[1].path);
         assert_eq!(list[1].branch.as_deref(), Some("feature/x"));
         assert!(list[1].valid && !list[1].is_main && !list[1].is_current);
 
