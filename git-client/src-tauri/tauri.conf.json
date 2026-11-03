@@ -60,6 +60,9 @@
     "longDescription": "Merathon est un client Git graphique : graphe des branches, indexation ligne par ligne, rebase interactif, résolution de conflits, sous-modules, Git LFS et comptes GitHub / GitLab.",
     "linux": {
       "deb": {
+        "depends": [
+          "fonts-noto-color-emoji"
+        ],
         "replaces": [
           "j6n"
         ],
