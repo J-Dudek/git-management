@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Toolbar } from "./components/Toolbar";
+import { MobileNav, type MobilePane } from "./components/MobileNav";
 import { TabBar } from "./components/TabBar";
 import { BottomPanel } from "./components/BottomPanel";
 import { Sidebar } from "./components/Sidebar";
@@ -32,7 +33,7 @@ import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
-import { hasDesktopFeatures } from "./lib/platform";
+import { hasDesktopFeatures, isMobile } from "./lib/platform";
 import { startAutoSync } from "./lib/autoSync";
 import { useIconBadge } from "./lib/iconBadge";
 import { openDevtools } from "./ipc/commands";
@@ -44,6 +45,8 @@ type LeftTab = "repo" | "accounts";
 export default function App() {
   const [leftTab, setLeftTab] = useState<LeftTab>("repo");
   const [showClone, setShowClone] = useState(false);
+  const mobile = isMobile();
+  const [pane, setPane] = useState<MobilePane>("main");
   const zoom = useDisplayStore((s) => s.zoom);
   const syncInterval = useDisplayStore((s) => s.syncInterval);
   const repoPath = useRepoStore((s) => s.repoPath);
@@ -87,6 +90,17 @@ export default function App() {
     checkForUpdatesOnStartup();
   }, []);
 
+  // Mobile : choisir un commit (ou en comparer deux) ouvre son détail ; ouvrir un diff ou un autre dépôt ramène au centre.
+  useEffect(() => {
+    if (mobile && (selectedCommit || comparison)) setPane("right");
+  }, [mobile, selectedCommit, comparison]);
+  useEffect(() => {
+    if (mobile && center.kind !== "graph") setPane("main");
+  }, [mobile, center]);
+  useEffect(() => {
+    if (mobile) setPane("main");
+  }, [mobile, repoPath, activeTab]);
+
   // Fetch et PR de chaque dépôt ouvert à intervalle régulier (Préférences) : les changements sont notifiés.
   useEffect(() => startAutoSync(syncInterval), [syncInterval]);
 
@@ -95,8 +109,9 @@ export default function App() {
 
   // Taille de l'interface : zoom du webview (net, y compris le graphe dessiné en canvas).
   useEffect(() => {
+    if (mobile) return;
     getCurrentWebview().setZoom(zoom).catch((e) => notify("error", tr("Zoom : {error}", { error: errorMessage(e) })));
-  }, [zoom, notify]);
+  }, [zoom, notify, mobile]);
 
   // Titre de la page (RGAA 8.6) : le dépôt de l'onglet actif, restitué par les technologies d'assistance.
   useEffect(() => {
@@ -145,6 +160,12 @@ export default function App() {
     return repoPath ? <Sidebar /> : <p className="p-3 text-xs text-[var(--color-muted)] italic">{tr("Aucun dépôt ouvert")}</p>;
   }
 
+  /** Mobile : le panneau actif prend tout l'espace, les autres sont masqués. */
+  function paneClass(name: MobilePane): string {
+    if (!mobile) return "";
+    return pane === name ? "flex-1! w-full! h-auto! min-h-0 border-0!" : "hidden!";
+  }
+
   function rightPaneLabel() {
     if (comparison) return tr("Comparaison");
     return selectedCommit ? tr("Détail du commit") : tr("Modifications en cours");
@@ -172,7 +193,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden max-[760px]:overflow-y-auto max-[760px]:overflow-x-hidden">
+    <div className={`flex flex-col h-screen w-screen overflow-hidden max-[760px]:overflow-y-auto max-[760px]:overflow-x-hidden ${mobile ? "overflow-y-hidden!" : ""}`}>
       {/* Lien d'évitement (RGAA 12.7) : premier arrêt de tabulation, visible quand il a le focus. */}
       <a
         href="#contenu"
@@ -191,11 +212,11 @@ export default function App() {
 
       {/* Remonté à chaque changement d'onglet : pas de sélection d'un dépôt appliquée à un autre. */}
       {/* Fenêtre étroite ou zoom fort (RGAA 10.4, 10.11) : les panneaux s'empilent et la page défile verticalement. */}
-      <div key={activeTab} className="flex flex-1 overflow-hidden max-[760px]:flex-col max-[760px]:flex-none max-[760px]:overflow-visible">
+      <div key={activeTab} className={`flex flex-1 overflow-hidden max-[760px]:flex-col max-[760px]:flex-none max-[760px]:overflow-visible ${mobile ? "flex-col! flex-1! min-h-0 overflow-hidden!" : ""}`}>
         <aside
           aria-label={leftTab === "accounts" ? tr("Comptes") : tr("Dépôt : branches, tags et stashes")}
-          className="relative shrink-0 flex flex-col overflow-hidden border-r border-overlay/10 bg-[var(--color-bg-secondary)] max-[760px]:w-full! max-[760px]:h-80 max-[760px]:border-r-0 max-[760px]:border-b"
-          style={{ width: sideWidths.left }}
+          className={`relative shrink-0 flex flex-col overflow-hidden border-r border-overlay/10 bg-[var(--color-bg-secondary)] max-[760px]:w-full! max-[760px]:h-80 max-[760px]:border-r-0 max-[760px]:border-b ${paneClass("left")}`}
+          style={mobile ? undefined : { width: sideWidths.left }}
         >
           <SideResizer side="left" />
           <div role="group" aria-label={tr("Contenu du panneau de gauche")} className="flex shrink-0 border-b border-overlay/10">
@@ -205,7 +226,7 @@ export default function App() {
           <div className="flex-1 overflow-hidden">{leftPane()}</div>
         </aside>
 
-        <main id="contenu" tabIndex={-1} className="flex-1 min-w-0 overflow-hidden flex flex-col bg-[var(--color-bg-primary)] outline-none max-[760px]:flex-none max-[760px]:h-96">
+        <main id="contenu" tabIndex={-1} className={`flex-1 min-w-0 overflow-hidden flex flex-col bg-[var(--color-bg-primary)] outline-none max-[760px]:flex-none max-[760px]:h-96 ${paneClass("main")}`}>
           <div className="flex-1 min-h-0 overflow-hidden">{mainPane()}</div>
           <BottomPanel />
         </main>
@@ -213,14 +234,16 @@ export default function App() {
         {repoPath && (
           <aside
             aria-label={rightPaneLabel()}
-            className="relative shrink-0 overflow-hidden border-l border-overlay/10 max-[760px]:w-full! max-[760px]:h-96 max-[760px]:border-l-0 max-[760px]:border-t"
-            style={{ width: sideWidths.right }}
+            className={`relative shrink-0 overflow-hidden border-l border-overlay/10 max-[760px]:w-full! max-[760px]:h-96 max-[760px]:border-l-0 max-[760px]:border-t ${paneClass("right")}`}
+            style={mobile ? undefined : { width: sideWidths.right }}
           >
             <SideResizer side="right" />
             {rightPane()}
           </aside>
         )}
       </div>
+
+      {mobile && <MobileNav pane={pane} onChange={setPane} hasRepo={!!repoPath} />}
 
       {showClone && <CloneDialog onClose={() => setShowClone(false)} />}
       {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
