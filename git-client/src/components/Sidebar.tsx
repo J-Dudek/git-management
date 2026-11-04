@@ -9,6 +9,7 @@ import {
 import { errorMessage, runGit } from "../lib/actions";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { openRepoAt } from "../lib/repoActions";
+import { hasDesktopFeatures } from "../lib/platform";
 import { createWorktree, deleteWorktree } from "../lib/worktrees";
 import { useBranchMenus } from "./branchMenus";
 import { branchKey, effectiveFilter, EMPTY_FILTER } from "../lib/graphFilter";
@@ -213,7 +214,9 @@ export function Sidebar() {
     const initialized = sm.state !== "uninitialized";
     return [
       { label: tr("Ouvrir dans un nouvel onglet"), disabled: !initialized, action: () => openRepoAt(abs) },
-      { label: tr("Ouvrir dans une nouvelle fenêtre"), disabled: !initialized, action: () => openNewWindow(abs) },
+      ...(hasDesktopFeatures()
+        ? [{ label: tr("Ouvrir dans une nouvelle fenêtre"), disabled: !initialized, action: () => openNewWindow(abs) }]
+        : []),
       "separator",
       {
         label: initialized ? tr("Mettre à jour (commit enregistré)") : tr("Initialiser et récupérer"),
@@ -234,7 +237,7 @@ export function Sidebar() {
     if (!w.valid) return [remove];
     return [
       { label: tr("Ouvrir dans un onglet"), action: () => openRepoAt(w.path) },
-      { label: tr("Ouvrir dans une nouvelle fenêtre"), action: () => openNewWindow(w.path) },
+      ...(hasDesktopFeatures() ? [{ label: tr("Ouvrir dans une nouvelle fenêtre"), action: () => openNewWindow(w.path) }] : []),
       { label: tr("Copier le chemin"), action: () => navigator.clipboard.writeText(w.path) },
       "separator",
       remove,

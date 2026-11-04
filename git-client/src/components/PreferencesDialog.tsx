@@ -21,6 +21,7 @@ import {
 import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
 import { sendTestNotification } from "../lib/prNotifications";
 import { checkForUpdates } from "../lib/updater";
+import { hasDesktopFeatures } from "../lib/platform";
 import { errorMessage } from "../lib/actions";
 import { aboutReport, osLabel, REPO_URL, releaseUrl, versionLabel } from "../lib/about";
 import {
@@ -52,7 +53,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   // « Mon activité » n'apparaît qu'après la première récompense : avant, elle gâcherait la surprise.
   const hasRewards = useCelebrationStore((s) => s.milestones.rewards.length > 0);
   const newRewards = useCelebrationStore((s) => hasNewRewards(s.milestones));
-  const sections = SECTIONS.filter((s) => s.id !== "activity" || hasRewards);
+  const sections = SECTIONS.filter((s) => (s.id !== "activity" || hasRewards) && (s.id !== "terminal" || hasDesktopFeatures()));
 
   return (
     <Modal title={tr("Préférences")} onClose={onClose} width="w-[720px]">
@@ -543,14 +544,16 @@ function AboutSection() {
           ))}
         </div>
         <div className="mt-2.5 flex gap-2">
-          <button
-            onClick={check}
-            disabled={checking}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10 disabled:opacity-50"
-          >
-            <RefreshCw size={13} strokeWidth={1.75} className={checking ? "animate-spin" : ""} />
-            {checking ? tr("Vérification…") : tr("Rechercher des mises à jour")}
-          </button>
+          {hasDesktopFeatures() && (
+            <button
+              onClick={check}
+              disabled={checking}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-overlay/10 hover:bg-overlay/10 disabled:opacity-50"
+            >
+              <RefreshCw size={13} strokeWidth={1.75} className={checking ? "animate-spin" : ""} />
+              {checking ? tr("Vérification…") : tr("Rechercher des mises à jour")}
+            </button>
+          )}
           <button
             onClick={copy}
             disabled={!version}

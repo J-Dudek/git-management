@@ -10,6 +10,7 @@ import { errorMessage } from "../lib/actions";
 import { logLine } from "../lib/debugLog";
 import { attachTerminal, LEAVE_TERMINAL_HINT, restartTerminal } from "../lib/terminals";
 import { resizeKeyDelta } from "../lib/resizeKeys";
+import { hasDesktopFeatures } from "../lib/platform";
 import { tr, trn, locale, COLON } from "../i18n";
 
 const HEADER_HEIGHT = 28;
@@ -28,7 +29,10 @@ export function BottomPanel() {
   const debugMode = useDisplayStore((s) => s.debugMode);
   const clearLogs = useDebugLogStore((s) => s.clear);
   // Onglet mémorisé alors que le mode débug était actif : il n'existe plus une fois désactivé.
-  const tab = panel.tab === "logs" && !debugMode ? "terminal" : panel.tab;
+  const wantedTab = panel.tab === "logs" && !debugMode ? "terminal" : panel.tab;
+  // Pas de terminal sur mobile : on retombe sur le journal, même si la préférence enregistrée était « terminal ».
+  const terminalAvailable = hasDesktopFeatures();
+  const tab: BottomPanelState["tab"] = wantedTab === "terminal" && !terminalAvailable ? "journal" : wantedTab;
 
   const journalVisible = panel.open && tab === "journal";
   const logsVisible = panel.open && tab === "logs";
@@ -92,14 +96,16 @@ export function BottomPanel() {
             title={tr("Redimensionner (flèches haut / bas au clavier)")}
           />
         )}
-        <PanelTab
-          name="terminal"
-          active={panel.open && tab === "terminal"}
-          onClick={() => select("terminal")}
-          title={`Terminal (${LEAVE_TERMINAL_HINT})`}
-        >
-          Terminal
-        </PanelTab>
+        {terminalAvailable && (
+          <PanelTab
+            name="terminal"
+            active={panel.open && tab === "terminal"}
+            onClick={() => select("terminal")}
+            title={`Terminal (${LEAVE_TERMINAL_HINT})`}
+          >
+            Terminal
+          </PanelTab>
+        )}
         <PanelTab name="journal" active={journalVisible} onClick={() => select("journal")}>
           {tr("Journal")}
           {newErrors > 0 && (

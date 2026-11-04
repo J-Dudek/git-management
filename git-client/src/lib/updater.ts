@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useUiStore, type DialogSection } from "../store/useUiStore";
 import { errorMessage } from "./actions";
 import { tr, percent } from "../i18n";
+import { hasDesktopFeatures } from "./platform";
 
 /** Libellé de progression du téléchargement (pourcentage connu seulement si le serveur annonce la taille). */
 export function downloadLabel(received: number, total: number): string {
@@ -100,6 +101,8 @@ function stripLinks(text: string): string {
  * `manual` : demandé par l'utilisateur, qui est alors aussi prévenu quand l'appli est à jour ou en cas d'erreur.
  */
 export async function checkForUpdates(manual = false) {
+  // Sur mobile, le store gère les mises à jour : le plugin n'existe pas.
+  if (!hasDesktopFeatures()) return;
   const ui = useUiStore.getState();
   let update;
   try {
