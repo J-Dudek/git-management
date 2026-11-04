@@ -75,6 +75,27 @@ pub fn get_repo_info(path: String) -> Result<git::RepoInfo, GitError> {
     with_repo(&path, git::repo_info)
 }
 
+/// Dossier privé de l'application où vont les dépôts sur mobile (voir device_storage.rs).
+fn device_root(app: &AppHandle) -> Result<std::path::PathBuf, GitError> {
+    let data = app.path().app_data_dir().map_err(|e| GitError::Other(e.to_string()))?;
+    crate::device_storage::prepare_root(&data.join("repos"))
+}
+
+#[tauri::command(async)]
+pub fn device_repos_root(app: AppHandle) -> Result<String, GitError> {
+    Ok(device_root(&app)?.to_string_lossy().into_owned())
+}
+
+#[tauri::command(async)]
+pub fn list_device_folders(app: AppHandle, dir: String) -> Result<Vec<crate::device_storage::DeviceFolder>, GitError> {
+    crate::device_storage::list_folders(&device_root(&app)?, &dir)
+}
+
+#[tauri::command(async)]
+pub fn create_device_folder(app: AppHandle, dir: String, name: String) -> Result<String, GitError> {
+    crate::device_storage::create_folder(&device_root(&app)?, &dir, &name)
+}
+
 #[tauri::command(async)]
 pub fn init_repository(path: String) -> Result<(), GitError> {
     git::init_repo(&path)

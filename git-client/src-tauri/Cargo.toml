@@ -64,3 +64,5 @@ portable-pty = "0.9"
 # Demande perl et make sur la machine de build.
 [target.'cfg(target_os = "android")'.dependencies]
 openssl-sys = { version = "0.9", features = ["vendored"] }
+# Autorités de certification du système données à libgit2 (voir src/device_storage.rs).
+libgit2-sys = "0.18"

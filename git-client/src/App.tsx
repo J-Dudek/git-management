@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { exit, onBackButtonPress } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Toolbar } from "./components/Toolbar";
@@ -14,6 +15,7 @@ import { CompareDetails } from "./components/CompareDetails";
 import { CenterDiff } from "./components/CenterDiff";
 import { ConflictViewer } from "./components/ConflictViewer";
 import { CloneDialog } from "./components/CloneDialog";
+import { FolderPicker } from "./components/FolderPicker";
 import { Welcome } from "./components/Welcome";
 import { Dialog } from "./components/Dialog";
 import { LanguageChooser } from "./components/LanguageChooser";
@@ -33,7 +35,8 @@ import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
-import { hasDesktopFeatures, isMobile } from "./lib/platform";
+import { hasDesktopFeatures, isAndroid, isMobile } from "./lib/platform";
+import { backAction, closeOverlay, overlayOpen } from "./lib/androidBack";
 import { startAutoSync } from "./lib/autoSync";
 import { startDebugLogging } from "./lib/debugLog";
 import { useIconBadge } from "./lib/iconBadge";
@@ -67,6 +70,9 @@ export default function App() {
   const setMemoOpen = useUiStore((s) => s.setMemoOpen);
   const setRebaseBase = useUiStore((s) => s.setInteractiveRebaseBase);
   const sideWidths = useUiStore((s) => s.sideWidths);
+  const folderPicker = useUiStore((s) => s.folderPicker);
+  const paneRef = useRef(pane);
+  paneRef.current = pane;
 
   useEffect(() => {
     loadAccounts().catch((e) => notify("error", tr("Comptes : {error}", { error: errorMessage(e) })));
@@ -102,6 +108,25 @@ export default function App() {
   useEffect(() => {
     if (mobile) setPane("main");
   }, [mobile, repoPath, activeTab]);
+
+  // Bouton retour d'Android : ferme ce qui est ouvert, puis revient à l'historique, puis quitte l'application.
+  useEffect(() => {
+    if (!isAndroid()) return;
+    const listener = onBackButtonPress(() => {
+      const action = backAction({
+        overlayOpen: overlayOpen(),
+        centerIsGraph: useRepoStore.getState().center.kind === "graph",
+        onHistory: paneRef.current === "main",
+      });
+      if (action === "close-overlay") closeOverlay();
+      else if (action === "show-graph") setCenter({ kind: "graph" });
+      else if (action === "show-history") setPane("main");
+      else exit().catch(() => {});
+    });
+    return () => {
+      listener.then((l) => l.unregister()).catch(() => {});
+    };
+  }, [setCenter]);
 
   // Fetch et PR de chaque dépôt ouvert à intervalle régulier (Préférences) : les changements sont notifiés.
   useEffect(() => startAutoSync(syncInterval), [syncInterval]);
@@ -216,7 +241,13 @@ export default function App() {
       >
         {tr("Aller au contenu principal")}
       </a>
-      <Toolbar onClone={() => setShowClone(true)} />
+      <Toolbar
+        onClone={() => setShowClone(true)}
+        onAccounts={() => {
+          setLeftTab("accounts");
+          setPane("left");
+        }}
+      />
       <TabBar />
 
       {/* Remonté à chaque changement d'onglet : pas de sélection d'un dépôt appliquée à un autre. */}
@@ -258,6 +289,7 @@ export default function App() {
       {preferencesOpen && <PreferencesDialog onClose={() => setPreferencesOpen(false)} />}
       {memoOpen && <GitMemoDialog onClose={() => setMemoOpen(false)} />}
       {rebaseBase && repoPath && <InteractiveRebaseDialog base={rebaseBase} onClose={() => setRebaseBase(null)} />}
+      {folderPicker && <FolderPicker />}
       <Dialog />
       <LanguageChooser />
       <Toasts />

@@ -344,3 +344,16 @@ textarea:focus-visible {
     height: 1.25rem;
   }
 }
+
+/* Mobile : le tiroir de navigation et la feuille de menu glissent à l'ouverture. */
+@keyframes mobile-drawer-in {
+  from { transform: translateX(-100%); }
+}
+@keyframes mobile-sheet-in {
+  from { transform: translateY(100%); }
+}
+.mobile-drawer { animation: mobile-drawer-in 180ms ease-out; }
+.mobile-sheet { animation: mobile-sheet-in 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-drawer, .mobile-sheet { animation: none; }
+}

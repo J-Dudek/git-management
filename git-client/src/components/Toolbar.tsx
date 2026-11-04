@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useRepoStore } from "../store/useRepoStore";
 import { useUiStore } from "../store/useUiStore";
 import { useTabsStore } from "../store/useTabsStore";
-import { AppWindow, Archive, ArchiveRestore, ArrowDown, ArrowUp, BookOpen, ChevronDown, CloudDownload, FolderOpen, FolderPlus, GitBranch, History, Info, Monitor, Moon, RefreshCw, Settings, SquarePlus, Sun, X, type LucideIcon } from "lucide-react";
+import { AppWindow, Archive, ArchiveRestore, ArrowDown, ArrowUp, BookOpen, ChevronDown, CloudDownload, FolderOpen, FolderPlus, GitBranch, History, Info, Menu, Monitor, Moon, RefreshCw, Settings, SquarePlus, Sun, Users, X, type LucideIcon } from "lucide-react";
 import {
   createBranch, fetchRemote, openNewWindow, pull, stashApply, stashSave,
 } from "../ipc/commands";
@@ -9,6 +10,7 @@ import { reportMerge, runGit } from "../lib/actions";
 import { pushBranch } from "../lib/threadReplies";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "../lib/repoActions";
 import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
+import { MobileDrawer } from "./MobileDrawer";
 import { SearchBar } from "./SearchBar";
 import { Tooltip } from "./Tooltip";
 import { checkForUpdates } from "../lib/updater";
@@ -28,7 +30,7 @@ function headLabel(info: RepoInfo): string {
   return info.head_branch ?? "";
 }
 
-export function Toolbar({ onClone }: { onClone: () => void }) {
+export function Toolbar({ onClone, onAccounts }: { onClone: () => void; onAccounts: () => void }) {
   const repoPath = useRepoStore((s) => s.repoPath);
   const info = useRepoStore((s) => s.info);
   const branches = useRepoStore((s) => s.branches);
@@ -44,6 +46,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
   const ask = useUiStore((s) => s.ask);
   const syncing = useSyncRunning();
   const { menu, open: openMenu, close: closeMenu } = useContextMenu();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const head = branches.find((b) => b.is_head && !b.is_remote);
   const repoName = repoPath?.split(/[\\/]/).pop();
@@ -70,6 +73,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
         ? [{ label: tr("Fermer l'onglet"), icon: X, shortcut: "Ctrl+W", action: () => closeTab(activeTab) }]
         : []),
       "separator",
+      ...(isMobile() ? [{ label: tr("Comptes"), icon: Users, action: onAccounts }] : []),
       { label: tr("Préférences…"), icon: Settings, shortcut: "Ctrl+,", action: () => setPreferencesOpen(true) },
       ...(hasDesktopFeatures()
         ? [{ label: tr("Rechercher des mises à jour…"), icon: RefreshCw, action: () => checkForUpdates(true) }]
@@ -146,37 +150,61 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
     <header className={`flex flex-wrap items-center gap-1.5 px-3 min-h-11 py-1 shrink-0 bg-[var(--color-bg-secondary)] border-b border-overlay/10 ${mobile ? "gap-x-0.5! px-2!" : ""}`}>
       {/* Titre de niveau 1 pour les technologies d'assistance : les panneaux ont des titres de niveau 2. */}
       <h1 className="sr-only">Merathon{repoName ? ` — ${repoName}` : ""}</h1>
-      <Tooltip
-        title={tr("Ouvrir le menu du dépôt")}
-        lines={[
-          tr("Ouvrir, cloner, dépôts récents, onglets, préférences…"),
-          ...(repoPath ? [<span className="font-mono">{repoPath}</span>] : []),
-        ]}
-      >
-        <button
-          className="flex items-center gap-2 px-2 py-1 rounded hover:bg-overlay/10 max-w-60 min-w-0"
-          onClick={(e) => openMenu(e, repoMenu())}
-          aria-label={repoPath ? tr("Ouvrir le menu du dépôt ({repoPath})", { repoPath }) : tr("Ouvrir le menu du dépôt")}
-          aria-haspopup="menu"
-        >
-          <img
-            src={logoMark}
-            alt=""
-            width={24}
-            height={24}
-            draggable={false}
-            className="w-6 h-6 rounded-md ring-1 ring-overlay/10 shrink-0 select-none"
-          />
-          <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</span>
-          <ChevronDown size={12} className="text-[var(--color-muted)] shrink-0" />
-        </button>
-      </Tooltip>
-      {info && (
-        <span className="text-xs font-mono text-[var(--color-accent-text)] truncate max-w-48" title={tr("Branche courante")}>
-          {!info.interactive_rebase && !info.head_detached && <GitBranch size={12} className="inline mr-1 -mt-0.5" />}
-          <span className="sr-only">{tr("Branche courante :")}{" "}</span>
-          {headLabel(info)}
-        </span>
+      {mobile ? (
+        <>
+          <button
+            className="w-11 h-11 shrink-0 inline-flex items-center justify-center rounded-full text-[var(--color-text)] active:bg-overlay/10"
+            onClick={() => setDrawerOpen(true)}
+            aria-label={repoPath ? tr("Ouvrir le menu du dépôt ({repoPath})", { repoPath }) : tr("Ouvrir le menu du dépôt")}
+            aria-haspopup="dialog"
+          >
+            <Menu size={22} strokeWidth={1.75} />
+          </button>
+          <div className="flex-1 min-w-0 pl-1">
+            <p className="text-base font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</p>
+            {info && (
+              <p className="text-xs font-mono text-[var(--color-accent-text)] truncate">
+                <span className="sr-only">{tr("Branche courante :")}{" "}</span>
+                {headLabel(info)}
+              </p>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <Tooltip
+            title={tr("Ouvrir le menu du dépôt")}
+            lines={[
+              tr("Ouvrir, cloner, dépôts récents, onglets, préférences…"),
+              ...(repoPath ? [<span className="font-mono">{repoPath}</span>] : []),
+            ]}
+          >
+            <button
+              className="flex items-center gap-2 px-2 py-1 rounded hover:bg-overlay/10 max-w-60 min-w-0"
+              onClick={(e) => openMenu(e, repoMenu())}
+              aria-label={repoPath ? tr("Ouvrir le menu du dépôt ({repoPath})", { repoPath }) : tr("Ouvrir le menu du dépôt")}
+              aria-haspopup="menu"
+            >
+              <img
+                src={logoMark}
+                alt=""
+                width={24}
+                height={24}
+                draggable={false}
+                className="w-6 h-6 rounded-md ring-1 ring-overlay/10 shrink-0 select-none"
+              />
+              <span className="text-sm font-semibold text-[var(--color-text)] truncate">{repoName ?? "Merathon"}</span>
+              <ChevronDown size={12} className="text-[var(--color-muted)] shrink-0" />
+            </button>
+          </Tooltip>
+          {info && (
+            <span className="text-xs font-mono text-[var(--color-accent-text)] truncate max-w-48" title={tr("Branche courante")}>
+              {!info.interactive_rebase && !info.head_detached && <GitBranch size={12} className="inline mr-1 -mt-0.5" />}
+              <span className="sr-only">{tr("Branche courante :")}{" "}</span>
+              {headLabel(info)}
+            </span>
+          )}
+        </>
       )}
       {repoPath && (
         <Tooltip
@@ -244,6 +272,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       </div>
 
       {menu && <ContextMenu menu={menu} onClose={closeMenu} />}
+      {drawerOpen && <MobileDrawer title={repoName ?? "Merathon"} subtitle={info ? headLabel(info) : undefined} items={repoMenu()} onClose={() => setDrawerOpen(false)} />}
     </header>
   );
 }

@@ -2443,6 +2443,7 @@ dependencies = [
  "base64 0.22.1",
  "git2",
  "keyring",
+ "libgit2-sys",
  "openssl-sys",
  "portable-pty",
  "rustls",
