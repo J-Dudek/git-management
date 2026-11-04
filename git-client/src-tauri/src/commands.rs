@@ -918,6 +918,7 @@ pub fn open_devtools(window: tauri::WebviewWindow) {
 
 // ---------------------------------------------------------------- Terminal intégré
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn terminal_open(
     app: AppHandle,
@@ -930,17 +931,50 @@ pub fn terminal_open(
     crate::terminal::open(&app, window.label(), &cwd, cols, rows, on_event)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn terminal_write(app: AppHandle, id: u32, data: String) -> Result<(), String> {
     crate::terminal::write(&app, id, &data)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn terminal_resize(app: AppHandle, id: u32, cols: u16, rows: u16) -> Result<(), String> {
     crate::terminal::resize(&app, id, cols, rows)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn terminal_close(app: AppHandle, id: u32) {
     crate::terminal::close(&app, id)
 }
+
+// Sur mobile (Android, iOS), il n'y a pas de shell exploitable : les commandes existent toujours, pour que le
+// gestionnaire d'invocation reste le même, mais refusent proprement (le frontend masque le panneau terminal).
+
+#[cfg(not(desktop))]
+fn terminal_unavailable() -> String {
+    tr!("terminal indisponible sur mobile", "terminal not available on mobile")
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+pub fn terminal_open(_cwd: String, _cols: u16, _rows: u16, _on_event: tauri::ipc::Channel<serde_json::Value>) -> Result<u32, String> {
+    Err(terminal_unavailable())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+pub fn terminal_write(_id: u32, _data: String) -> Result<(), String> {
+    Err(terminal_unavailable())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+pub fn terminal_resize(_id: u32, _cols: u16, _rows: u16) -> Result<(), String> {
+    Err(terminal_unavailable())
+}
+
+#[cfg(not(desktop))]
+#[tauri::command]
+pub fn terminal_close(_id: u32) {}

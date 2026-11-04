@@ -1,3 +1,4 @@
+#[cfg(desktop)]
 use tauri::Manager;
 
 #[macro_use]
@@ -11,6 +12,7 @@ mod notifications;
 mod oauth;
 mod ssh_setup;
 mod git;
+#[cfg(desktop)]
 mod terminal;
 mod window;
 
@@ -23,13 +25,19 @@ pub fn run() {
         eprintln!("Délais réseau de libgit2 non appliqués : {e}");
     }
 
-    tauri::Builder::default()
-        .manage(terminal::Terminals::default())
-        .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+
+    // Mises à jour (hors du Play Store, qui les gère lui-même), redémarrage et terminaux : bureau seulement.
+    #[cfg(desktop)]
+    let builder = builder
+        .manage(terminal::Terminals::default())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .invoke_handler(tauri::generate_handler![
             i18n::set_language,
             commands::open_new_window,
@@ -145,9 +153,10 @@ pub fn run() {
             commands::terminal_resize,
             commands::terminal_close,
         ])
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::Destroyed = event {
-                window.state::<terminal::Terminals>().close_window(window.label());
+        .on_window_event(|_window, _event| {
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::Destroyed = _event {
+                _window.state::<terminal::Terminals>().close_window(_window.label());
             }
         })
         .run(tauri::generate_context!())
