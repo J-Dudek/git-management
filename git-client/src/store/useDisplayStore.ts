@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { LANGUAGES, type Language } from "../i18n";
+import { isMobile } from "../lib/platform";
 
 /** Réglages d'affichage, communs à toutes les fenêtres. */
 export interface DisplaySettings {
@@ -50,7 +51,7 @@ export const SYNC_INTERVALS = [0, 1, 2, 5, 10, 15, 30, 60];
 export const defaultNotifications: NotificationSettings = { enabled: true, opened: true, commits: true, comments: true, ci: true, review: true, badge: true };
 
 export const defaultDisplay: DisplaySettings = {
-  zoom: 1, terminalFontSize: 12, density: "normal", syncInterval: 5, theme: "system", language: "fr", languageChosen: false, notifications: defaultNotifications, debugMode: false,
+  zoom: 1, terminalFontSize: 12, density: isMobile() ? "comfortable" : "normal", syncInterval: 5, theme: "system", language: "fr", languageChosen: false, notifications: defaultNotifications, debugMode: false,
 };
 
 const KEY = "merathon.display";

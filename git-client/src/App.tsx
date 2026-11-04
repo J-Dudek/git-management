@@ -199,7 +199,10 @@ export default function App() {
   }
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden max-[760px]:overflow-y-auto max-[760px]:overflow-x-hidden ${mobile ? "overflow-y-hidden!" : ""}`}>
+    <div
+      className={`flex flex-col h-screen w-screen overflow-hidden max-[760px]:overflow-y-auto max-[760px]:overflow-x-hidden ${mobile ? "overflow-y-hidden!" : ""}`}
+      style={mobile ? { paddingTop: "env(safe-area-inset-top)" } : undefined}
+    >
       {/* Lien d'évitement (RGAA 12.7) : premier arrêt de tabulation, visible quand il a le focus. */}
       <a
         href="#contenu"

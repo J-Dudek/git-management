@@ -321,3 +321,22 @@ textarea:focus-visible {
   .celebrate-trophy { transform: translate(-50%, -50%); }
   .celebrate-timer { display: none; }
 }
+
+/* Écrans tactiles (pointeur « coarse ») : zones d'appui d'au moins 40 px pour les menus, la barre d'outils et les onglets. */
+@media (pointer: coarse) {
+  [role="menuitem"],
+  [role="menuitemradio"],
+  [role="tab"],
+  header button,
+  nav[aria-label] button {
+    min-height: 40px;
+  }
+  header button {
+    min-width: 40px;
+  }
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
