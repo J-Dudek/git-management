@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { pickFolder } from "../lib/folderPicker";
 import { FolderGit2 } from "lucide-react";
 import { Button, inputClass } from "./Modal";
 import { SshSetupDialog } from "./SshSetupDialog";
@@ -60,8 +60,8 @@ export function GitProfilesSection() {
   const mismatch = creating ? passphraseProblem(passphrase, confirmation) : null;
 
   async function chooseDir() {
-    const dir = await open({ directory: true, multiple: false });
-    if (typeof dir === "string") set({ dir });
+    const dir = await pickFolder();
+    if (dir) set({ dir });
   }
 
   function edit(profile: GitProfile) {

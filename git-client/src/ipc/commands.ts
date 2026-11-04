@@ -46,6 +46,14 @@ export const trustRepository = (path: string) => invoke<void>("trust_repository"
 /** Préfixe de l'erreur renvoyée par `open_repository` pour un dépôt absent de `safe.directory`. */
 export const UNTRUSTED_REPO_ERROR = "Untrusted repository";
 export const getRepoInfo = (path: string) => invoke<RepoInfo>("get_repo_info", { path });
+export interface DeviceFolder {
+  name: string;
+  path: string;
+  is_repo: boolean;
+}
+export const deviceReposRoot = () => invoke<string>("device_repos_root");
+export const listDeviceFolders = (dir: string) => invoke<DeviceFolder[]>("list_device_folders", { dir });
+export const createDeviceFolder = (dir: string, name: string) => invoke<string>("create_device_folder", { dir, name });
 export const initRepository = (path: string) => invoke<void>("init_repository", { path });
 /** `repo` : dépôt à ouvrir directement dans la nouvelle fenêtre. */
 export const openNewWindow = (repo: string | null = null) => invoke<void>("open_new_window", { repo });

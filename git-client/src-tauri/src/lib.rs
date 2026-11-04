@@ -5,6 +5,7 @@ use tauri::Manager;
 mod i18n;
 mod accounts;
 mod commands;
+mod device_storage;
 mod forge;
 mod http;
 mod notifications;
@@ -33,6 +34,15 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build());
 
     builder
+        .setup(|_app| {
+            // Sans certificats, seul le HTTPS de Git échoue : l'application doit quand même démarrer.
+            #[cfg(target_os = "android")]
+            match device_storage::trust_system_certificates() {
+                Ok(count) => eprintln!("certificats du système : {count}"),
+                Err(e) => eprintln!("certificats du système indisponibles : {e}"),
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             i18n::set_language,
             commands::open_new_window,
@@ -140,6 +150,9 @@ pub fn run() {
             commands::oauth_start,
             commands::oauth_complete,
             commands::oauth_cancel,
+            commands::device_repos_root,
+            commands::list_device_folders,
+            commands::create_device_folder,
             commands::app_info,
             commands::open_devtools,
             commands::terminal_open,

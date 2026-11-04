@@ -111,6 +111,10 @@ interface PendingDialog extends DialogOptions {
 interface UiStore {
   toasts: Toast[];
   dialog: PendingDialog | null;
+  /** Sélecteur de dossiers de l'application (mobile) : réponse attendue, null s'il est fermé. */
+  folderPicker: ((path: string | null) => void) | null;
+  pickFolderInApp: () => Promise<string | null>;
+  closeFolderPicker: (path: string | null) => void;
   /** Libellé de l'opération longue en cours (fetch, push…), null si aucune. */
   busy: string | null;
   /** Commit de base du rebase interactif en cours de préparation. */
@@ -158,6 +162,7 @@ function clearToastTimer(id: number) {
 export const useUiStore = create<UiStore>((set, get) => ({
   toasts: [],
   dialog: null,
+  folderPicker: null,
   busy: null,
   interactiveRebaseBase: null,
   panel: loadPanel(),
@@ -211,6 +216,17 @@ export const useUiStore = create<UiStore>((set, get) => ({
   closeDialog: (result) => {
     get().dialog?.resolve(result);
     set({ dialog: null });
+  },
+
+  pickFolderInApp: () =>
+    new Promise((resolve) => {
+      get().folderPicker?.(null);
+      set({ folderPicker: resolve });
+    }),
+
+  closeFolderPicker: (path) => {
+    get().folderPicker?.(path);
+    set({ folderPicker: null });
   },
 
   setBusy: (busy) => set({ busy }),

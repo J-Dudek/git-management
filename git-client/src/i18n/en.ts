@@ -1766,4 +1766,13 @@ export const en: Record<string, string> = {
   "Évaluation du {auditDate}, référence : {standard}.": "Evaluation of {auditDate}, reference: {standard}.",
   "… et {n} autre": "… and {n} other",
   "… et {n} autres": "… and {n} others",
+  "Aucun dossier ici": "No folders here",
+  "Ces dossiers sont privés à Merathon et supprimés à la désinstallation de l'application.": "These folders are private to Merathon and deleted when the app is uninstalled.",
+  "Choisir ce dossier": "Choose this folder",
+  "Choisir un dossier": "Choose a folder",
+  "Dépôts de Merathon": "Merathon repositories",
+  "Menu du dépôt": "Repository menu",
+  "Nouveau dossier": "New folder",
+  "Remonter d'un dossier": "Go up one folder",
+  "dépôt Git": "Git repository",
 };

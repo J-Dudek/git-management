@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useAccountsStore } from "../store/useAccountsStore";
 import { openRepoAt } from "../lib/repoActions";
 import { useUiStore } from "../store/useUiStore";
-import { cloneRepository, listGitProfiles } from "../ipc/commands";
+import { cloneRepository, deviceReposRoot, listGitProfiles } from "../ipc/commands";
+import { pickFolder } from "../lib/folderPicker";
+import { isMobile } from "../lib/platform";
 import { errorMessage } from "../lib/actions";
 import { profileForAccount, profileForDir } from "../lib/gitProfiles";
 import type { ForgeRepo } from "../types/forge";
@@ -40,6 +41,11 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
     listGitProfiles().then((info) => setProfiles(info.profiles)).catch(() => {});
   }, []);
 
+  // Mobile : un seul espace pour les dépôts, proposé d'office.
+  useEffect(() => {
+    if (isMobile()) deviceReposRoot().then((root) => setParentDir((dir) => dir || root)).catch(() => {});
+  }, []);
+
   // Dossier du profil lié au compte, tant que l'utilisateur n'en a pas choisi un autre.
   useEffect(() => {
     const dir = accountId ? profileForAccount(profiles, accountId)?.dir : undefined;
@@ -72,8 +78,8 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
   }, [repos, filter]);
 
   async function chooseDir() {
-    const dir = await open({ directory: true, multiple: false });
-    if (typeof dir !== "string") return;
+    const dir = await pickFolder();
+    if (!dir) return;
     setParentDir(dir);
     setDirChosen(true);
   }
