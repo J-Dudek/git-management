@@ -7,6 +7,7 @@ import { useJournalStore, type JournalEntry } from "../store/useJournalStore";
 import { errorMessage } from "../lib/actions";
 import { attachTerminal, LEAVE_TERMINAL_HINT, restartTerminal } from "../lib/terminals";
 import { resizeKeyDelta } from "../lib/resizeKeys";
+import { hasDesktopFeatures } from "../lib/platform";
 import { tr, trn, locale, COLON } from "../i18n";
 
 const HEADER_HEIGHT = 28;
@@ -23,14 +24,18 @@ export function BottomPanel() {
   const [onlyRepo, setOnlyRepo] = useState(true);
   const clear = useJournalStore((s) => s.clear);
 
-  const journalVisible = panel.open && panel.tab === "journal";
+  // Pas de terminal sur mobile : seul le journal est proposé, même si la préférence enregistrée était « terminal ».
+  const terminalAvailable = hasDesktopFeatures();
+  const tab: BottomPanelState["tab"] = terminalAvailable ? panel.tab : "journal";
+
+  const journalVisible = panel.open && tab === "journal";
   useEffect(() => {
     if (journalVisible) setSeenErrors(errorCount);
   }, [journalVisible, errorCount]);
   const newErrors = Math.max(0, errorCount - seenErrors);
 
-  function select(tab: BottomPanelState["tab"]) {
-    setPanel(panel.open && panel.tab === tab ? { open: false } : { open: true, tab });
+  function select(target: BottomPanelState["tab"]) {
+    setPanel(panel.open && tab === target ? { open: false } : { open: true, tab: target });
   }
 
   // Redimensionnement en tirant la bordure haute.
@@ -79,14 +84,16 @@ export function BottomPanel() {
             title={tr("Redimensionner (flèches haut / bas au clavier)")}
           />
         )}
-        <PanelTab
-          name="terminal"
-          active={panel.open && panel.tab === "terminal"}
-          onClick={() => select("terminal")}
-          title={`Terminal (${LEAVE_TERMINAL_HINT})`}
-        >
-          Terminal
-        </PanelTab>
+        {terminalAvailable && (
+          <PanelTab
+            name="terminal"
+            active={panel.open && tab === "terminal"}
+            onClick={() => select("terminal")}
+            title={`Terminal (${LEAVE_TERMINAL_HINT})`}
+          >
+            Terminal
+          </PanelTab>
+        )}
         <PanelTab name="journal" active={journalVisible} onClick={() => select("journal")}>
           {tr("Journal")}
           {newErrors > 0 && (
@@ -98,7 +105,7 @@ export function BottomPanel() {
         </PanelTab>
 
         <div className="ml-auto flex items-center gap-1 pr-2">
-          {panel.open && panel.tab === "terminal" && (
+          {panel.open && tab === "terminal" && (
             <HeaderBtn onClick={() => restartTerminal(tabId)} title={tr("Relancer le shell")}><RotateCw size={13} className="mx-auto" /></HeaderBtn>
           )}
           {journalVisible && (
@@ -122,7 +129,7 @@ export function BottomPanel() {
 
       {panel.open && (
         <div className="flex-1 min-h-0 bg-[var(--color-bg-primary)]">
-          {panel.tab === "terminal" ? (
+          {tab === "terminal" ? (
             <TerminalView key={`${tabId}:${repoPath}`} tabId={tabId} path={repoPath} />
           ) : (
             <JournalView repo={onlyRepo ? repoPath : null} />

@@ -32,6 +32,7 @@ import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
 import { checkForUpdatesOnStartup } from "./lib/updater";
+import { hasDesktopFeatures } from "./lib/platform";
 import { startAutoSync } from "./lib/autoSync";
 import { useIconBadge } from "./lib/iconBadge";
 import { openDevtools } from "./ipc/commands";
@@ -306,7 +307,9 @@ function zoomBy(direction: 1 | -1) {
 const SHORTCUTS: Record<string, () => void> = {
   ",": () => useUiStore.getState().setPreferencesOpen(true),
   o: () => openRepoDialog(),
-  "shift+n": () => openNewWindow().catch(() => {}),
+  "shift+n": () => {
+    if (hasDesktopFeatures()) openNewWindow().catch(() => {});
+  },
   "=": () => zoomBy(1),
   "+": () => zoomBy(1),
   "shift++": () => zoomBy(1),

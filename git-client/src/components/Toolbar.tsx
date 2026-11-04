@@ -12,6 +12,7 @@ import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { SearchBar } from "./SearchBar";
 import { Tooltip } from "./Tooltip";
 import { checkForUpdates } from "../lib/updater";
+import { hasDesktopFeatures } from "../lib/platform";
 import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
 import { useThemeStore } from "../lib/theme";
 import { useDisplayStore, type ThemePreference } from "../store/useDisplayStore";
@@ -62,13 +63,17 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
         : []),
       "separator",
       { label: tr("Nouvel onglet"), icon: SquarePlus, shortcut: "Ctrl+T", action: newTab },
-      { label: tr("Nouvelle fenêtre"), icon: AppWindow, shortcut: "Ctrl+Maj+N", action: () => openNewWindow() },
+      ...(hasDesktopFeatures()
+        ? [{ label: tr("Nouvelle fenêtre"), icon: AppWindow, shortcut: "Ctrl+Maj+N", action: () => openNewWindow() }]
+        : []),
       ...(repoPath || tabCount > 1
         ? [{ label: tr("Fermer l'onglet"), icon: X, shortcut: "Ctrl+W", action: () => closeTab(activeTab) }]
         : []),
       "separator",
       { label: tr("Préférences…"), icon: Settings, shortcut: "Ctrl+,", action: () => setPreferencesOpen(true) },
-      { label: tr("Rechercher des mises à jour…"), icon: RefreshCw, action: () => checkForUpdates(true) },
+      ...(hasDesktopFeatures()
+        ? [{ label: tr("Rechercher des mises à jour…"), icon: RefreshCw, action: () => checkForUpdates(true) }]
+        : []),
       { label: tr("Mémo Git"), icon: BookOpen, action: () => setMemoOpen(true) },
       { label: tr("À propos de Merathon"), icon: Info, action: () => setPreferencesOpen(true, "about") },
     ];
@@ -224,14 +229,16 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       <div className="ml-auto flex flex-wrap items-center gap-2">
         <ThemeButton onOpen={openMenu} />
         <SearchBar />
-        <button
-          className="text-xs px-2 py-1 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
-          onClick={() => openNewWindow()}
-          title={tr("Ouvrir une nouvelle fenêtre")}
-          aria-label={tr("Ouvrir une nouvelle fenêtre")}
-        >
-          <AppWindow size={14} strokeWidth={1.75} />
-        </button>
+        {hasDesktopFeatures() && (
+          <button
+            className="text-xs px-2 py-1 rounded text-[var(--color-muted)] hover:text-[var(--color-text)] hover:bg-overlay/10"
+            onClick={() => openNewWindow()}
+            title={tr("Ouvrir une nouvelle fenêtre")}
+            aria-label={tr("Ouvrir une nouvelle fenêtre")}
+          >
+            <AppWindow size={14} strokeWidth={1.75} />
+          </button>
+        )}
       </div>
 
       {menu && <ContextMenu menu={menu} onClose={closeMenu} />}

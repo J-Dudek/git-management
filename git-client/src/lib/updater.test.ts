@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn() }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "main" }) }));
 
-const { CHANGELOG_MARKER, compareVersions, downloadLabel, releaseNoteSections } = await import("./updater");
+const { check } = await import("@tauri-apps/plugin-updater");
+const { CHANGELOG_MARKER, compareVersions, downloadLabel, releaseNoteSections, checkForUpdates } = await import("./updater");
 
 describe("releaseNoteSections", () => {
   const body = [
@@ -111,5 +112,15 @@ describe("downloadLabel", () => {
     expect(downloadLabel(0, 0)).toBe("Téléchargement de la mise à jour…");
     expect(downloadLabel(512, 1024)).toBe("Téléchargement de la mise à jour… 50 %");
     expect(downloadLabel(2048, 1024)).toBe("Téléchargement de la mise à jour… 100 %");
+  });
+});
+
+describe("checkForUpdates", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("does nothing on Android, where the store handles updates", async () => {
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Linux; Android 14) Mobile Safari/537.36");
+    await checkForUpdates(true);
+    expect(check).not.toHaveBeenCalled();
   });
 });
