@@ -12,7 +12,7 @@ import { ContextMenu, useContextMenu, type MenuEntry } from "./ContextMenu";
 import { SearchBar } from "./SearchBar";
 import { Tooltip } from "./Tooltip";
 import { checkForUpdates } from "../lib/updater";
-import { hasDesktopFeatures } from "../lib/platform";
+import { hasDesktopFeatures, isMobile } from "../lib/platform";
 import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
 import { useThemeStore } from "../lib/theme";
 import { useDisplayStore, type ThemePreference } from "../store/useDisplayStore";
@@ -139,9 +139,11 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
   }
 
   const disabled = !repoPath || !!busy;
+  // Mobile : deux lignes seulement (dépôt et branche, puis actions en icônes) ; le thème est dans les préférences.
+  const mobile = isMobile();
 
   return (
-    <header className="flex flex-wrap items-center gap-1.5 px-3 min-h-11 py-1 shrink-0 bg-[var(--color-bg-secondary)] border-b border-overlay/10">
+    <header className={`flex flex-wrap items-center gap-1.5 px-3 min-h-11 py-1 shrink-0 bg-[var(--color-bg-secondary)] border-b border-overlay/10 ${mobile ? "gap-x-0.5! px-2!" : ""}`}>
       {/* Titre de niveau 1 pour les technologies d'assistance : les panneaux ont des titres de niveau 2. */}
       <h1 className="sr-only">Merathon{repoName ? ` — ${repoName}` : ""}</h1>
       <Tooltip
@@ -192,7 +194,7 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
         </Tooltip>
       )}
 
-      <div className="w-px h-5 bg-overlay/10 mx-1" />
+      {mobile ? <div className="basis-full h-0" aria-hidden /> : <div className="w-px h-5 bg-overlay/10 mx-1" />}
 
       <ToolBtn
         label="Pull"
@@ -224,10 +226,10 @@ export function Toolbar({ onClone }: { onClone: () => void }) {
       <ToolBtn label="Pop" icon={ArchiveRestore} badge={stashes.length || undefined} badgeLabel={(n) => trn(n, "{n} stash", "{n} stashes")} disabled={disabled || stashes.length === 0} onClick={doPop} />
 
       {/* Opération en cours (Fetch…, Push…) : annoncée par une zone de statut toujours présente. */}
-      <span role="status" className="text-xs text-[var(--color-muted)] ml-2">{busy ?? ""}</span>
+      <span role="status" className={`text-xs text-[var(--color-muted)] ${mobile ? "" : "ml-2"}`}>{busy ?? ""}</span>
 
-      <div className="ml-auto flex flex-wrap items-center gap-2">
-        <ThemeButton onOpen={openMenu} />
+      <div className={`ml-auto flex flex-wrap items-center ${mobile ? "gap-0.5" : "gap-2"}`}>
+        {!mobile && <ThemeButton onOpen={openMenu} />}
         <SearchBar />
         {hasDesktopFeatures() && (
           <button
@@ -307,7 +309,7 @@ function ToolBtn({ label, icon: Icon, badge, badgeLabel, disabled, onClick, onMe
         title={badge && badgeLabel ? `${label} (${badgeLabel(badge)})` : label}
       >
         <Icon size={13} strokeWidth={1.75} className="opacity-80 shrink-0" />
-        {label}
+        <span className={isMobile() ? "sr-only" : undefined}>{label}</span>
         {!!badge && (
           <span className="text-[9px] px-1 rounded-full bg-[var(--color-accent-solid)] text-white leading-4">
             <span aria-hidden>{badge}</span>

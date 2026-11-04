@@ -5,6 +5,7 @@ import { MIN_GRAPH_WIDTH, useUiStore, confirmAction } from "../store/useUiStore"
 import { computeGraphLayout } from "./layout";
 import { filterCommits } from "../search/filterCommits";
 import { GraphCanvas, H_PADDING, LANE_WIDTH } from "./GraphCanvas";
+import { isMobile } from "../lib/platform";
 import { ROW_HEIGHTS, useDisplayStore } from "../store/useDisplayStore";
 import { ContextMenu, useContextMenu, type MenuEntry } from "../components/ContextMenu";
 import {
@@ -307,7 +308,10 @@ export function CommitGraph() {
   // Largeur de toutes les voies, bornée par celle choisie avec la poignée : les voies au-delà sont coupées.
   const fullGraphWidth = H_PADDING * 2 + layout.laneCount * LANE_WIDTH + INFO_OFFSET;
   const graphWidthLimit = useUiStore((s) => s.graphWidth);
-  const graphWidth = graphWidthLimit === null ? fullGraphWidth : Math.min(fullGraphWidth, graphWidthLimit);
+  // Mobile : les voies ne prennent qu'environ un tiers de la largeur, pour laisser lire les messages.
+  const defaultLimit = isMobile() ? Math.max(MIN_GRAPH_WIDTH, Math.round(size.width * 0.35)) : null;
+  const effectiveLimit = graphWidthLimit ?? defaultLimit;
+  const graphWidth = effectiveLimit === null ? fullGraphWidth : Math.min(fullGraphWidth, effectiveLimit);
   const graphTruncated = graphWidth < fullGraphWidth;
 
   // Fait défiler jusqu'au commit sélectionné (ex. clic sur une branche dans la barre latérale).

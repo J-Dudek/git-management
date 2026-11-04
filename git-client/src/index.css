@@ -334,6 +334,10 @@ textarea:focus-visible {
   header button {
     min-width: 40px;
   }
+  /* Flèche d'un bouton à menu (Pull ▾, Push ▾) : plus étroite, pour que les actions tiennent sur une ligne. */
+  header button[aria-haspopup] {
+    min-width: 32px;
+  }
   input[type="checkbox"],
   input[type="radio"] {
     width: 1.25rem;

@@ -56,7 +56,8 @@ export function BottomPanel() {
     window.addEventListener("pointerup", up);
   }
 
-  if (!repoPath) return null;
+  // Mobile : pas de panneau du bas (ni terminal, ni journal) ; les erreurs s'affichent en notification.
+  if (!repoPath || !terminalAvailable) return null;
 
   return (
     <div
