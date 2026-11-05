@@ -23,6 +23,11 @@ export function passphraseProblem(passphrase: string, confirmation: string): str
 
 /** Explication d'un test de connexion refusé. */
 export function connectionHint(encrypted: boolean | null, message: string): string {
+  // Clé de l'appareil (Android) : refus de la forge, ou confirmation annulée.
+  if (/refuse la clé de cet appareil|refuses this device's key/i.test(message)) {
+    return tr("La forge ne reconnaît pas encore cette clé : vérifie qu'elle est bien enregistrée sur le compte.");
+  }
+  if (/^Confirmation (annulée|cancelled)/.test(message)) return tr("Confirmation annulée : vérifie à nouveau pour la redemander.");
   if (/permission denied/i.test(message) && encrypted !== false) {
     return tr("Si la clé a une passphrase, ajoute-la d'abord à ton agent SSH (ssh-add), puis vérifie à nouveau.");
   }

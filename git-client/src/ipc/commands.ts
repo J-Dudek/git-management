@@ -1,7 +1,7 @@
 import { Channel, invoke as tauriInvoke, type InvokeArgs } from "@tauri-apps/api/core";
 import type {
   BranchDivergence, BranchInfo, CommitDetails, CommitFile, CommitTrailers, PrPush, PrRebase, CommitInfo, FileDiff, FileStatus, GitProfile, GitProfileInput, GitProfilesInfo, Identity, IdentityStatus, MergeResult,
-  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, SshCheck, SshHostStatus, SshKeyInfo, SshSetupInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit, WorktreeInfo,
+  InteractiveOutcome, LfsStatus, RefComparison, RemoteInfo, RepoInfo, DeviceKeyStatus, SshCheck, SshHostStatus, SshKeyInfo, SshSetupInfo, StashInfo, SubmoduleInfo, TagInfo, TodoCommit, WorktreeInfo,
 } from "../types/git";
 import type { DeviceCode, ForgeAccount, Provider, SavedAccount } from "../types/forge";
 import { describeCommand } from "../lib/journal";
@@ -203,6 +203,8 @@ export const sshExistingKey = (name: string) => tauriInvoke<SshKeyInfo>("ssh_exi
 export const sshHostStatus = (host: string) => tauriInvoke<SshHostStatus>("ssh_host_status", { host });
 export const sshTrustHost = (host: string, fingerprint: string) => tauriInvoke<void>("ssh_trust_host", { host, fingerprint });
 export const sshCheckConnection = (host: string, key: string) => tauriInvoke<SshCheck>("ssh_check_connection", { host, key });
+export const sshDeviceKeyStatus = () => tauriInvoke<DeviceKeyStatus>("ssh_device_key_status");
+export const sshDeviceKeyDelete = () => tauriInvoke<void>("ssh_device_key_delete");
 export const listSubmodules = (path: string) => invoke<SubmoduleInfo[]>("list_submodules", { path });
 /** `names` vide : tous les sous-modules. */
 export const updateSubmodules = (path: string, names: string[] = []) => invoke<void>("update_submodules", { path, names });
@@ -216,7 +218,8 @@ export const removeWorktree = (path: string, name: string) => invoke<void>("remo
 export const fetchRemote = (path: string, remote: string | null = null) =>
   invoke<void>("fetch_remote", { path, remote });
 /** Fetch de tous les remotes en arrière-plan (synchronisation périodique) : pas inscrit au journal. */
-export const fetchAllQuietly = (path: string) => tauriInvoke<void>("fetch_remote", { path, remote: null });
+/** Synchronisation automatique : sur Android, la clé SSH de l'appareil n'y demande jamais de confirmation. */
+export const fetchAllQuietly = (path: string) => tauriInvoke<void>("fetch_remote", { path, remote: null, background: true });
 /** Fetch d'un remote en arrière-plan (état d'une PR à l'ouverture) : pas inscrit au journal. */
 export const fetchRemoteQuietly = (path: string, remote: string) => tauriInvoke<void>("fetch_remote", { path, remote });
 export const pull = (path: string, rebase: boolean) => invoke<MergeResult>("pull", { path, rebase });

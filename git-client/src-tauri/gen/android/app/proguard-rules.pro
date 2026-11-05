@@ -24,3 +24,7 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# Clé SSH de l'appareil (MerathonKeystore.kt) : appelée uniquement depuis Rust par JNI, donc invisible pour R8.
+-keep class com.gitclient.app.MerathonKeystore { public static *; }
+-keep class com.gitclient.app.MerathonKeystore$ConfirmFragment { *; }

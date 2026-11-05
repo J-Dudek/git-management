@@ -10,11 +10,16 @@ use std::path::{Path, PathBuf};
 #[cfg(not(target_os = "android"))]
 use std::process::{Command, Output};
 use serde::Serialize;
+// Clés en fichiers de `~/.ssh` : bureau seulement (sur Android, voir android_keystore.rs).
+#[cfg(not(target_os = "android"))]
 use crate::git::is_plain_file_name;
+#[cfg(not(target_os = "android"))]
 use ssh_key::{rand_core::OsRng, Algorithm, HashAlg, LineEnding, PrivateKey, PublicKey};
 
 /// Fichiers essayés par défaut, dans l'ordre de `git/auth.rs`.
+#[cfg(not(target_os = "android"))]
 pub const KEY_NAMES: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
+#[cfg(not(target_os = "android"))]
 const NEW_KEY: &str = "id_ed25519";
 
 /// Empreintes publiées : https://api.github.com/meta et https://docs.gitlab.com/user/gitlab_com/.
@@ -46,6 +51,9 @@ pub struct SshSetupInfo {
     /// Chemin de la clé à créer ; `None` si `id_ed25519` existe déjà (rien n'est jamais écrasé).
     pub new_key_path: Option<String>,
     pub machine: String,
+    /// Android : pourquoi aucune clé n'est proposée (pas de verrouillage d'écran, clé invalidée…). Jamais sur le bureau.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub problem: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -89,6 +97,7 @@ fn default_machine_name() -> String {
     tr!("ce téléphone", "this phone")
 }
 
+#[cfg(not(target_os = "android"))]
 fn key_info(dir: &Path, name: &str) -> Option<SshKeyInfo> {
     let private = dir.join(name);
     if !private.is_file() {
@@ -100,14 +109,33 @@ fn key_info(dir: &Path, name: &str) -> Option<SshKeyInfo> {
     Some(SshKeyInfo { name: name.to_string(), path: private.to_string_lossy().to_string(), public_key, fingerprint, encrypted })
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn setup_info(dir: &Path) -> SshSetupInfo {
     let keys = KEY_NAMES.iter().filter_map(|name| key_info(dir, name)).collect();
     let target = dir.join(NEW_KEY);
     let taken = target.exists() || dir.join(format!("{NEW_KEY}.pub")).exists();
-    SshSetupInfo { keys, new_key_path: (!taken).then(|| target.to_string_lossy().to_string()), machine: machine_name() }
+    SshSetupInfo { keys, new_key_path: (!taken).then(|| target.to_string_lossy().to_string()), machine: machine_name(), problem: None }
+}
+
+/// Android : une seule clé, celle de l'appareil (Android Keystore), jamais de fichier de `~/.ssh`.
+#[cfg(target_os = "android")]
+pub fn setup_info(_dir: &Path) -> SshSetupInfo {
+    use crate::android_keystore::{describe, ready_key, state, DeviceKeyState};
+    let info = |keys, new_key_path, problem| SshSetupInfo { keys, new_key_path, machine: machine_name(), problem };
+    match state() {
+        Ok(DeviceKeyState::Ready) => match ready_key() {
+            Ok(key) => info(key.into_iter().collect(), None, None),
+            Err(e) => info(Vec::new(), None, Some(e)),
+        },
+        Ok(DeviceKeyState::Absent) => info(Vec::new(), Some(tr!("Android Keystore", "Android Keystore")), None),
+        Ok(DeviceKeyState::Invalidated) => info(Vec::new(), None, Some(describe("invalidated"))),
+        Ok(DeviceKeyState::Insecure) => info(Vec::new(), None, Some(describe("insecure"))),
+        Err(e) => info(Vec::new(), None, Some(describe(&e))),
+    }
 }
 
 /// Toutes les clés de `~/.ssh` (fichier privé et `.pub`), pour en choisir une par profil.
+#[cfg(not(target_os = "android"))]
 pub fn all_keys(dir: &Path) -> Vec<SshKeyInfo> {
     let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
     let mut names: Vec<String> = entries
@@ -118,7 +146,23 @@ pub fn all_keys(dir: &Path) -> Vec<SshKeyInfo> {
     names.iter().filter_map(|name| key_info(dir, name)).collect()
 }
 
+/// Android : la clé de l'appareil seulement (les profils Git n'y choisissent pas de clé).
+#[cfg(target_os = "android")]
+pub fn all_keys(_dir: &Path) -> Vec<SshKeyInfo> {
+    crate::android_keystore::ready_key().ok().flatten().into_iter().collect()
+}
+
+/// Android : seule la clé de l'appareil existe.
+#[cfg(target_os = "android")]
+pub fn existing_key(_dir: &Path, name: &str) -> Result<SshKeyInfo, String> {
+    if name != crate::android_keystore::DEVICE_KEY_NAME {
+        return Err(tr!("Clé SSH refusée : {name}", "SSH key refused: {name}"));
+    }
+    crate::android_keystore::ready_key()?.ok_or_else(|| crate::android_keystore::describe("absent"))
+}
+
 /// Clé existante désignée par son nom de fichier dans `~/.ssh` : aucun chemin arbitraire n'est accepté.
+#[cfg(not(target_os = "android"))]
 pub fn existing_key(dir: &Path, name: &str) -> Result<SshKeyInfo, String> {
     if !is_plain_file_name(name) {
         return Err(tr!("Clé SSH refusée : {name}", "SSH key refused: {name}"));
@@ -128,10 +172,21 @@ pub fn existing_key(dir: &Path, name: &str) -> Result<SshKeyInfo, String> {
 
 /// Crée la clé `name` (`id_ed25519` par défaut) et son `.pub` sans jamais écraser un fichier existant.
 pub fn create_key(dir: &Path, name: Option<&str>, comment: &str, passphrase: Option<&str>) -> Result<SshKeyInfo, String> {
-    // Android : jamais de clé privée dans un fichier, même chiffrée. Elle sera créée dans l'Android Keystore (issue #38).
-    if cfg!(target_os = "android") {
-        return Err(tr!("Sur Android, la clé SSH ne peut pas être enregistrée dans un fichier : elle doit rester dans le coffre de l'appareil (Android Keystore)", "On Android, the SSH key cannot be stored in a file: it must stay in the device vault (Android Keystore)"));
+    // Android : jamais de clé privée dans un fichier, même chiffrée. Elle est créée dans l'Android Keystore (issue #38).
+    #[cfg(target_os = "android")]
+    {
+        let _ = (dir, name, comment);
+        if passphrase.is_some_and(|p| !p.is_empty()) {
+            return Err(tr!("Pas de passphrase sur Android : la clé est protégée par la confirmation de l'appareil", "No passphrase on Android: the key is protected by the device confirmation"));
+        }
+        crate::android_keystore::create()
     }
+    #[cfg(not(target_os = "android"))]
+    create_key_file(dir, name, comment, passphrase)
+}
+
+#[cfg(not(target_os = "android"))]
+fn create_key_file(dir: &Path, name: Option<&str>, comment: &str, passphrase: Option<&str>) -> Result<SshKeyInfo, String> {
     let name = name.unwrap_or(NEW_KEY);
     if !is_plain_file_name(name) || name.ends_with(".pub") {
         return Err(tr!("Nom de clé SSH refusé : {name}", "SSH key name refused: {name}"));
@@ -174,6 +229,7 @@ fn create_private_dir(dir: &Path) -> Result<(), String> {
 }
 
 /// `create_new` : échoue si le fichier est apparu entre-temps. Sous Unix, les droits sont posés dès la création.
+#[cfg(not(target_os = "android"))]
 fn write_new(path: &Path, content: &[u8], mode: u32) -> Result<(), String> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
@@ -354,7 +410,7 @@ pub fn check_connection(dir: &Path, host: &str, key_name: &str) -> Result<SshChe
 #[cfg(target_os = "android")]
 pub fn check_connection(dir: &Path, host: &str, _key_name: &str) -> Result<SshCheck, String> {
     valid_host(host)?;
-    let signer = crate::ssh_signer::device_signer().ok_or_else(|| tr!("La clé SSH de l'appareil n'est pas encore disponible sur Android : utilise l'URL HTTPS du dépôt", "The device SSH key is not available on Android yet: use the repository's HTTPS URL"))?;
+    let signer = crate::android_keystore::signer().ok_or_else(|| crate::android_keystore::describe("absent"))?;
     crate::ssh_native::check_connection(dir, host, 22, "git", signer, crate::ssh_native::CHECK_TIMEOUT)
 }
 

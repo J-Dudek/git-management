@@ -1,6 +1,9 @@
 # SSH sur Android sans OpenSSH (issue #38)
 
-État au 5 novembre 2026 : **les briques Rust sont prêtes et validées contre un vrai serveur OpenSSH ; le SSH reste désactivé sur Android** tant que le pont Android Keystore n'a pas été écrit et validé sur un appareil (étape 1 de l'issue, « prototype sur l'émulateur, puis sur un vrai téléphone »).
+État au 5 novembre 2026 :
+
+- **Briques Rust** (PR #39) : prêtes et validées contre un vrai serveur OpenSSH.
+- **Pont Android Keystore** (PR suivante) : écrit, compilé (Kotlin contre `android.jar`, JNI vérifié par clippy), **pas encore exécuté sur un appareil**. Il est donc derrière le réglage **Préférences > SSH > « Activer le SSH sur cet appareil »**, désactivé par défaut : sans lui, les garde-fous restent actifs et Android reste en HTTPS seulement.
 
 Rien ne change sur Windows ni sur Linux : le bureau garde OpenSSH (`ssh-keyscan`, `ssh-keygen`, `ssh`), comme avant.
 
@@ -20,13 +23,14 @@ Sans `known_hosts` rempli, libgit2 refuse la connexion avant même l'authentific
 
 ```mermaid
 flowchart LR
-  UI["SshSetupDialog<br/>(masqué sur mobile)"] -->|ssh_host_status / ssh_trust_host / ssh_check_connection| SETUP["ssh_setup.rs"]
+  UI["SshSetupDialog<br/>(mobile : réglage SSH expérimental)"] -->|ssh_host_status / ssh_trust_host / ssh_check_connection| SETUP["ssh_setup.rs"]
   SETUP -->|bureau| OPENSSH["ssh-keyscan · ssh-keygen · ssh"]
   SETUP -->|Android| NATIVE["ssh_native.rs<br/>sondage · test de connexion"]
   NATIVE --> KH["known_hosts.rs<br/>analyseur"]
   NATIVE --> LIBGIT2["libgit2 / libssh2"]
   OPS["clone · fetch · pull · push<br/>git/auth.rs"] -->|Android : clé de l'appareil seulement| SIGNER["ssh_signer.rs<br/>git_credential_ssh_custom_new"]
-  SIGNER -->|"sign(données) → DER"| KEYSTORE["SshSigner<br/>(pont Android Keystore, à écrire)"]
+  SIGNER -->|"sign(données) → DER"| BRIDGE["android_keystore.rs<br/>KeystoreSigner (JNI)"]
+  BRIDGE -->|JNI| KT["MerathonKeystore.kt<br/>Android Keystore · BiometricPrompt"]
   SIGNER --> LIBGIT2
 ```
 
@@ -36,12 +40,14 @@ flowchart LR
 |---|---|---|
 | `src-tauri/src/known_hosts.rs` | Lecture de `known_hosts` : hôtes en clair, listes, `[hôte]:port`, `*` `?` `!`, commentaires, `@revoked`. Les lignes hachées (`\|1\|…`) et `@cert-authority` sont ignorées (voir plus bas). | Android + tests |
 | `src-tauri/src/ssh_native.rs` | Sondage de la clé du serveur, statut et validation de l'hôte, test de connexion, délais maximaux. | Android + tests |
-| `src-tauri/src/ssh_signer.rs` | Piste 1 : clé qui ne sort jamais du coffre. FFI vers `git_credential_ssh_custom_new`, conversion de la signature DER au format SSH, enregistrement de la clé de l'appareil. | Android + tests |
+| `src-tauri/src/ssh_signer.rs` | Piste 1 : clé qui ne sort jamais du coffre. FFI vers `git_credential_ssh_custom_new`, conversion de la signature DER au format SSH, interdiction des confirmations en arrière-plan (`without_prompt`). | Android + tests |
+| `src-tauri/src/android_keystore.rs` | Pont JNI vers `MerathonKeystore.kt` : état, création, suppression de la clé, `KeystoreSigner`, messages traduits des erreurs du Keystore. | Android + tests (sans JNI) |
+| `src-tauri/gen/android/app/src/main/java/com/gitclient/app/MerathonKeystore.kt` | Clé ECDSA P-256 non exportable, confirmation par empreinte ou code (30 s), API de la plateforme uniquement (24 à aujourd'hui). | Android |
 | `src-tauri/src/test_sshd.rs` | Serveur OpenSSH jetable pour les tests (port libre, clés d'hôte et `authorized_keys` propres, `HOME` isolé). | tests |
-| `src-tauri/src/ssh_setup.rs` | Branches `cfg(target_os = "android")` vers `ssh_native` ; le code du bureau est inchangé. Création de clé refusée sur Android. | partout |
+| `src-tauri/src/ssh_setup.rs` | Branches `cfg(target_os = "android")` vers `ssh_native` et `android_keystore` (création de la clé dans le Keystore, jamais en fichier) ; le code du bureau est inchangé. | partout |
 | `src-tauri/src/git/auth.rs` | `SshSources` : bureau = agent + clés `~/.ssh` + clé du profil (inchangé) ; Android = clé de l'appareil seulement, ni agent ni fichier. | partout |
 
-Sur le bureau, `known_hosts.rs`, `ssh_native.rs` et `ssh_signer.rs` ne sont compilés que pour les tests : le binaire livré sous Windows et Linux ne contient pas ce code. Aucune crate n'est ajoutée à `Cargo.lock` (`base64ct`, `libc`, `ring` et `libgit2-sys` y étaient déjà).
+Sur le bureau, `known_hosts.rs`, `ssh_native.rs` et `ssh_signer.rs` ne sont compilés que pour les tests : le binaire livré sous Windows et Linux ne contient pas ce code. Aucune crate n'est ajoutée à `Cargo.lock` (`base64ct`, `libc`, `ring`, `libgit2-sys`, `jni` 0.21 et `ndk-context` y étaient déjà, les deux derniers par tao).
 
 ## Choix techniques
 
@@ -51,7 +57,7 @@ Sur le bureau, `known_hosts.rs`, `ssh_native.rs` et `ssh_signer.rs` ne sont comp
 
 **Algorithme : ECDSA P-256** (`ecdsa-sha2-nistp256`). C'est le seul que l'Android Keystore propose sur toutes les versions prises en charge (`minSdk = 24` ; Ed25519 n'y arrive qu'avec Android 13). GitHub, GitLab et OpenSSH l'acceptent. Le Keystore signe en `SHA256withECDSA` et rend une signature DER : elle est convertie en `mpint r, mpint s`, ce qu'attend libssh2.
 
-Le pont Kotlin n'aura donc qu'à fournir deux choses :
+Le pont Kotlin fournit deux choses :
 
 ```rust
 pub trait SshSigner: Send + Sync {
@@ -62,7 +68,18 @@ pub trait SshSigner: Send + Sync {
 }
 ```
 
-puis appeler `ssh_signer::set_device_signer(Some(…))`. `public_key_openssh` donne la ligne à ajouter sur la forge.
+`android_keystore.rs` l'implémente (`KeystoreSigner`) en appelant `MerathonKeystore.kt` par JNI. `public_key_openssh` donne la ligne à ajouter sur la forge.
+
+### Pont Android Keystore (`MerathonKeystore.kt`)
+
+- **Création** : `KeyPairGenerator` EC `secp256r1` dans `AndroidKeyStore`, `PURPOSE_SIGN`, `DIGEST_SHA256`, `setUserAuthenticationRequired(true)`. Refusée sans verrouillage d'écran (`isDeviceSecure`), et jamais par-dessus une clé existante.
+- **Validité d'une confirmation : 30 s**, pour enchaîner fetch puis push. API ≥ 30 : `setUserAuthenticationParameters(30, AUTH_BIOMETRIC_STRONG or AUTH_DEVICE_CREDENTIAL)` ; avant : `setUserAuthenticationValidityDurationSeconds(30)`.
+- **Confirmation**, seulement quand la précédente a expiré (`UserNotAuthenticatedException`) : `BiometricPrompt` de la plateforme avec repli sur le code de l'appareil à partir d'Android 11 ; avant, l'écran de déverrouillage du système (`createConfirmDeviceCredentialIntent`) via un fragment sans vue. Pas de dépendance `androidx.biometric`.
+- **Fils** : `sign()` est appelé dans le fil de libgit2 ; la confirmation s'affiche sur le fil de l'interface et ce fil de travail attend (`CountDownLatch`, 2 min au plus). Appelé depuis le fil de l'interface, `sign()` échoue au lieu de bloquer.
+- **Arrière-plan** : la synchronisation automatique passe `background: true` à `fetch_remote` ; Rust appelle alors `sign(…, allowPrompt = false)`. Une clé verrouillée échoue en `locked` (marqueur `device-ssh-key-locked`), et `autoSync.ts` met le dépôt en pause avec **un seul** message par dépôt et par session.
+- **Erreurs** : codes `absent`, `locked`, `cancelled`, `invalidated`, `insecure`, `exists`, `busy`, traduits par `android_keystore::describe`. Une clé invalidée (verrouillage retiré) se supprime dans Préférences > SSH, puis une nouvelle se crée avec « Configurer SSH… ».
+- **R8** : la classe n'est appelée que par JNI ; `proguard-rules.pro` la garde. `MainActivity.onCreate` lui passe l'activité, au-dessus de laquelle la confirmation s'affiche.
+- Avec une validité de 30 s, Android n'invalide pas la clé quand une nouvelle empreinte est enregistrée (seulement quand le verrouillage d'écran est retiré) : c'est le comportement documenté de `setInvalidatedByBiometricEnrollment`.
 
 ### Une confirmation par opération, jamais pour une clé inconnue du serveur
 
@@ -102,7 +119,12 @@ Tous les tests tournent sur Linux contre **un vrai `sshd` OpenSSH** lancé par l
 | Signatures converties toujours valides (200 tirages), DER malformés refusés | `ssh_signer::tests` |
 | Formats de `known_hosts` | `known_hosts::tests` |
 | Bureau : liste des candidats d'authentification inchangée | `git::auth::tests` |
+| Synchronisation en arrière-plan, clé verrouillée : aucune signature, échec reconnaissable, dépôt inchangé ; même pull à la main : passe | `clone_fetch_pull_and_push_over_ssh_with_the_device_key` |
+| Confirmations interdites seulement dans `without_prompt`, propre à chaque fil | `ssh_signer::tests` |
+| États et erreurs du Keystore traduits, description de la clé | `android_keystore::tests` |
 | Garde-fous mobiles (clone, comptes, profils Git) et bureau inchangé | `src/components/AndroidSshGuards.test.tsx` |
+| Réglage expérimental, section SSH des préférences, « Configurer SSH… » avec la clé de l'appareil | `src/components/DeviceSsh.test.tsx` |
+| Synchronisation : dépôt SSH verrouillé ignoré, signalé une seule fois | `src/lib/autoSync.locked.test.ts` |
 
 ```bash
 cd git-client/src-tauri
@@ -113,11 +135,15 @@ MERATHON_SSH_DEMO=1 MERATHON_SSHD_LOG=1 cargo test -- \
 
 Sans `sshd` (Windows, poste sans OpenSSH), ces tests sont passés avec un message. La CI Linux installe `openssh-server` et pose `MERATHON_REQUIRE_SSHD=1`. Les tests de bout en bout tournent dans un processus enfant dont `HOME` est un dossier temporaire : libgit2 lit `~/.ssh/known_hosts` à partir de `HOME`, une fois par processus, et le `~/.ssh` du poste n'est jamais touché.
 
-**Compilation Android** : la cible `aarch64-linux-android` et le NDK n'étaient pas disponibles dans l'environnement de travail. Les branches `cfg(target_os = "android")` ont été vérifiées par `cargo clippy --lib -- -D warnings --cfg 'target_os="android"'` sur une copie du projet (avec les dépendances Android ajoutées) : aucune erreur ni avertissement. Ce n'est pas une vraie compilation croisée : `cargo tauri android build` reste à lancer.
+**Compilation Android** : la cible `aarch64-linux-android`, le NDK et le SDK Google n'étaient pas disponibles dans l'environnement de travail.
+
+- Rust : les branches `cfg(target_os = "android")`, dont le JNI (`jni` 0.21), ont été vérifiées par `cargo clippy --lib -- -D warnings --cfg 'target_os="android"'` sur une copie du projet : aucune erreur ni avertissement.
+- Kotlin : `MerathonKeystore.kt` compile sans avertissement (`kotlinc -Werror`) contre l'`android.jar` de l'API 23 (paquet Ubuntu `android-sdk-platform-23`), complété de bouchons écrits à la main pour les quelques symboles plus récents (`BiometricPrompt`, `setUserAuthenticationParameters`, `AUTH_*`). Leurs signatures reprennent la documentation Android, sans garantie de la plateforme.
+- Ce n'est pas une vraie compilation : `cargo tauri android build` reste à lancer.
 
 ## Garde-fous conservés sur mobile
 
-Tant que le pont Keystore n'est pas validé, le SSH reste masqué sur Android (étape 8 de l'issue non réalisée, comme elle le demande). Cette PR les complète :
+Tant que le réglage « SSH (expérimental) » n'est pas coché, le SSH reste masqué sur Android (étape 8 de l'issue non réalisée, comme elle le demande) :
 
 | Android | Bureau (inchangé) |
 |---|---|
@@ -128,35 +154,32 @@ Tant que le pont Keystore n'est pas validé, le SSH reste masqué sur Android (�
 - Clone : URL SSH bloquée, y compris `git+ssh://` et `ssh+git://` ; plus d'exemple d'URL SSH ni de clé du profil affichée.
 - Comptes : pas de « Configurer SSH… » (inchangé).
 - Profils Git : ni choix de clé (inchangé), ni ligne « Clé SSH : clés par défaut », ni bouton « Enregistrer et tester » ; le texte d'aide ne parle plus de clé SSH.
-- Backend : `ssh_create_key` refuse d'écrire une clé sur Android ; l'authentification n'utilise jamais de fichier de clé ni d'agent ; un remote SSH ajouté à la main échoue avec « Le SSH n'est pas encore pris en charge sur Android : utilise l'URL HTTPS du dépôt ».
+- Backend : sur Android, aucune clé n'est jamais écrite dans un fichier ; l'authentification n'utilise ni fichier de clé ni agent. Sans clé d'appareil, un remote SSH ajouté à la main échoue avec « Le SSH n'est pas encore pris en charge sur Android : utilise l'URL HTTPS du dépôt » ; avec une clé, le message mène à la validation de l'hôte.
+
+## SSH expérimental sur Android (clé de l'appareil)
+
+Captures de la vraie interface, backend simulé (données fictives) :
+
+![Parcours sur Android : réglage, Configurer SSH…, test de connexion](android-ssh-device-flow.gif)
+
+| Préférences > SSH | Clé créée | Configurer SSH… | Terminé | Clone en SSH |
+|---|---|---|---|---|
+| ![Réglage désactivé par défaut](android-prefs-ssh-off.png) | ![Clé de l'appareil](android-prefs-ssh-key.png) | ![Création dans le Keystore, sans passphrase](android-ssh-setup-form.png) | ![Clé enregistrée, hôte validé, connexion testée](android-ssh-setup-done.png) | ![Clone en SSH accepté](android-clone-ssh-on.png) |
 
 ## Reste à faire sur un appareil
 
-### 1. Pont Android Keystore (Kotlin, `MainActivity` ou plugin Tauri)
+Avant de retirer les garde-fous (étape 8 de l'issue), sur émulateur puis sur un vrai téléphone arm64, avec le réglage « SSH (expérimental) » coché :
 
-- Dépendance `androidx.biometric:biometric` (Android uniquement).
-- Création : `KeyPairGenerator.getInstance(KEY_ALGORITHM_EC, "AndroidKeyStore")` avec `KeyGenParameterSpec.Builder(alias, PURPOSE_SIGN).setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1")).setDigests(DIGEST_SHA256).setUserAuthenticationRequired(true)`, puis `setInvalidatedByBiometricEnrollment(true)`.
-- Validité de la confirmation :
-  - API ≥ 30 : `setUserAuthenticationParameters(durée, AUTH_BIOMETRIC_STRONG or AUTH_DEVICE_CREDENTIAL)`.
-  - API 24 à 29 : `setUserAuthenticationValidityDurationSeconds(durée)`, avec `BiometricPrompt` (ou `KeyguardManager.createConfirmDeviceCredentialIntent`) avant la signature. Le repli sur le code de l'appareil avec un `CryptoObject` n'existe qu'à partir de l'API 30 : une durée > 0 est donc nécessaire avant.
-  - Une durée de quelques dizaines de secondes couvre un enchaînement (fetch puis push) sans redemander.
-- Signature : `Signature.getInstance("SHA256withECDSA")`, `initSign`, `update(data)`, `sign()` → DER, rendu à Rust.
-- Rust ↔ Kotlin : `sign()` est appelé dans un fil de travail de libgit2, jamais celui de l'interface. Le pont affiche `BiometricPrompt` sur le fil principal et bloque ce fil de travail (par exemple avec un `CountDownLatch`) jusqu'à la réponse : l'interface ne se fige pas.
-- Cas à traiter : pas de verrouillage d'écran (`KeyguardManager.isDeviceSecure`) → expliquer qu'il en faut un, sans repli ; `KeyPermanentlyInvalidatedException` → proposer une nouvelle clé, à ajouter sur la forge ; confirmation annulée → message rendu par `sign()` (déjà affiché tel quel).
+1. `cargo tauri android build` (puis `git restore git-client/src-tauri/gen/schemas/acl-manifests.json` avant de commiter), en debug puis en release (R8).
+2. Préférences > SSH : état de la clé ; sans verrouillage d'écran, le message le demande et aucune clé n'est créée.
+3. Comptes > Configurer SSH… sur GitHub puis GitLab : création, envoi de la clé, empreinte ECDSA conforme à `PUBLISHED_FINGERPRINTS` (`certificate_check` fournit-il bien `hostkey()` ?), confirmation, « Clé acceptée ».
+4. Clone, fetch, pull et push d'un dépôt privé en SSH : une seule confirmation pour un enchaînement de moins de 30 s.
+5. Confirmation annulée, refusée, ou application en arrière-plan pendant la demande : arrêt propre, message clair, dépôt cohérent.
+6. Synchronisation automatique avec une clé verrouillée : aucune fenêtre, un seul message.
+7. Android 7 à 10 : écran de déverrouillage du système à la place de `BiometricPrompt`.
+8. Clé invalidée (verrouillage d'écran retiré puis remis) : message, suppression dans Préférences > SSH, nouvelle clé.
+9. Instance auto-hébergée : validation manuelle de l'empreinte ; clé d'hôte modifiée : connexion bloquée.
+10. Avec `adb shell run-as com.gitclient.app`, lister le `.ssh` du dossier de données de l'application (le `HOME` posé par `device_storage::set_home`) : aucune clé privée, seulement `known_hosts`.
+11. Réseau coupé, sous-modules et worktrees d'un dépôt cloné en SSH.
 
-### 2. Interface et synchronisation
-
-- Retirer les garde-fous (étape 8 de l'issue), une fois le pont validé.
-- Parcours `SshSetupDialog` sur petit écran : création de la clé dans le Keystore (sans passphrase), copie de la clé publique, validation de l'hôte, test de connexion. Le nom de machine par défaut vaut déjà « ce téléphone ».
-- `lib/autoSync.ts` : aucune confirmation en arrière-plan. Ignorer sans bruit les dépôts SSH quand la clé est verrouillée et le signaler dans l'état de synchronisation.
-- Mémo Git : rubrique sur les clés SSH.
-
-### 3. Vérifications sur émulateur puis sur un vrai téléphone arm64
-
-- Clone, fetch, pull et push en SSH sur GitHub et GitLab (`certificate_check` fournit-il `hostkey()` ? empreinte ECDSA = `PUBLISHED_FINGERPRINTS` ?).
-- Test de connexion réel : clé refusée → refus clair ; clé acceptée → « dépôt introuvable » compté comme un succès.
-- Instance auto-hébergée : validation manuelle de l'empreinte.
-- Clé d'hôte modifiée, appareil sans verrouillage, clé invalidée après ajout d'une empreinte.
-- Avec `adb shell run-as com.gitclient.app`, lister le `.ssh` du dossier de données de l'application (le `HOME` posé par `device_storage::set_home`) : aucune clé privée, seulement `known_hosts`.
-- Réseau coupé, sous-modules et worktrees d'un dépôt cloné en SSH.
-- Après un build Android : `git restore git-client/src-tauri/gen/schemas/acl-manifests.json` avant de commiter.
+Ensuite : retirer le réglage et les garde-fous, et compléter le Mémo Git (rubrique sur les clés SSH).

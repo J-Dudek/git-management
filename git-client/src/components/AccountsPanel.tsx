@@ -13,6 +13,7 @@ import { useLinkedForge } from "./PullRequestList";
 import { MyPullRequestsSection } from "./MyPullRequests";
 import { SshSetupDialog } from "./SshSetupDialog";
 import { isMobile } from "../lib/platform";
+import { useSshAvailable } from "../lib/sshAvailability";
 import { IdentityProblem } from "./IdentityProblem";
 import { PanelSection as Section } from "./PanelSection";
 import type { DeviceCode, ForgeAccount, ForgeIssue, Provider } from "../types/forge";
@@ -487,8 +488,9 @@ function AccountRow({ account }: { account: ForgeAccount }) {
     await remove(account.id).catch((e) => notify("error", errorMessage(e)));
   }
 
-  // Mobile : ni ssh ni ssh-keyscan pour vérifier un hôte, le SSH n'y fonctionne pas encore.
-  const sshEntry = isMobile() ? [] : [{ label: tr("Configurer SSH…"), action: () => setSshSetup(true) }];
+  // Mobile : seulement avec le réglage « SSH (expérimental) » (clé de l'Android Keystore, issue #38).
+  const ssh = useSshAvailable();
+  const sshEntry = ssh ? [{ label: tr("Configurer SSH…"), action: () => setSshSetup(true) }] : [];
 
   return (
     <div

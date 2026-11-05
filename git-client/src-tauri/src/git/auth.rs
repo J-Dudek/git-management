@@ -71,7 +71,8 @@ fn ssh_sources(_location: &Path) -> SshSources {
         agent: false,
         key_files: Vec::new(),
         profile_key: None,
-        device: crate::ssh_signer::device_signer().map(crate::ssh_signer::SignContext::new),
+        // Clé de l'Android Keystore, si elle existe et reste utilisable (voir android_keystore.rs).
+        device: crate::android_keystore::signer().map(crate::ssh_signer::SignContext::new),
     }
 }
 
@@ -365,6 +366,20 @@ mod tests {
         push(&a, android_with(&signer)).unwrap();
         assert_eq!(Repository::open_bare(&bare).unwrap().refname_to_id(&format!("refs/heads/{branch}")).unwrap(), refused);
         step("confirmation acceptée : le même push part ✓");
+
+        // Synchronisation en arrière-plan, confirmation expirée : aucune demande, échec reconnaissable, rien de changé.
+        signer.locked.store(true, Ordering::SeqCst);
+        let before = signer.signatures.load(Ordering::SeqCst);
+        let err = crate::ssh_signer::without_prompt(|| pull(&b, android_with(&signer))).unwrap_err();
+        assert!(err.message().contains(crate::android_keystore::LOCKED_MARKER), "{err}");
+        assert_eq!(signer.signatures.load(Ordering::SeqCst), before, "aucune signature, donc aucune confirmation");
+        assert_eq!(b.head().unwrap().target().unwrap(), next, "dépôt inchangé");
+        step(format!("synchronisation en arrière-plan, clé verrouillée : ignorée sans confirmation (« {} »)", err.message()));
+        // Le même pull lancé par l'utilisateur peut demander la confirmation, et passe.
+        pull(&b, android_with(&signer)).unwrap();
+        assert_eq!(b.head().unwrap().target().unwrap(), refused);
+        signer.locked.store(false, Ordering::SeqCst);
+        step("même pull lancé à la main : confirmation demandée, pull ✓");
 
         // Clé non ajoutée sur la forge, ou pas de clé d'appareil : refus clair, aucune signature.
         let stranger = SoftwareSigner::generate();

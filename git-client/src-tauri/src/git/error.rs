@@ -29,7 +29,12 @@ fn describe_git(e: &git2::Error) -> String {
     if message.contains("HEAD of a linked repository") || message.ends_with("is already checked out") {
         return tr!("Cette branche est extraite dans un autre worktree ({message})", "This branch is checked out in another worktree ({message})");
     }
-    if cfg!(target_os = "android") && message.contains("hostkey") {
+    #[cfg(target_os = "android")]
+    if message.contains("hostkey") {
+        // Avec une clé d'appareil, le SSH est possible : il manque seulement la validation de l'hôte (ou sa clé a changé).
+        if crate::android_keystore::signer().is_some() {
+            return tr!("Hôte SSH pas encore validé, ou dont la clé a changé : valide-le avec Comptes > Configurer SSH…, ou utilise l'URL HTTPS du dépôt", "SSH host not validated yet, or its key changed: validate it with Accounts > Set up SSH…, or use the repository's HTTPS URL");
+        }
         return tr!("Le SSH n'est pas encore pris en charge sur Android : utilise l'URL HTTPS du dépôt", "SSH is not supported on Android yet: use the repository's HTTPS URL");
     }
     let hint = match e.code() {
