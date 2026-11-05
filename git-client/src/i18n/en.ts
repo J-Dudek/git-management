@@ -1781,4 +1781,9 @@ export const en: Record<string, string> = {
   "Nouveau dossier": "New folder",
   "Remonter d'un dossier": "Go up one folder",
   "dépôt Git": "Git repository",
+  "Git Repository Manager — client Git graphique.": "Git Repository Manager — graphical Git client.",
+  "Le SSH n'est pas encore pris en charge sur Android : utilise l'URL HTTPS du dépôt.": "SSH is not supported on Android yet: use the repository's HTTPS URL.",
+  "Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement.": "Credentials for the account matching the URL's host are used automatically.",
+  "Les identifiants sont stockés dans le dossier privé de l'application.": "Credentials are stored in the app's private folder.",
+  "Le token sera supprimé de cet appareil.": "The token will be removed from this device.",
 };

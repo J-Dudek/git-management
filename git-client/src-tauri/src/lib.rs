@@ -42,9 +42,12 @@ pub fn run() {
         .setup(|_app| {
             // Sans certificats, seul le HTTPS de Git échoue : l'application doit quand même démarrer.
             #[cfg(target_os = "android")]
-            match device_storage::trust_system_certificates() {
-                Ok(count) => eprintln!("certificats du système : {count}"),
-                Err(e) => eprintln!("certificats du système indisponibles : {e}"),
+            {
+                device_storage::set_home(_app);
+                match device_storage::trust_system_certificates() {
+                    Ok(count) => eprintln!("certificats du système : {count}"),
+                    Err(e) => eprintln!("certificats du système indisponibles : {e}"),
+                }
             }
             Ok(())
         })

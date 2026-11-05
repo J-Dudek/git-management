@@ -11,7 +11,14 @@ export interface DialogOptions {
   title: string;
   message?: string;
   /** Affiche un champ texte ; sa valeur est renvoyée dans `value`. */
-  input?: { placeholder?: string; initial?: string; multiline?: boolean; secret?: boolean };
+  input?: {
+    placeholder?: string;
+    initial?: string;
+    multiline?: boolean;
+    secret?: boolean;
+    /** Le champ peut rester vide. */
+    optional?: boolean;
+  };
   /** Affiche une case à cocher ; son état est renvoyé dans `checked`. */
   checkbox?: { label: string; initial?: boolean };
   confirmLabel?: string;

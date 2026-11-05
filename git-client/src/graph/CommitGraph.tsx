@@ -31,6 +31,7 @@ const OVERSCAN = 10;
 
 export function CommitGraph() {
   const commits = useRepoStore((s) => s.commits);
+  const loaded = useRepoStore((s) => s.loaded);
   const status = useRepoStore((s) => s.status);
   const info = useRepoStore((s) => s.info);
   const searchQuery = useRepoStore((s) => s.searchQuery);
@@ -448,7 +449,7 @@ export function CommitGraph() {
       <div className="flex flex-col h-full">
         {wipRow}
         <div className="flex-1 flex items-center justify-center text-[var(--color-muted)] text-sm">
-          {tr("Aucun commit pour l'instant — indexe des fichiers et crée le premier commit")}
+          {loaded ? tr("Aucun commit pour l'instant — indexe des fichiers et crée le premier commit") : tr("Chargement…")}
         </div>
       </div>
     );

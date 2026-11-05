@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { pickFolder } from "../lib/folderPicker";
+import { isMobile } from "../lib/platform";
 import { FolderGit2 } from "lucide-react";
 import { Button, inputClass } from "./Modal";
 import { SshSetupDialog } from "./SshSetupDialog";
@@ -229,15 +230,17 @@ export function GitProfilesSection() {
                 {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
               </select>
             </label>
-            <label className="block flex-1 min-w-0">
-              <span className="block font-semibold mb-1">{tr("Clé SSH")}</span>
-              <select className={inputClass} value={draft.key} onChange={(e) => set({ key: e.target.value })}>
-                <option value="">{tr("Clés par défaut")}</option>
-                {keys.map((k) => <option key={k.path} value={k.path}>{k.name}{k.encrypted ? " (passphrase)" : ""}</option>)}
-                {draft.key && draft.key !== NEW_KEY && !keys.some((k) => k.path === draft.key) && <option value={draft.key}>{fileName(draft.key)}</option>}
-                <option value={NEW_KEY}>{tr("Créer {keyNameFor}", { keyNameFor: keyNameFor(draft.label) })}</option>
-              </select>
-            </label>
+            {!isMobile() && (
+              <label className="block flex-1 min-w-0">
+                <span className="block font-semibold mb-1">{tr("Clé SSH")}</span>
+                <select className={inputClass} value={draft.key} onChange={(e) => set({ key: e.target.value })}>
+                  <option value="">{tr("Clés par défaut")}</option>
+                  {keys.map((k) => <option key={k.path} value={k.path}>{k.name}{k.encrypted ? " (passphrase)" : ""}</option>)}
+                  {draft.key && draft.key !== NEW_KEY && !keys.some((k) => k.path === draft.key) && <option value={draft.key}>{fileName(draft.key)}</option>}
+                  <option value={NEW_KEY}>{tr("Créer {keyNameFor}", { keyNameFor: keyNameFor(draft.label) })}</option>
+                </select>
+              </label>
+            )}
           </div>
           {creating && (
             <div className="space-y-1.5">

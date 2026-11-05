@@ -4,7 +4,9 @@ import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -14,6 +16,11 @@ class MainActivity : TauriActivity() {
 
   override fun onWebViewCreate(webView: WebView) {
     webView.addJavascriptInterface(SystemBars(), "MerathonSystemBars")
+    // En plein écran, Android ne réduit plus la page sous le clavier : sans cela, les champs du bas passeraient dessous.
+    ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { view, insets ->
+      view.setPadding(0, 0, 0, insets.getInsets(WindowInsetsCompat.Type.ime()).bottom)
+      insets
+    }
   }
 
   /** Icônes des barres système selon le thème de l'application, qui peut différer de celui d'Android (voir theme.ts). */

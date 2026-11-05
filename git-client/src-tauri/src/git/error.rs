@@ -29,6 +29,9 @@ fn describe_git(e: &git2::Error) -> String {
     if message.contains("HEAD of a linked repository") || message.ends_with("is already checked out") {
         return tr!("Cette branche est extraite dans un autre worktree ({message})", "This branch is checked out in another worktree ({message})");
     }
+    if cfg!(target_os = "android") && message.contains("hostkey") {
+        return tr!("Le SSH n'est pas encore pris en charge sur Android : utilise l'URL HTTPS du dépôt", "SSH is not supported on Android yet: use the repository's HTTPS URL");
+    }
     let hint = match e.code() {
         ErrorCode::Auth => Some(tr!("Authentification refusée par le dépôt distant : vérifie ta clé SSH, ton token ou ton gestionnaire d'identifiants", "Authentication refused by the remote repository: check your SSH key, your token or your credential manager")),
         ErrorCode::Certificate => Some(tr!("Certificat du serveur non reconnu : vérifie l'URL du dépôt distant ou la configuration du proxy", "Server certificate not recognized: check the remote repository URL or the proxy configuration")),
