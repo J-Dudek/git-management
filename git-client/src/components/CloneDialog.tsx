@@ -6,6 +6,7 @@ import { cloneRepository, deviceReposRoot, listGitProfiles } from "../ipc/comman
 import { pickFolder } from "../lib/folderPicker";
 import { isMobile } from "../lib/platform";
 import { isSshUrl } from "../lib/remoteUrl";
+import { useSshAvailable } from "../lib/sshAvailability";
 import { errorMessage } from "../lib/actions";
 import { profileForAccount, profileForDir } from "../lib/gitProfiles";
 import type { ForgeRepo } from "../types/forge";
@@ -37,7 +38,11 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
   const [profiles, setProfiles] = useState<GitProfile[]>([]);
   const [dirChosen, setDirChosen] = useState(false);
   const targetProfile = profileForDir(profiles, parentDir);
-  const sshUnavailable = isMobile() && isSshUrl(url);
+  const ssh = useSshAvailable();
+  const sshUnavailable = !ssh && isSshUrl(url);
+  let credentialsHint = tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement.");
+  if (!isMobile()) credentialsHint = tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement (HTTPS), sinon l'agent SSH ou tes clés ~/.ssh.");
+  else if (ssh) credentialsHint = tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement (HTTPS), sinon la clé SSH de l'appareil.");
 
   useEffect(() => {
     listGitProfiles().then((info) => setProfiles(info.profiles)).catch(() => {});
@@ -151,7 +156,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
           <input
             autoFocus
             className={inputClass}
-            placeholder={isMobile() ? "https://github.com/owner/repo.git" : tr("https://github.com/owner/repo.git ou git@gitlab.com:group/repo.git")}
+            placeholder={ssh ? tr("https://github.com/owner/repo.git ou git@gitlab.com:group/repo.git") : "https://github.com/owner/repo.git"}
             required
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -191,9 +196,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
         )}
 
         <p className="text-[10px] text-[var(--color-muted)]">
-          {isMobile()
-            ? tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement.")
-            : tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement (HTTPS), sinon l'agent SSH ou tes clés ~/.ssh.")}
+          {credentialsHint}
         </p>
 
         <div className="flex justify-end gap-2">

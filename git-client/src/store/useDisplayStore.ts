@@ -22,6 +22,8 @@ export interface DisplaySettings {
   notifications: NotificationSettings;
   /** Mode débug (À propos) : collecte les logs et affiche l'onglet « Logs » du panneau du bas. */
   debugMode: boolean;
+  /** Android : SSH avec la clé de l'appareil (Android Keystore), en essai (issue #38). Sans effet sur le bureau. */
+  experimentalSsh: boolean;
 }
 
 /** Interrupteur général, puis un réglage par type d'événement. */
@@ -52,6 +54,7 @@ export const defaultNotifications: NotificationSettings = { enabled: true, opene
 
 export const defaultDisplay: DisplaySettings = {
   zoom: 1, terminalFontSize: 12, density: isMobile() ? "comfortable" : "normal", syncInterval: 5, theme: "system", language: "fr", languageChosen: false, notifications: defaultNotifications, debugMode: false,
+  experimentalSsh: false,
 };
 
 const KEY = "merathon.display";
@@ -77,6 +80,7 @@ export function sanitize(raw: unknown): DisplaySettings {
     languageChosen: r.languageChosen === true,
     notifications: sanitizeNotifications(r.notifications),
     debugMode: r.debugMode === true,
+    experimentalSsh: r.experimentalSsh === true,
   };
 }
 
@@ -110,8 +114,8 @@ export const useDisplayStore = create<DisplayStore>((set, get) => {
     set(next);
   }
   const current = (): DisplaySettings => {
-    const { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications, debugMode } = get();
-    return { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications, debugMode };
+    const { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications, debugMode, experimentalSsh } = get();
+    return { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications, debugMode, experimentalSsh };
   };
   return {
     ...load(),

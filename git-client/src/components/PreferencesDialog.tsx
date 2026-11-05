@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import {
-  Accessibility, Bell, BookOpen, Bug, Check, Copy, ExternalLink, FolderCog, FolderGit2, Info, Keyboard, Languages, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
+  Accessibility, Bell, BookOpen, Bug, Check, Copy, ExternalLink, FolderCog, FolderGit2, Info, KeyRound, Keyboard, Languages, Monitor, Moon, Palette, RefreshCw, RotateCcw, Scale, ScrollText,
   SquareTerminal, Sun, Trophy, type LucideIcon,
 } from "lucide-react";
 import { getTauriVersion, getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Modal } from "./Modal";
 import { GitProfilesSection } from "./GitProfilesSection";
+import { DeviceSshSection } from "./DeviceSshSection";
 import { Kbd } from "./Kbd";
 import { Tooltip } from "./Tooltip";
 import {
@@ -37,6 +38,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
   { id: "terminal", label: "Terminal", icon: SquareTerminal },
   { id: "sync", label: tr("Synchronisation"), icon: RefreshCw },
   { id: "profiles", label: tr("Profils Git"), icon: FolderCog },
+  { id: "ssh", label: "SSH", icon: KeyRound },
   { id: "shortcuts", label: tr("Raccourcis"), icon: Keyboard },
   { id: "activity", label: tr("Mon activité"), icon: Trophy },
   { id: "accessibility", label: tr("Accessibilité"), icon: Accessibility },
@@ -44,7 +46,7 @@ const SECTIONS: { id: Section; label: string; icon: LucideIcon }[] = [
 ];
 
 /** Rubriques sans réglage : pas de bouton « Réinitialiser ». */
-const READ_ONLY: Section[] = ["profiles", "shortcuts", "activity", "accessibility", "about"];
+const READ_ONLY: Section[] = ["profiles", "ssh", "shortcuts", "activity", "accessibility", "about"];
 
 /** Préférences de l'application : appliquées immédiatement et partagées entre les fenêtres. */
 export function PreferencesDialog({ onClose }: { onClose: () => void }) {
@@ -53,7 +55,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   // « Mon activité » n'apparaît qu'après la première récompense : avant, elle gâcherait la surprise.
   const hasRewards = useCelebrationStore((s) => s.milestones.rewards.length > 0);
   const newRewards = useCelebrationStore((s) => hasNewRewards(s.milestones));
-  const sections = SECTIONS.filter((s) => (s.id !== "activity" || hasRewards) && (s.id !== "terminal" || hasDesktopFeatures()) && (s.id !== "shortcuts" || !isMobile()));
+  const sections = SECTIONS.filter((s) => (s.id !== "activity" || hasRewards) && (s.id !== "terminal" || hasDesktopFeatures()) && (s.id !== "shortcuts" || !isMobile()) && (s.id !== "ssh" || isMobile()));
 
   return (
     <Modal title={tr("Préférences")} onClose={onClose} width="w-[720px]">
@@ -99,6 +101,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
             {section === "terminal" && <TerminalSection />}
             {section === "sync" && <SyncSection />}
             {section === "profiles" && <GitProfilesSection />}
+            {section === "ssh" && <DeviceSshSection />}
             {section === "shortcuts" && <ShortcutsSection />}
             {section === "activity" && <ActivitySection />}
             {section === "accessibility" && <AccessibilitySection />}
