@@ -2441,11 +2441,14 @@ name = "merathon"
 version = "2.15.0"
 dependencies = [
  "base64 0.22.1",
+ "base64ct",
  "git2",
  "keyring",
+ "libc",
  "libgit2-sys",
  "openssl-sys",
  "portable-pty",
+ "ring",
  "rustls",
  "rustls-native-certs",
  "serde",
