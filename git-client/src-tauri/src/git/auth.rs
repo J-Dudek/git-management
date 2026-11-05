@@ -16,6 +16,7 @@ const CONNECT_TIMEOUT_MS: i32 = 30_000;
 const READ_TIMEOUT_MS: i32 = 120_000;
 
 /// Réglage global de libgit2, à appliquer au démarrage (par défaut, il n'attend jamais de limite).
+/// Limite sous Windows : HTTP et HTTPS passent par WinHTTP, qui ignore ces réglages ; seul SSH en profite.
 pub fn configure_network_timeouts() -> Result<(), git2::Error> {
     set_network_timeouts(CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS)
 }
