@@ -33,10 +33,6 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     configure_wsl_environment();
 
-    if let Err(e) = git::configure_network_timeouts() {
-        eprintln!("Délais réseau de libgit2 non appliqués : {e}");
-    }
-
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -59,6 +55,11 @@ pub fn run() {
                     Ok(count) => eprintln!("certificats du système : {count}"),
                     Err(e) => eprintln!("certificats du système indisponibles : {e}"),
                 }
+            }
+            // Premier appel à libgit2, qui lit HOME une fois pour toutes à son initialisation : il doit suivre
+            // set_home, sinon Android n'a plus de configuration globale (« no configuration exists for the given level '4' »).
+            if let Err(e) = git::configure_network_timeouts() {
+                eprintln!("Délais réseau de libgit2 non appliqués : {e}");
             }
             Ok(())
         })
