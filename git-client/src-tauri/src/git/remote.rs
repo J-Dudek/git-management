@@ -379,7 +379,10 @@ mod tests {
     fn silent_server_ends_in_an_error_instead_of_blocking() {
         crate::git::auth::set_network_timeouts(2_000, 2_000).unwrap();
         let port = silent_server();
-        for scheme in ["http", "https", "ssh"] {
+        // Sous Windows, HTTP et HTTPS passent par WinHTTP, qui ignore les délais de libgit2
+        // (lecture infinie, connexion 60 s en dur dans transports/winhttp.c) : seul SSH les respecte.
+        let schemes: &[&str] = if cfg!(windows) { &["ssh"] } else { &["http", "https", "ssh"] };
+        for &scheme in schemes {
             let (done, result) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let dir = TempDir::new().unwrap();
