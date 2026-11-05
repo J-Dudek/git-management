@@ -141,7 +141,9 @@ export function GitProfilesSection() {
       <div>
         <h3 className="text-sm font-semibold">{tr("Profils Git")}</h3>
         <p className="text-[var(--color-muted)]">
-          {tr("Une identité et une clé SSH par dossier de projets. Git applique lui-même ces règles (includeIf), y compris en ligne de commande. En HTTPS, le token reste choisi d'après l'instance du remote.")}
+          {isMobile()
+            ? tr("Une identité par dossier de projets. Le token du compte reste choisi d'après l'instance du remote.")
+            : tr("Une identité et une clé SSH par dossier de projets. Git applique lui-même ces règles (includeIf), y compris en ligne de commande. En HTTPS, le token reste choisi d'après l'instance du remote.")}
         </p>
       </div>
 
@@ -167,14 +169,17 @@ export function GitProfilesSection() {
               {account && ` · ${account.label}`}
               {profile.account_id && !account && tr(" · compte supprimé")}
             </p>
-            <p className="text-[var(--color-muted)] flex items-center gap-2 flex-wrap">
-              <span className="break-all">{tr("Clé SSH :")}{" "}{profile.ssh_key ?? tr("clés par défaut")}</span>
-              {profile.managed && account && profile.ssh_key && (
-                <button className="underline hover:text-[var(--color-text)]" onClick={() => registerKey(account, profile.ssh_key!)}>
-                  {tr("Enregistrer et tester sur {label}", { label: account.label })}
-                </button>
-              )}
-            </p>
+            {/* Mobile : pas de SSH (issue #38), donc ni clé de profil ni « clés par défaut » à afficher. */}
+            {!isMobile() && (
+              <p className="text-[var(--color-muted)] flex items-center gap-2 flex-wrap">
+                <span className="break-all">{tr("Clé SSH :")}{" "}{profile.ssh_key ?? tr("clés par défaut")}</span>
+                {profile.managed && account && profile.ssh_key && (
+                  <button className="underline hover:text-[var(--color-text)]" onClick={() => registerKey(account, profile.ssh_key!)}>
+                    {tr("Enregistrer et tester sur {label}", { label: account.label })}
+                  </button>
+                )}
+              </p>
+            )}
           </div>
         );
       })}

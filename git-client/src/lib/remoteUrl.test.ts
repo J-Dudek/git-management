@@ -86,6 +86,11 @@ describe("isSshUrl", () => {
   it("recognizes both SSH forms and nothing else", () => {
     expect(isSshUrl("git@github.com:owner/repo.git")).toBe(true);
     expect(isSshUrl("ssh://git@gitlab.com/owner/repo.git")).toBe(true);
+    // Autres écritures acceptées par libgit2 : elles aussi sont du SSH (bloqué sur Android, issue #38).
+    expect(isSshUrl("git+ssh://git@gitlab.com/owner/repo.git")).toBe(true);
+    expect(isSshUrl("ssh+git://git@gitlab.com/owner/repo.git")).toBe(true);
+    expect(isSshUrl("SSH://git@gitlab.com/owner/repo.git")).toBe(true);
+    expect(isSshUrl("sshfs://gitlab.com/owner/repo.git")).toBe(false);
     expect(isSshUrl("https://github.com/owner/repo.git")).toBe(false);
     expect(isSshUrl("https://user@github.com/owner/repo.git")).toBe(false);
     expect(isSshUrl("/data/repos/origin.git")).toBe(false);

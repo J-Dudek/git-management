@@ -151,7 +151,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
           <input
             autoFocus
             className={inputClass}
-            placeholder={tr("https://github.com/owner/repo.git ou git@gitlab.com:group/repo.git")}
+            placeholder={isMobile() ? "https://github.com/owner/repo.git" : tr("https://github.com/owner/repo.git ou git@gitlab.com:group/repo.git")}
             required
             value={url}
             onChange={(e) => setUrl(e.target.value)}
@@ -182,7 +182,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
         {targetProfile && (
           <p className="text-[11px] text-[var(--color-text)]">
             {tr("Profil « {label} » : commits signés", { label: targetProfile.label })}{" "}{targetProfile.user_email ?? tr("selon ce profil")}
-            {targetProfile.ssh_key ? tr(", clé {ssh_key}", { ssh_key: targetProfile.ssh_key }) : ""}.
+            {targetProfile.ssh_key && !isMobile() ? tr(", clé {ssh_key}", { ssh_key: targetProfile.ssh_key }) : ""}.
           </p>
         )}
 
