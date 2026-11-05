@@ -111,11 +111,12 @@ export default function App() {
     if (getCurrentWindow().label === "main") return persistTabSession(!repo);
   }, []);
 
-  // Les fichiers ont pu changer dans un éditeur externe : on rafraîchit au retour sur la fenêtre.
+  // Les fichiers ont pu changer dans un éditeur externe : on rafraîchit au retour sur la fenêtre,
+  // même pendant une opération réseau, qui peut durer longtemps ou ne jamais se terminer.
   useEffect(() => {
     if (!repoPath) return;
     const onFocus = () => {
-      if (!useUiStore.getState().busy) refresh().catch(() => {});
+      refresh().catch(() => {});
     };
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);

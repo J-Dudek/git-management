@@ -18,6 +18,10 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     configure_wsl_environment();
 
+    if let Err(e) = git::configure_network_timeouts() {
+        eprintln!("Délais réseau de libgit2 non appliqués : {e}");
+    }
+
     tauri::Builder::default()
         .manage(terminal::Terminals::default())
         .plugin(tauri_plugin_process::init())
