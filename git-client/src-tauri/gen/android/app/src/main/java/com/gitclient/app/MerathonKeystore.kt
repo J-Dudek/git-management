@@ -5,6 +5,7 @@ import android.app.Fragment
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
 import android.os.Build
 import android.os.CancellationSignal
@@ -173,7 +174,7 @@ object MerathonKeystore {
     val prompt = BiometricPrompt.Builder(host)
       .setTitle(title)
       .setSubtitle(subtitle)
-      .setAllowedAuthenticators(BiometricPrompt.Authenticators.BIOMETRIC_STRONG or BiometricPrompt.Authenticators.DEVICE_CREDENTIAL)
+      .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
       .build()
     val mainThread = Handler(Looper.getMainLooper())
     prompt.authenticate(CancellationSignal(), Executor { mainThread.post(it) }, object : BiometricPrompt.AuthenticationCallback() {
