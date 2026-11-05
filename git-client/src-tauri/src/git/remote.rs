@@ -61,7 +61,7 @@ pub fn fetch(repo: &Repository, remote_name: &str, creds: CredsLookup) -> Result
         .proxy_options(proxy_options())
         .prune(FetchPrune::On)
         .download_tags(AutotagOption::All);
-    remote.fetch(&[] as &[&str], Some(&mut fetch_opts), None)?;
+    crate::debug_log::timed(format!("fetch {remote_name} ({url})"), || remote.fetch(&[] as &[&str], Some(&mut fetch_opts), None))?;
     Ok(())
 }
 
@@ -87,7 +87,7 @@ fn push_refspecs(repo: &Repository, remote_name: &str, refspecs: &[String], cred
 
     let mut opts = PushOptions::new();
     opts.remote_callbacks(callbacks).proxy_options(proxy_options());
-    remote.push(refspecs, Some(&mut opts))?;
+    crate::debug_log::timed(format!("push {remote_name} ({url})"), || remote.push(refspecs, Some(&mut opts)))?;
     drop(opts);
 
     let rejected = rejected.into_inner();
@@ -186,11 +186,13 @@ pub fn pull(repo: &Repository, rebase: bool, creds: CredsLookup) -> Result<Merge
     let annotated = repo.reference_to_annotated_commit(upstream.get())?;
     let (analysis, _) = repo.merge_analysis(&[&annotated])?;
 
-    if rebase && !analysis.is_up_to_date() && !analysis.is_fast_forward() {
-        let result = rebase_onto(repo, &upstream_name)?;
-        return Ok(MergeResult { conflicted_files: result.conflicted_files, success: result.success });
-    }
-    merge_annotated(repo, &annotated, &upstream_name)
+    crate::debug_log::timed(format!("pull: integrate {upstream_name}"), || {
+        if rebase && !analysis.is_up_to_date() && !analysis.is_fast_forward() {
+            let result = rebase_onto(repo, &upstream_name)?;
+            return Ok(MergeResult { conflicted_files: result.conflicted_files, success: result.success });
+        }
+        merge_annotated(repo, &annotated, &upstream_name)
+    })
 }
 
 #[cfg(test)]

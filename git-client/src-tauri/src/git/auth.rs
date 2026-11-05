@@ -125,6 +125,9 @@ pub fn remote_callbacks<'a>(creds: Option<Credentials>, location: &Path) -> Remo
             )));
         };
 
+        // Avant l'essai : un gestionnaire d'identifiants ou un agent SSH qui ne répond pas reste visible. Jamais de secret ici.
+        crate::debug_log::debug(|| format!("auth: trying {candidate:?} for {url}"));
+
         match candidate {
             Candidate::Token => {
                 let c = creds.as_ref().expect("token candidate implies credentials");

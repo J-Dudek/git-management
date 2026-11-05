@@ -4,6 +4,7 @@ use tauri::Manager;
 mod i18n;
 mod accounts;
 mod commands;
+mod debug_log;
 mod forge;
 mod http;
 mod notifications;
@@ -137,6 +138,7 @@ pub fn run() {
             commands::oauth_complete,
             commands::oauth_cancel,
             commands::app_info,
+            debug_log::set_debug_logging,
             commands::open_devtools,
             commands::terminal_open,
             commands::terminal_write,
