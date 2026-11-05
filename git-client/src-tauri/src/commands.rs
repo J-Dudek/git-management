@@ -538,6 +538,37 @@ pub fn ssh_check_connection(host: String, key: String) -> Result<ssh_setup::SshC
     ssh_setup::check_connection(&ssh_setup::ssh_dir()?, &host, &key)
 }
 
+/// Clé SSH de l'appareil (Android Keystore) : état et description, sans demander de confirmation.
+#[cfg(target_os = "android")]
+#[tauri::command(async)]
+pub fn ssh_device_key_status() -> Result<crate::android_keystore::DeviceKeyStatus, String> {
+    crate::android_keystore::status()
+}
+
+/// Supprime la clé SSH de l'appareil (par exemple invalidée). Elle reste à retirer de la forge.
+#[cfg(target_os = "android")]
+#[tauri::command(async)]
+pub fn ssh_device_key_delete() -> Result<(), String> {
+    crate::android_keystore::delete()
+}
+
+#[cfg(not(target_os = "android"))]
+fn device_key_unavailable() -> String {
+    tr!("La clé SSH de l'appareil n'existe que sur Android", "The device SSH key only exists on Android")
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command(async)]
+pub fn ssh_device_key_status() -> Result<serde_json::Value, String> {
+    Err(device_key_unavailable())
+}
+
+#[cfg(not(target_os = "android"))]
+#[tauri::command(async)]
+pub fn ssh_device_key_delete() -> Result<(), String> {
+    Err(device_key_unavailable())
+}
+
 #[tauri::command(async)]
 pub fn list_submodules(path: String) -> Result<Vec<git::SubmoduleInfo>, GitError> {
     with_repo(&path, git::list_submodules)
@@ -568,13 +599,23 @@ pub fn remove_worktree(path: String, name: String) -> Result<(), GitError> {
 }
 
 /// `remote` absent : fetch de tous les remotes.
+/// `background` : synchronisation automatique. Sur Android, la clé SSH de l'appareil ne peut alors demander aucune
+/// confirmation : verrouillée, elle fait échouer le fetch (ignoré sans bruit par l'interface). Sans effet ailleurs.
 #[tauri::command]
-pub async fn fetch_remote(app: AppHandle, path: String, remote: Option<String>) -> Result<(), GitError> {
+pub async fn fetch_remote(app: AppHandle, path: String, remote: Option<String>, background: Option<bool>) -> Result<(), GitError> {
     network(&app, move |creds| {
-        with_repo(&path, |r| match &remote {
-            Some(name) => git::fetch(r, name, creds),
-            None => git::fetch_all(r, creds),
-        })
+        let fetch = || {
+            with_repo(&path, |r| match &remote {
+                Some(name) => git::fetch(r, name, creds),
+                None => git::fetch_all(r, creds),
+            })
+        };
+        #[cfg(target_os = "android")]
+        if background == Some(true) {
+            return crate::ssh_signer::without_prompt(fetch);
+        }
+        let _ = background;
+        fetch()
     })
     .await
 }

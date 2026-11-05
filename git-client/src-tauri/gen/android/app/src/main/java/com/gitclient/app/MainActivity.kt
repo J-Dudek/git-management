@@ -12,6 +12,8 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // La confirmation de la clé SSH de l'appareil (MerathonKeystore.kt) s'affiche par-dessus cette activité.
+    MerathonKeystore.attach(this)
   }
 
   override fun onWebViewCreate(webView: WebView) {

@@ -18,6 +18,8 @@ mod known_hosts;
 mod ssh_native;
 #[cfg(any(target_os = "android", test))]
 mod ssh_signer;
+#[cfg(any(target_os = "android", test))]
+mod android_keystore;
 #[cfg(test)]
 mod test_sshd;
 mod git;
@@ -136,6 +138,8 @@ pub fn run() {
             commands::ssh_host_status,
             commands::ssh_trust_host,
             commands::ssh_check_connection,
+            commands::ssh_device_key_status,
+            commands::ssh_device_key_delete,
             commands::list_submodules,
             commands::update_submodules,
             commands::list_worktrees,

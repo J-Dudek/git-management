@@ -7,11 +7,13 @@
 //! versions prises en charge (`minSdk = 24` ; Ed25519 n'y arrive qu'avec Android 13), et GitHub, GitLab et OpenSSH
 //! l'acceptent. Le coffre signe en `SHA256withECDSA` et rend une signature DER ; elle est convertie ici au format SSH.
 //!
-//! Ce module ne connaît pas le Keystore : le pont Kotlin fournira une implémentation de `SshSigner`. Les tests en
-//! fournissent une logicielle (crate `ring`) et s'authentifient pour de vrai auprès d'un serveur OpenSSH local.
+//! Ce module ne connaît pas le Keystore : `android_keystore.rs` fournit l'implémentation de `SshSigner` pour Android.
+//! Les tests en fournissent une logicielle (crate `ring`) et s'authentifient pour de vrai auprès d'un serveur OpenSSH
+//! local.
 
 use std::ffi::{c_char, c_int, c_uchar, c_void, CString};
-use std::sync::{Arc, Mutex, RwLock};
+use std::cell::Cell;
+use std::sync::{Arc, Mutex};
 
 use base64ct::{Base64, Encoding};
 use git2::{Binding, Cred};
@@ -19,7 +21,6 @@ use git2::{Binding, Cred};
 pub const ALGORITHM: &str = "ecdsa-sha2-nistp256";
 const CURVE: &str = "nistp256";
 /// En-tête DER d'une `SubjectPublicKeyInfo` P-256 non compressée (`PublicKey.getEncoded()` côté Android).
-#[cfg_attr(not(test), allow(dead_code))] // Pour le pont Keystore, à écrire et valider sur un appareil.
 const P256_SPKI_PREFIX: [u8; 26] = [
     0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce,
     0x3d, 0x03, 0x01, 0x07, 0x03, 0x42, 0x00,
@@ -37,7 +38,6 @@ pub trait SshSigner: Send + Sync {
 }
 
 /// Point public extrait de la `SubjectPublicKeyInfo` DER d'une clé P-256.
-#[cfg_attr(not(test), allow(dead_code))] // Pour le pont Keystore, à écrire et valider sur un appareil.
 pub fn point_from_spki(der: &[u8]) -> Result<Vec<u8>, String> {
     match der.strip_prefix(&P256_SPKI_PREFIX[..]) {
         Some(point) if point.len() == P256_POINT_LEN && point[0] == 0x04 => Ok(point.to_vec()),
@@ -63,7 +63,6 @@ pub fn public_key_blob(point: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 /// Ligne `ecdsa-sha2-nistp256 AAAA… commentaire`, à ajouter sur la forge.
-#[cfg_attr(not(test), allow(dead_code))] // Pour le pont Keystore, à écrire et valider sur un appareil.
 pub fn public_key_openssh(point: &[u8], comment: &str) -> Result<String, String> {
     let blob = public_key_blob(point)?;
     let comment = comment.replace(['\n', '\r'], " ");
@@ -121,17 +120,35 @@ pub fn ssh_signature_from_der(der: &[u8]) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// Clé de l'appareil, enregistrée par le pont Keystore une fois la clé créée et déverrouillable.
-static DEVICE_SIGNER: RwLock<Option<Arc<dyn SshSigner>>> = RwLock::new(None);
-
-/// Rend la clé de l'appareil disponible (ou la retire avec `None`) pour les opérations Git en SSH.
-#[cfg_attr(not(test), allow(dead_code))] // Appelée par le pont Keystore, à écrire et valider sur un appareil.
-pub fn set_device_signer(signer: Option<Arc<dyn SshSigner>>) {
-    *DEVICE_SIGNER.write().unwrap_or_else(|e| e.into_inner()) = signer;
+/// Empreinte `SHA256:…` de la clé, comme `ssh-keygen -l`.
+pub fn fingerprint(point: &[u8]) -> Result<String, String> {
+    use ssh_key::sha2::{Digest, Sha256};
+    let blob = public_key_blob(point)?;
+    Ok(format!("SHA256:{}", base64ct::Base64Unpadded::encode_string(&Sha256::digest(&blob))))
 }
 
-pub fn device_signer() -> Option<Arc<dyn SshSigner>> {
-    DEVICE_SIGNER.read().unwrap_or_else(|e| e.into_inner()).clone()
+thread_local! {
+    /// Faux pendant une synchronisation en arrière-plan : aucune confirmation ne doit alors s'afficher.
+    static PROMPT_ALLOWED: Cell<bool> = const { Cell::new(true) };
+}
+
+/// La clé peut-elle demander une confirmation à l'utilisateur sur ce fil ? libgit2 appelle la signature sur le fil de
+/// l'opération Git : c'est celui qui a lancé `without_prompt`.
+pub fn prompt_allowed() -> bool {
+    PROMPT_ALLOWED.with(Cell::get)
+}
+
+/// Exécute `job` sans qu'aucune confirmation puisse s'afficher : une clé verrouillée fait alors échouer la signature.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))] // Bureau : seuls les tests l'utilisent.
+pub fn without_prompt<T>(job: impl FnOnce() -> T) -> T {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            PROMPT_ALLOWED.with(|p| p.set(self.0));
+        }
+    }
+    let _restore = Restore(PROMPT_ALLOWED.with(|p| p.replace(false)));
+    job()
 }
 
 /// Ce que le rappel de signature reçoit de libgit2 : la clé et l'endroit où ranger un éventuel échec, pour que
@@ -260,6 +277,8 @@ pub(crate) mod testing {
         rng: SystemRandom,
         /// Simule une confirmation refusée par l'utilisateur.
         pub refuse: AtomicBool,
+        /// Simule une confirmation expirée : la clé ne signe que si une confirmation peut être demandée.
+        pub locked: AtomicBool,
         pub signatures: AtomicUsize,
     }
 
@@ -268,7 +287,7 @@ pub(crate) mod testing {
             let rng = SystemRandom::new();
             let pkcs8 = EcdsaKeyPair::generate_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, &rng).unwrap();
             let key = EcdsaKeyPair::from_pkcs8(&ECDSA_P256_SHA256_ASN1_SIGNING, pkcs8.as_ref(), &rng).unwrap();
-            Arc::new(SoftwareSigner { key, rng, refuse: AtomicBool::new(false), signatures: AtomicUsize::new(0) })
+            Arc::new(SoftwareSigner { key, rng, refuse: AtomicBool::new(false), locked: AtomicBool::new(false), signatures: AtomicUsize::new(0) })
         }
 
         pub fn authorized_key(&self) -> String {
@@ -284,6 +303,9 @@ pub(crate) mod testing {
         fn sign(&self, data: &[u8]) -> Result<Vec<u8>, String> {
             if self.refuse.load(Ordering::SeqCst) {
                 return Err("Confirmation annulée".into());
+            }
+            if self.locked.load(Ordering::SeqCst) && !prompt_allowed() {
+                return Err(crate::android_keystore::describe("locked: test"));
             }
             self.signatures.fetch_add(1, Ordering::SeqCst);
             Ok(self.key.sign(&self.rng, data).map_err(|e| e.to_string())?.as_ref().to_vec())
@@ -384,13 +406,34 @@ mod tests {
     }
 
     #[test]
-    fn device_key_is_registered_and_removed() {
-        assert!(device_signer().is_none());
-        let signer: Arc<dyn SshSigner> = SoftwareSigner::generate();
-        set_device_signer(Some(signer.clone()));
-        assert_eq!(device_signer().unwrap().public_point(), signer.public_point());
-        set_device_signer(None);
-        assert!(device_signer().is_none());
+    fn prompts_are_forbidden_only_inside_without_prompt() {
+        assert!(prompt_allowed());
+        let inside = without_prompt(|| {
+            let nested = without_prompt(prompt_allowed);
+            (prompt_allowed(), nested)
+        });
+        assert_eq!(inside, (false, false));
+        assert!(prompt_allowed(), "rétabli à la sortie");
+        let _ = std::panic::catch_unwind(|| without_prompt(|| panic!("échec")));
+        assert!(prompt_allowed(), "rétabli même après une panique");
+        // Propre à chaque fil : une synchronisation ne bloque pas les confirmations d'une opération manuelle.
+        without_prompt(|| assert!(std::thread::spawn(prompt_allowed).join().unwrap()));
+    }
+
+    #[test]
+    fn fingerprint_is_the_one_openssh_shows() {
+        let signer = SoftwareSigner::generate();
+        let fingerprint = fingerprint(&signer.public_point()).unwrap();
+        let line = public_key_openssh(&signer.public_point(), "x").unwrap();
+        let out = std::process::Command::new("ssh-keygen").args(["-l", "-E", "sha256", "-f", "-"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().and_then(|mut child| {
+            use std::io::Write;
+            child.stdin.take().unwrap().write_all(line.as_bytes())?;
+            child.wait_with_output()
+        });
+        if let Ok(out) = out {
+            assert!(String::from_utf8_lossy(&out.stdout).contains(&fingerprint), "{fingerprint}");
+        }
+        assert!(fingerprint.starts_with("SHA256:") && !fingerprint.ends_with('='));
     }
 
     #[test]
