@@ -7,6 +7,7 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_os = "android"))]
 use std::process::{Command, Output};
 use serde::Serialize;
 use crate::git::is_plain_file_name;
@@ -16,10 +17,16 @@ use ssh_key::{rand_core::OsRng, Algorithm, HashAlg, LineEnding, PrivateKey, Publ
 pub const KEY_NAMES: [&str; 3] = ["id_ed25519", "id_ecdsa", "id_rsa"];
 const NEW_KEY: &str = "id_ed25519";
 
-/// Empreintes ED25519 publiées : https://api.github.com/meta et https://docs.gitlab.com/user/gitlab_com/.
-const PUBLISHED_FINGERPRINTS: [(&str, &str); 2] = [
-    ("github.com", "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"),
-    ("gitlab.com", "SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8"),
+/// Empreintes publiées : https://api.github.com/meta et https://docs.gitlab.com/user/gitlab_com/.
+/// Le bureau ne demande que la clé ed25519 (`ssh-keyscan -t ed25519`). Sur Android, libssh2 choisit le type de clé
+/// avec le serveur (ECDSA d'abord, faute d'entrée dans `known_hosts`) : les trois types publiés sont donc vérifiés.
+const PUBLISHED_FINGERPRINTS: [(&str, &str, &str); 6] = [
+    ("github.com", "ssh-ed25519", "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"),
+    ("github.com", "ecdsa-sha2-nistp256", "SHA256:p2QAMXNIC1TJYWeIOttrVc98/R1BUFWu3/LiyKgUfQM"),
+    ("github.com", "ssh-rsa", "SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s"),
+    ("gitlab.com", "ssh-ed25519", "SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8"),
+    ("gitlab.com", "ecdsa-sha2-nistp256", "SHA256:HbW3g8zUjNSksFbqTiUWPWg2Bq1x8xdGUrliXFzSnUw"),
+    ("gitlab.com", "ssh-rsa", "SHA256:ROQFvPThGrW4RuWLoL9tq9I9zJ42fK4XywyRtbOz/EQ"),
 ];
 
 #[derive(Debug, Serialize, Clone, PartialEq)]
@@ -68,7 +75,18 @@ fn machine_name() -> String {
         .or_else(|| fs::read_to_string("/etc/hostname").ok())
         .map(|n| n.trim().to_string())
         .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| "cet ordinateur".to_string())
+        .unwrap_or_else(default_machine_name)
+}
+
+#[cfg(not(target_os = "android"))]
+fn default_machine_name() -> String {
+    "cet ordinateur".to_string()
+}
+
+/// Android n'a ni `HOSTNAME` ni `/etc/hostname` : le titre par défaut de la clé ne doit pas parler d'ordinateur.
+#[cfg(target_os = "android")]
+fn default_machine_name() -> String {
+    tr!("ce téléphone", "this phone")
 }
 
 fn key_info(dir: &Path, name: &str) -> Option<SshKeyInfo> {
@@ -110,6 +128,10 @@ pub fn existing_key(dir: &Path, name: &str) -> Result<SshKeyInfo, String> {
 
 /// Crée la clé `name` (`id_ed25519` par défaut) et son `.pub` sans jamais écraser un fichier existant.
 pub fn create_key(dir: &Path, name: Option<&str>, comment: &str, passphrase: Option<&str>) -> Result<SshKeyInfo, String> {
+    // Android : jamais de clé privée dans un fichier, même chiffrée. Elle sera créée dans l'Android Keystore (issue #38).
+    if cfg!(target_os = "android") {
+        return Err(tr!("Sur Android, la clé SSH ne peut pas être enregistrée dans un fichier : elle doit rester dans le coffre de l'appareil (Android Keystore)", "On Android, the SSH key cannot be stored in a file: it must stay in the device vault (Android Keystore)"));
+    }
     let name = name.unwrap_or(NEW_KEY);
     if !is_plain_file_name(name) || name.ends_with(".pub") {
         return Err(tr!("Nom de clé SSH refusé : {name}", "SSH key name refused: {name}"));
@@ -172,6 +194,7 @@ fn valid_host(host: &str) -> Result<(), String> {
     if ok { Ok(()) } else { Err(tr!("Hôte SSH invalide : {host}", "Invalid SSH host: {host}")) }
 }
 
+#[cfg(not(target_os = "android"))]
 fn command(program: &str) -> Command {
     #[allow(unused_mut)]
     let mut cmd = Command::new(program);
@@ -184,6 +207,7 @@ fn command(program: &str) -> Command {
     cmd
 }
 
+#[cfg(not(target_os = "android"))]
 fn run(mut cmd: Command, program: &str) -> Result<Output, String> {
     cmd.output().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -194,6 +218,7 @@ fn run(mut cmd: Command, program: &str) -> Result<Output, String> {
     })
 }
 
+#[cfg(not(target_os = "android"))]
 fn is_known(dir: &Path, host: &str) -> Result<bool, String> {
     let file = dir.join("known_hosts");
     if !file.exists() {
@@ -205,6 +230,7 @@ fn is_known(dir: &Path, host: &str) -> Result<bool, String> {
 }
 
 /// Ligne `hôte ssh-ed25519 AAAA…` et empreinte de sa clé.
+#[cfg(not(target_os = "android"))]
 fn parse_scan(host: &str, output: &str) -> Result<(String, String), String> {
     for line in output.lines().filter(|l| !l.starts_with('#')) {
         let mut fields = line.split_whitespace();
@@ -218,6 +244,7 @@ fn parse_scan(host: &str, output: &str) -> Result<(String, String), String> {
     Err(tr!("{host} ne répond pas en SSH sur le port 22, ou ne propose pas de clé ed25519", "{host} does not answer over SSH on port 22, or does not offer an ed25519 key"))
 }
 
+#[cfg(not(target_os = "android"))]
 fn scan(host: &str) -> Result<(String, String), String> {
     let mut cmd = command("ssh-keyscan");
     cmd.args(["-T", "8", "-t", "ed25519"]).arg(host);
@@ -226,8 +253,14 @@ fn scan(host: &str) -> Result<(String, String), String> {
 }
 
 /// Compare à l'empreinte publiée : `Some(true)` conforme, `None` : aucune publiée pour cet hôte, à faire valider.
-fn matches_published(host: &str, fingerprint: &str) -> Result<Option<bool>, String> {
-    let Some((_, expected)) = PUBLISHED_FINGERPRINTS.iter().find(|(h, _)| *h == host) else { return Ok(None) };
+/// Pour une forge qui publie ses empreintes, un type de clé non publié est refusé comme une empreinte différente.
+pub(crate) fn matches_published(host: &str, key_type: &str, fingerprint: &str) -> Result<Option<bool>, String> {
+    if !PUBLISHED_FINGERPRINTS.iter().any(|(h, _, _)| *h == host) {
+        return Ok(None);
+    }
+    let Some((_, _, expected)) = PUBLISHED_FINGERPRINTS.iter().find(|(h, t, _)| *h == host && *t == key_type) else {
+        return Err(tr!("{host} présente une clé {key_type}, dont l'empreinte n'est pas publiée : la connexion est peut-être interceptée. Configuration interrompue.", "{host} presents a {key_type} key, whose fingerprint is not published: the connection may be intercepted. Setup stopped."));
+    };
     if *expected != fingerprint {
         return Err(tr!("L'empreinte reçue de {host} ({fingerprint}) ne correspond pas à celle publiée ({expected}) : la connexion est peut-être interceptée. Configuration interrompue.", "The fingerprint received from {host} ({fingerprint}) does not match the published one ({expected}): the connection may be intercepted. Setup stopped."
         ));
@@ -235,28 +268,44 @@ fn matches_published(host: &str, fingerprint: &str) -> Result<Option<bool>, Stri
     Ok(Some(true))
 }
 
+#[cfg(not(target_os = "android"))]
 pub fn host_status(dir: &Path, host: &str) -> Result<HostStatus, String> {
     valid_host(host)?;
     if is_known(dir, host)? {
         return Ok(HostStatus::Known);
     }
     let (_, fingerprint) = scan(host)?;
-    let published = matches_published(host, &fingerprint)?.is_some();
+    let published = matches_published(host, "ssh-ed25519", &fingerprint)?.is_some();
     Ok(HostStatus::Unknown { fingerprint, published })
 }
 
+/// Android : sans `ssh-keygen` ni `ssh-keyscan`, voir `ssh_native.rs`.
+#[cfg(target_os = "android")]
+pub fn host_status(dir: &Path, host: &str) -> Result<HostStatus, String> {
+    valid_host(host)?;
+    crate::ssh_native::host_status(dir, host, 22, crate::ssh_native::PROBE_TIMEOUT)
+}
+
 /// Ajoute la clé du serveur à `known_hosts`. L'hôte est interrogé à nouveau : seule l'empreinte validée est acceptée.
+#[cfg(not(target_os = "android"))]
 pub fn trust_host(dir: &Path, host: &str, fingerprint: &str) -> Result<(), String> {
     valid_host(host)?;
     let (line, current) = scan(host)?;
     if current != fingerprint {
         return Err(tr!("L'empreinte de {host} a changé pendant la configuration ({current}) : recommence et vérifie-la.", "The fingerprint of {host} changed during setup ({current}): start again and check it."));
     }
-    matches_published(host, &current)?;
+    matches_published(host, "ssh-ed25519", &current)?;
     add_known_host(dir, &line)
 }
 
-fn add_known_host(dir: &Path, line: &str) -> Result<(), String> {
+/// Android : sans `ssh-keyscan`, voir `ssh_native.rs`.
+#[cfg(target_os = "android")]
+pub fn trust_host(dir: &Path, host: &str, fingerprint: &str) -> Result<(), String> {
+    valid_host(host)?;
+    crate::ssh_native::trust_host(dir, host, 22, fingerprint, crate::ssh_native::PROBE_TIMEOUT)
+}
+
+pub(crate) fn add_known_host(dir: &Path, line: &str) -> Result<(), String> {
     create_private_dir(dir)?;
     let file = dir.join("known_hosts");
     let existing = fs::read(&file).unwrap_or_default();
@@ -273,6 +322,7 @@ fn add_known_host(dir: &Path, line: &str) -> Result<(), String> {
 }
 
 /// Lit la réponse de `ssh -T` : GitHub termine en code 1 même en cas de succès, seul le texte fait foi.
+#[cfg(not(target_os = "android"))]
 fn parse_check(output: &str) -> SshCheck {
     let text = output.trim();
     let between = |start: &str, end: char| -> Option<String> {
@@ -287,6 +337,7 @@ fn parse_check(output: &str) -> SshCheck {
 }
 
 /// Teste la clé auprès du serveur : aucune question (`BatchMode`) et hôte vérifié (`StrictHostKeyChecking`).
+#[cfg(not(target_os = "android"))]
 pub fn check_connection(dir: &Path, host: &str, key_name: &str) -> Result<SshCheck, String> {
     valid_host(host)?;
     let key = existing_key(dir, key_name)?;
@@ -297,6 +348,14 @@ pub fn check_connection(dir: &Path, host: &str, key_name: &str) -> Result<SshChe
     let output = run(cmd, "ssh")?;
     let text = format!("{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
     Ok(parse_check(&text))
+}
+
+/// Android : sans `ssh`, avec la clé de l'appareil (Android Keystore) et non un fichier de `~/.ssh`. Voir `ssh_native.rs`.
+#[cfg(target_os = "android")]
+pub fn check_connection(dir: &Path, host: &str, _key_name: &str) -> Result<SshCheck, String> {
+    valid_host(host)?;
+    let signer = crate::ssh_signer::device_signer().ok_or_else(|| tr!("La clé SSH de l'appareil n'est pas encore disponible sur Android : utilise l'URL HTTPS du dépôt", "The device SSH key is not available on Android yet: use the repository's HTTPS URL"))?;
+    crate::ssh_native::check_connection(dir, host, 22, "git", signer, crate::ssh_native::CHECK_TIMEOUT)
 }
 
 #[cfg(test)]
@@ -405,15 +464,27 @@ mod tests {
         let output = format!("# github.com:22 SSH-2.0\nautre.com ssh-ed25519 {SCAN_KEY}\ngithub.com ssh-ed25519 {SCAN_KEY}\n");
         let (line, fingerprint) = parse_scan("github.com", &output).unwrap();
         assert_eq!(line, format!("github.com ssh-ed25519 {SCAN_KEY}"));
-        assert_eq!(fingerprint, PUBLISHED_FINGERPRINTS[0].1);
+        assert_eq!(fingerprint, PUBLISHED_FINGERPRINTS[0].2);
         assert!(parse_scan("github.com", "").unwrap_err().contains("ne répond pas"));
     }
 
     #[test]
     fn stops_when_a_known_forge_presents_another_key() {
-        assert_eq!(matches_published("github.com", PUBLISHED_FINGERPRINTS[0].1), Ok(Some(true)));
-        assert!(matches_published("github.com", "SHA256:autre").unwrap_err().contains("interceptée"));
-        assert_eq!(matches_published("gitlab.corp.io", "SHA256:autre"), Ok(None));
+        assert_eq!(matches_published("github.com", "ssh-ed25519", PUBLISHED_FINGERPRINTS[0].2), Ok(Some(true)));
+        assert!(matches_published("github.com", "ssh-ed25519", "SHA256:autre").unwrap_err().contains("interceptée"));
+        assert_eq!(matches_published("gitlab.corp.io", "ssh-ed25519", "SHA256:autre"), Ok(None));
+    }
+
+    #[test]
+    fn checks_every_published_key_type() {
+        for (host, key_type, fingerprint) in PUBLISHED_FINGERPRINTS {
+            assert_eq!(matches_published(host, key_type, fingerprint), Ok(Some(true)), "{host} {key_type}");
+            // L'empreinte d'un autre type ne vaut pas pour celui-ci.
+            let other = PUBLISHED_FINGERPRINTS.iter().find(|(h, t, _)| *h == host && *t != key_type).unwrap().2;
+            assert!(matches_published(host, key_type, other).is_err(), "{host} {key_type}");
+        }
+        // Type que la forge ne publie pas : refusé, jamais proposé à la validation manuelle.
+        assert!(matches_published("github.com", "ssh-dss", "SHA256:x").unwrap_err().contains("interceptée"));
     }
 
     #[test]

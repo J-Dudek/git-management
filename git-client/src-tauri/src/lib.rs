@@ -11,6 +11,15 @@ mod http;
 mod notifications;
 mod oauth;
 mod ssh_setup;
+// SSH sans OpenSSH (issue #38) : Android, et tests sur le bureau contre un vrai serveur OpenSSH.
+#[cfg(any(target_os = "android", test))]
+mod known_hosts;
+#[cfg(any(target_os = "android", test))]
+mod ssh_native;
+#[cfg(any(target_os = "android", test))]
+mod ssh_signer;
+#[cfg(test)]
+mod test_sshd;
 mod git;
 #[cfg(desktop)]
 mod terminal;

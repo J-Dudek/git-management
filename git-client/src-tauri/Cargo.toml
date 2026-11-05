@@ -42,6 +42,12 @@ ssh-key = { version = "0.6", default-features = false, features = ["ed25519", "e
 
 [dev-dependencies]
 tempfile = "3"
+# Tests du SSH Android sur le bureau (ssh_native.rs, ssh_signer.rs) : mêmes crates que la cible Android, plus une clé
+# P-256 logicielle (ring, déjà utilisé par rustls) à la place de l'Android Keystore. Aucune crate ajoutée à Cargo.lock.
+base64ct = "1"
+libc = "0.2"
+libgit2-sys = "0.18"
+ring = "0.17"
 
 # Notifications Linux par une connexion D-Bus gardée ouverte (voir src/notifications.rs).
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -66,3 +72,6 @@ portable-pty = "0.9"
 openssl-sys = { version = "0.9", features = ["vendored"] }
 # Autorités de certification du système données à libgit2 (voir src/device_storage.rs).
 libgit2-sys = "0.18"
+# SSH sans OpenSSH (src/ssh_native.rs, src/ssh_signer.rs) : encodage des clés et allocation de la signature rendue à libssh2.
+base64ct = "1"
+libc = "0.2"
