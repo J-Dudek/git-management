@@ -129,7 +129,7 @@ export function Toolbar({ onClone, onAccounts }: { onClone: () => void; onAccoun
     if (!repoPath) return;
     const result = await ask({
       title: tr("Mettre de côté (stash)"),
-      input: { placeholder: "Message (optionnel)" },
+      input: { placeholder: "Message (optionnel)", optional: true },
       checkbox: { label: tr("Inclure les fichiers non suivis"), initial: true },
       confirmLabel: "Stash",
     });

@@ -107,12 +107,12 @@ export function ContextMenu({ menu, onClose }: Props) {
   // Mobile : feuille en bas de l'écran, à portée de pouce, plutôt qu'un menu à l'endroit du toucher.
   const sheet = isMobile();
   const style: React.CSSProperties = sheet
-    ? { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 9999 }
+    ? { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 10003 }
     : { position: "fixed", top: pos.top, left: pos.left, zIndex: 9999 };
 
   return createPortal(
     <>
-    {sheet && <div className="fixed inset-0 z-[9998] bg-black/50" aria-hidden />}
+    {sheet && <div className="fixed inset-0 z-[10002] bg-black/50" aria-hidden />}
     <div
       ref={ref}
       style={style}

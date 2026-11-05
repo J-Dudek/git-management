@@ -8,6 +8,11 @@ export interface ParsedRemote {
   path: string;
 }
 
+/** URL de remote en SSH : `ssh://…` ou forme scp (`git@host:owner/repo.git`). */
+export function isSshUrl(url: string): boolean {
+  return /^\s*(ssh:\/\/|[\w.-]+@[\w.-]+:)/.test(url);
+}
+
 /** Analyse une URL de remote HTTPS, ssh:// ou scp (`git@host:owner/repo.git`). */
 export function parseRemoteUrl(url: string): ParsedRemote | null {
   const trimmed = url.trim();

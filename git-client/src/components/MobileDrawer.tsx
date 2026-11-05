@@ -33,7 +33,7 @@ export function MobileDrawer({ title, subtitle, items, onClose }: {
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999]">
+    <div className="fixed inset-0 z-[10002]">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
       <div
         ref={ref}

@@ -5,6 +5,7 @@ import { useUiStore } from "../store/useUiStore";
 import { cloneRepository, deviceReposRoot, listGitProfiles } from "../ipc/commands";
 import { pickFolder } from "../lib/folderPicker";
 import { isMobile } from "../lib/platform";
+import { isSshUrl } from "../lib/remoteUrl";
 import { errorMessage } from "../lib/actions";
 import { profileForAccount, profileForDir } from "../lib/gitProfiles";
 import type { ForgeRepo } from "../types/forge";
@@ -36,6 +37,7 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
   const [profiles, setProfiles] = useState<GitProfile[]>([]);
   const [dirChosen, setDirChosen] = useState(false);
   const targetProfile = profileForDir(profiles, parentDir);
+  const sshUnavailable = isMobile() && isSshUrl(url);
 
   useEffect(() => {
     listGitProfiles().then((info) => setProfiles(info.profiles)).catch(() => {});
@@ -184,13 +186,19 @@ export function CloneDialog({ onClose }: { onClose: () => void }) {
           </p>
         )}
 
+        {sshUnavailable && (
+          <p role="alert" className="text-[11px] text-amber-300">{tr("Le SSH n'est pas encore pris en charge sur Android : utilise l'URL HTTPS du dépôt.")}</p>
+        )}
+
         <p className="text-[10px] text-[var(--color-muted)]">
-          {tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement (HTTPS), sinon l'agent SSH ou tes clés ~/.ssh.")}
+          {isMobile()
+            ? tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement.")
+            : tr("Les identifiants du compte correspondant à l'hôte de l'URL sont utilisés automatiquement (HTTPS), sinon l'agent SSH ou tes clés ~/.ssh.")}
         </p>
 
         <div className="flex justify-end gap-2">
           <Button onClick={onClose} disabled={cloning}>{tr("Annuler")}</Button>
-          <Button variant="primary" onClick={handleClone} disabled={cloning || !url.trim() || !parentDir || !name.trim()}>
+          <Button variant="primary" onClick={handleClone} disabled={cloning || sshUnavailable || !url.trim() || !parentDir || !name.trim()}>
             {cloning ? tr("Clonage…") : tr("Cloner")}
           </Button>
         </div>

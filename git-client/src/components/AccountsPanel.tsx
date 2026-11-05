@@ -12,6 +12,7 @@ import { inputClass } from "./Modal";
 import { useLinkedForge } from "./PullRequestList";
 import { MyPullRequestsSection } from "./MyPullRequests";
 import { SshSetupDialog } from "./SshSetupDialog";
+import { isMobile } from "../lib/platform";
 import { IdentityProblem } from "./IdentityProblem";
 import { PanelSection as Section } from "./PanelSection";
 import type { DeviceCode, ForgeAccount, ForgeIssue, Provider } from "../types/forge";
@@ -346,7 +347,7 @@ function AddAccountForm({ onDone }: { onDone: () => void }) {
         </SmallButton>
         <SmallButton onClick={onDone}>{tr("Annuler")}</SmallButton>
       </div>
-      <p className="text-[10px] text-[var(--color-muted)]">{tr("Les identifiants sont stockés dans le trousseau du système.")}</p>
+      <p className="text-[10px] text-[var(--color-muted)]">{isMobile() ? tr("Les identifiants sont stockés dans le dossier privé de l'application.") : tr("Les identifiants sont stockés dans le trousseau du système.")}</p>
     </form>
   );
 }
@@ -482,16 +483,19 @@ function AccountRow({ account }: { account: ForgeAccount }) {
   }
 
   async function handleRemove() {
-    if (!(await confirmAction(tr("Supprimer le compte {label} ?", { label: account.label }), tr("Le token sera retiré du trousseau."), true))) return;
+    if (!(await confirmAction(tr("Supprimer le compte {label} ?", { label: account.label }), isMobile() ? tr("Le token sera supprimé de cet appareil.") : tr("Le token sera retiré du trousseau."), true))) return;
     await remove(account.id).catch((e) => notify("error", errorMessage(e)));
   }
+
+  // Mobile : ni ssh ni ssh-keyscan pour vérifier un hôte, le SSH n'y fonctionne pas encore.
+  const sshEntry = isMobile() ? [] : [{ label: tr("Configurer SSH…"), action: () => setSshSetup(true) }];
 
   return (
     <div
       className="flex items-center gap-2 px-3 py-1.5 hover:bg-overlay/5 group"
       onContextMenu={(e) => open(e, [
         ...(account.auth === "pat" ? [{ label: tr("Changer le token…"), action: changeToken }] : []),
-        { label: tr("Configurer SSH…"), action: () => setSshSetup(true) },
+        ...sshEntry,
         { label: tr("Renommer…"), action: rename },
         { label: tr("Ouvrir le profil"), action: () => openUrl(`${account.base_url}/${account.username}`) },
         "separator",
@@ -513,7 +517,7 @@ function AccountRow({ account }: { account: ForgeAccount }) {
         aria-haspopup="menu"
         onClick={(e) => open(e, [
           ...(account.auth === "pat" ? [{ label: tr("Changer le token…"), action: changeToken }] : []),
-          { label: tr("Configurer SSH…"), action: () => setSshSetup(true) },
+          ...sshEntry,
           { label: tr("Renommer…"), action: rename },
           "separator",
           { label: tr("Supprimer"), danger: true, action: handleRemove },

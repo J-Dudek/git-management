@@ -70,6 +70,18 @@ pub fn create_folder(root: &Path, dir: &str, name: &str) -> Result<String, GitEr
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Android : une application n'a pas de variable HOME, dont dépendent `.gitconfig`, `.ssh` et les profils Git. Elle
+/// pointe vers le dossier privé de l'application, avant le premier appel à libgit2 qui la lit une fois pour toutes.
+#[cfg(target_os = "android")]
+pub fn set_home(app: &tauri::App) {
+    use tauri::Manager;
+    match app.path().app_data_dir() {
+        // Appelé au démarrage, avant les premières commandes.
+        Ok(dir) => std::env::set_var("HOME", dir),
+        Err(e) => eprintln!("dossier de l'application introuvable : {e}"),
+    }
+}
+
 /// Blocs PEM des certificats d'un dossier, sans le texte descriptif que contiennent les fichiers d'Android.
 #[cfg(any(target_os = "android", test))]
 fn certificate_blocks(dir: &Path) -> std::io::Result<Vec<String>> {

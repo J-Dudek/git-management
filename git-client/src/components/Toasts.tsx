@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useUiStore, type Toast } from "../store/useUiStore";
+import { isMobile } from "../lib/platform";
 import { tr } from "../i18n";
 
 const TOAST_STYLES: Record<Toast["kind"], string> = {
@@ -36,7 +37,8 @@ export function Toasts() {
     // Les erreurs restent jusqu'à leur fermeture ; les autres disparaissent seules, sauf pendant un survol ou un focus.
     <div
       ref={ref}
-      className="fixed bottom-3 right-3 z-[10001] flex flex-col gap-2 w-96 max-w-[90vw]"
+      // Mobile : au-dessus de la barre de navigation, qu'elles ne doivent pas masquer.
+      className={`fixed z-[10001] flex flex-col gap-2 ${isMobile() ? "left-3 right-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))]" : "bottom-3 right-3 w-96 max-w-[90vw]"}`}
       onMouseEnter={() => hold(true)}
       onMouseLeave={() => hold(false)}
       onFocus={() => hold(true)}
@@ -49,7 +51,7 @@ export function Toasts() {
           className={`flex items-start gap-2 px-3 py-2 rounded shadow-lg border text-xs ${TOAST_STYLES[t.kind]}`}
         >
           <span className="flex-1 break-words whitespace-pre-line select-text">{t.message}</span>
-          <button className="opacity-60 hover:opacity-100" onClick={() => dismiss(t.id)} aria-label={tr("Fermer la notification")}>
+          <button data-touch-target className="opacity-60 hover:opacity-100" onClick={() => dismiss(t.id)} aria-label={tr("Fermer la notification")}>
             <X size={13} />
           </button>
         </div>

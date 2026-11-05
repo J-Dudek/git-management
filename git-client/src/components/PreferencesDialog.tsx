@@ -21,7 +21,7 @@ import {
 import { syncOpenRepos, useSyncRunning } from "../lib/autoSync";
 import { sendTestNotification } from "../lib/prNotifications";
 import { checkForUpdates } from "../lib/updater";
-import { hasDesktopFeatures } from "../lib/platform";
+import { hasDesktopFeatures, isMobile } from "../lib/platform";
 import { errorMessage } from "../lib/actions";
 import { aboutReport, osLabel, REPO_URL, releaseUrl, versionLabel } from "../lib/about";
 import {
@@ -53,7 +53,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
   // « Mon activité » n'apparaît qu'après la première récompense : avant, elle gâcherait la surprise.
   const hasRewards = useCelebrationStore((s) => s.milestones.rewards.length > 0);
   const newRewards = useCelebrationStore((s) => hasNewRewards(s.milestones));
-  const sections = SECTIONS.filter((s) => (s.id !== "activity" || hasRewards) && (s.id !== "terminal" || hasDesktopFeatures()));
+  const sections = SECTIONS.filter((s) => (s.id !== "activity" || hasRewards) && (s.id !== "terminal" || hasDesktopFeatures()) && (s.id !== "shortcuts" || !isMobile()));
 
   return (
     <Modal title={tr("Préférences")} onClose={onClose} width="w-[720px]">
@@ -80,9 +80,11 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
               )}
             </button>
           ))}
-          <p className="mt-auto px-2.5 pb-1 text-[10px] leading-relaxed text-[var(--color-muted)]">
-            {tr("Les modifications sont appliquées immédiatement à toutes les fenêtres.")}
-          </p>
+          {!isMobile() && (
+            <p className="mt-auto px-2.5 pb-1 text-[10px] leading-relaxed text-[var(--color-muted)]">
+              {tr("Les modifications sont appliquées immédiatement à toutes les fenêtres.")}
+            </p>
+          )}
         </nav>
 
         <div className="flex-1 min-w-0 flex flex-col">
@@ -186,27 +188,30 @@ function AppearanceSection() {
         </div>
       </Group>
 
-      <Group
-        title={tr("Taille de l'interface")}
-        description={tr("Agrandit ou réduit tout : textes, panneaux, graphe et terminal.")}
-        value={percent(Math.round(zoom * 100))}
-      >
-        <Slider
-          label={tr("Taille de l'interface")}
-          valueText={percent(Math.round(zoom * 100))}
-          min={0}
-          max={ZOOM_STEPS.length - 1}
-          value={index}
-          onChange={(i) => update({ zoom: ZOOM_STEPS[i] })}
-          ticks={ZOOM_STEPS.map((z) => `${Math.round(z * 100)}`)}
-          defaultIndex={ZOOM_STEPS.indexOf(defaultDisplay.zoom)}
-        />
-        <p className="mt-3 flex items-center gap-1.5 text-[10px] text-[var(--color-muted)]">
-          <Kbd keys="Ctrl+=" />{" "}{tr("agrandir")}{" "}<span className="mx-1">·</span>
-          <Kbd keys="Ctrl+-" />{" "}{tr("réduire")}{" "}<span className="mx-1">·</span>
-          <Kbd keys="Ctrl+0" /> {percent(100)}
-        </p>
-      </Group>
+      {/* Mobile : la taille suit le réglage du système. */}
+      {!isMobile() && (
+        <Group
+          title={tr("Taille de l'interface")}
+          description={tr("Agrandit ou réduit tout : textes, panneaux, graphe et terminal.")}
+          value={percent(Math.round(zoom * 100))}
+        >
+          <Slider
+            label={tr("Taille de l'interface")}
+            valueText={percent(Math.round(zoom * 100))}
+            min={0}
+            max={ZOOM_STEPS.length - 1}
+            value={index}
+            onChange={(i) => update({ zoom: ZOOM_STEPS[i] })}
+            ticks={ZOOM_STEPS.map((z) => `${Math.round(z * 100)}`)}
+            defaultIndex={ZOOM_STEPS.indexOf(defaultDisplay.zoom)}
+          />
+          <p className="mt-3 flex items-center gap-1.5 text-[10px] text-[var(--color-muted)]">
+            <Kbd keys="Ctrl+=" />{" "}{tr("agrandir")}{" "}<span className="mx-1">·</span>
+            <Kbd keys="Ctrl+-" />{" "}{tr("réduire")}{" "}<span className="mx-1">·</span>
+            <Kbd keys="Ctrl+0" /> {percent(100)}
+          </p>
+        </Group>
+      )}
 
       <Group title={tr("Densité du graphe")} description={tr("Hauteur des lignes de l'historique des commits.")}>
         <div className="grid grid-cols-3 gap-2.5">
@@ -528,7 +533,7 @@ function AboutSection() {
           <h3 className="text-base font-semibold">
             Merathon {version && <span className="ml-1 font-mono text-xs font-normal text-[var(--color-muted)]">v{version}</span>}
           </h3>
-          <p className="mt-0.5 text-[var(--color-muted)]">{tr("Git Repository Manager — client Git graphique de bureau.")}</p>
+          <p className="mt-0.5 text-[var(--color-muted)]">{isMobile() ? tr("Git Repository Manager — client Git graphique.") : tr("Git Repository Manager — client Git graphique de bureau.")}</p>
         </div>
       </div>
 
