@@ -20,6 +20,8 @@ export interface DisplaySettings {
   languageChosen: boolean;
   /** Notifications de l'activité des PR / MR à traiter ou ouvertes par moi (relevée à chaque synchronisation). */
   notifications: NotificationSettings;
+  /** Android : SSH avec la clé de l'appareil (Android Keystore), en essai (issue #38). Sans effet sur le bureau. */
+  experimentalSsh: boolean;
 }
 
 /** Interrupteur général, puis un réglage par type d'événement. */
@@ -50,6 +52,7 @@ export const defaultNotifications: NotificationSettings = { enabled: true, opene
 
 export const defaultDisplay: DisplaySettings = {
   zoom: 1, terminalFontSize: 12, density: isMobile() ? "comfortable" : "normal", syncInterval: 5, theme: "system", language: "fr", languageChosen: false, notifications: defaultNotifications,
+  experimentalSsh: false,
 };
 
 const KEY = "merathon.display";
@@ -74,6 +77,7 @@ export function sanitize(raw: unknown): DisplaySettings {
     language: LANGUAGES.includes(r.language as Language) ? r.language! : defaultDisplay.language,
     languageChosen: r.languageChosen === true,
     notifications: sanitizeNotifications(r.notifications),
+    experimentalSsh: r.experimentalSsh === true,
   };
 }
 
@@ -107,8 +111,8 @@ export const useDisplayStore = create<DisplayStore>((set, get) => {
     set(next);
   }
   const current = (): DisplaySettings => {
-    const { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications } = get();
-    return { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications };
+    const { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications, experimentalSsh } = get();
+    return { zoom, terminalFontSize, density, syncInterval, theme, language, languageChosen, notifications, experimentalSsh };
   };
   return {
     ...load(),
