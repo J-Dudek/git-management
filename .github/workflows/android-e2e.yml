@@ -1,0 +1,152 @@
+name: Android (émulateur)
+
+# Parcours de bout en bout sur un émulateur Android : APK de debug x86_64, faux GitHub Enterprise et serveur git SSH
+# locaux (tools/android-e2e). Vérifie ce que les tests du bureau ne voient pas : manifeste et permissions, pont JNI
+# vers le Keystore, WebView d'Android, gestes tactiles.
+#
+# Coûteux (compilation Rust pour Android, puis émulateur : ~25 min sans cache) : lancé seulement par les PR qui
+# touchent au code propre à Android, après leur merge sur main (pour enregistrer le cache), ou à la main
+# (Actions > Android (émulateur) > Run workflow).
+on:
+  pull_request:
+    paths:
+      - "git-client/src-tauri/gen/android/**"
+      - "git-client/src-tauri/Cargo.toml"
+      - "git-client/src-tauri/tauri.conf.json"
+      - "git-client/src-tauri/capabilities/mobile.json"
+      - "git-client/src-tauri/src/android_keystore.rs"
+      - "git-client/src-tauri/src/device_storage.rs"
+      - "git-client/src-tauri/src/known_hosts.rs"
+      - "git-client/src-tauri/src/ssh_*.rs"
+      - "git-client/src-tauri/src/git/auth.rs"
+      - "git-client/src-tauri/src/git/files.rs"
+      - "git-client/src-tauri/src/pr_watch.rs"
+      - "git-client/src/lib/prWatch.ts"
+      - "git-client/src/lib/prNotifications.ts"
+      - "git-client/src/lib/platform.ts"
+      - "git-client/src/components/FileEditorDialog.tsx"
+      - "git-client/src/components/Mobile*.tsx"
+      - "tools/android-e2e/**"
+      - ".github/workflows/android-e2e.yml"
+  # Après le merge sur main : seul ce lancement enregistre le cache Rust, que toutes les PR lisent ensuite.
+  # Sans lui, chaque PR recompilait tout pour Android (~25 min).
+  push:
+    branches: [main]
+    paths:
+      - "git-client/src-tauri/gen/android/**"
+      - "git-client/src-tauri/Cargo.toml"
+      - "git-client/src-tauri/tauri.conf.json"
+      - "git-client/src-tauri/capabilities/mobile.json"
+      - "git-client/src-tauri/src/android_keystore.rs"
+      - "git-client/src-tauri/src/device_storage.rs"
+      - "git-client/src-tauri/src/known_hosts.rs"
+      - "git-client/src-tauri/src/ssh_*.rs"
+      - "git-client/src-tauri/src/git/auth.rs"
+      - "git-client/src-tauri/src/git/files.rs"
+      - "git-client/src-tauri/src/pr_watch.rs"
+      - "git-client/src/lib/prWatch.ts"
+      - "git-client/src/lib/prNotifications.ts"
+      - "git-client/src/lib/platform.ts"
+      - "git-client/src/components/FileEditorDialog.tsx"
+      - "git-client/src/components/Mobile*.tsx"
+      - "tools/android-e2e/**"
+      - ".github/workflows/android-e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Parcours sur émulateur (API 35)
+    # Le commit de version de la release ne change que les numéros : pas de second parcours.
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # L'émulateur x86_64 a besoin de KVM, disponible sur les machines Linux de GitHub une fois autorisé.
+      - name: Autoriser KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: SDK Android (plateforme 37)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" > /dev/null
+          echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Rust (cible Android x86_64)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: git-client/src-tauri
+          key: android-x86_64
+          # Comme dans ci.yml : seul main enregistre le cache, pour ne pas déborder du quota.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: git-client/package-lock.json
+
+      - name: Dépendances du frontend
+        working-directory: git-client
+        run: npm ci
+
+      - name: APK de debug x86_64
+        working-directory: git-client
+        run: npx tauri android build --debug --apk --target x86_64 --ci
+
+      # Python de setup-python : celui du système refuse `pip install` (PEP 668).
+      - name: Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Serveur SSH de test (paramiko)
+        run: python -m pip install paramiko
+
+      - name: Parcours sur l'émulateur
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          # Une commande par ligne : le script s'arrête à la première qui échoue.
+          script: |
+            node tools/android-e2e/run.mjs --apk git-client/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk --out e2e-out
+            node tools/android-e2e/pr-watch.mjs --out e2e-out/pr-watch
+
+      - name: Captures et journaux
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-e2e
+          path: |
+            e2e-out/
+            tools/android-e2e/.work/*.log
+            tools/android-e2e/.work/*.out
+          if-no-files-found: ignore
