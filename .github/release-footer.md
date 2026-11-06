@@ -1,6 +1,7 @@
 ### Téléchargements
 - **Linux** : `.deb` (Debian/Ubuntu) · `.AppImage` (universel)
 - **Windows** : `.msi` (installateur) · `.exe` (NSIS)
+- **Android** : `.apk` (téléphones arm64, à installer hors Play Store : autoriser l'installation depuis le navigateur ou le gestionnaire de fichiers)
 
 ### Windows : avertissement SmartScreen
 Les installateurs ne sont pas encore signés : au premier lancement, Windows affiche
