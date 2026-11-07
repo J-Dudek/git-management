@@ -104,6 +104,21 @@ function openRepos(): string[] {
 }
 
 /**
+ * Retire ce que je n'ai pas à apprendre sur mes propres PR / MR : leurs nouveaux commits (les miens, ou ceux
+ * de ma branche) et les « branches mises à jour » correspondantes. Les commentaires restent signalés.
+ */
+export function withoutOwnCommits(
+  updated: UpdatedPr[], branches: string[], open: ForgePR[], me: string,
+): { updatedPrs: UpdatedPr[]; updatedBranches: string[] } {
+  const mine = (pr: ForgePR) => !!me && pr.author.toLowerCase() === me.toLowerCase();
+  const updatedPrs = updated
+    .filter((u) => !(mine(u.pr) && u.commits && !u.comments))
+    .map((u) => (mine(u.pr) ? { ...u, commits: false } : u));
+  const own = open.filter(mine).map((pr) => pr.sourceBranch);
+  return { updatedPrs, updatedBranches: branches.filter((b) => !own.some((src) => b === src || b.endsWith(`/${src}`))) };
+}
+
+/**
  * Fetch d'un dépôt, actualisation de ses PR ouvertes et du graphe s'il est affiché ; renvoie ce qui a changé.
  * Les PR de `followed` (les miennes, déjà notifiées par `syncMyPullRequests`) ne sont pas signalées une seconde fois.
  */
@@ -115,6 +130,7 @@ async function syncRepo(path: string, followed: Set<string>): Promise<{ changes:
   const repo = useRepoStore.getState();
   if (repo.repoPath === path && !useUiStore.getState().busy) await repo.refresh();
 
+  const branchChanges = remoteBranchChanges(before, after);
   let prs: Pick<RepoChanges, "openedPrs" | "closedPrs" | "updatedPrs"> = { openedPrs: [], closedPrs: [], updatedPrs: [] };
   const forge = linkedForge(await listRemotes(path), useAccountsStore.getState().accounts);
   if (forge) {
@@ -124,9 +140,12 @@ async function syncRepo(path: string, followed: Set<string>): Promise<{ changes:
     const isFollowed = (pr: ForgePR) => followed.has(seenKey(forge.account.id, forge.projectPath, pr.number).toLowerCase());
     prs.openedPrs = prs.openedPrs.filter((pr) => !isFollowed(pr));
     prs.updatedPrs = prs.updatedPrs.filter((u) => !isFollowed(u.pr));
+    const own = withoutOwnCommits(prs.updatedPrs, branchChanges.updatedBranches, newPrs, forge.account.username);
+    prs.updatedPrs = own.updatedPrs;
+    branchChanges.updatedBranches = own.updatedBranches;
   }
   return {
-    changes: { ...remoteBranchChanges(before, after), ...prs },
+    changes: { ...branchChanges, ...prs },
     prLabel: forge?.account.provider === "gitlab" ? "MR" : "PR",
   };
 }
