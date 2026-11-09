@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { fetchAllQuietly, getBranches, listRemotes } from "../ipc/commands";
+import { fetchAllQuietly, getBranches, listRemotes, pullFastForward, type FastForwardPull } from "../ipc/commands";
 import { linkedForge, refreshOpenPullRequests } from "../components/PullRequestList";
 import { useAccountsStore } from "../store/useAccountsStore";
 import { useRepoStore } from "../store/useRepoStore";
@@ -203,15 +203,60 @@ export async function syncOpenRepos() {
         const message = describeChanges(repoName(path), changes, prLabel);
         if (message) useUiStore.getState().notify("info", message);
       } catch (e) {
-        if (isDeviceKeyLocked(e)) {
-          // Android : aucune confirmation en arrière-plan. Signalé une seule fois par dépôt, sans erreur répétée.
-          if (!lockedNotified.has(path)) {
-            lockedNotified.add(path);
-            useUiStore.getState().notify("info", tr("Synchronisation de {repo} en pause : la clé SSH de l'appareil est verrouillée. Un fetch lancé à la main demandera la confirmation.", { repo: repoName(path) }));
-          }
-          continue;
-        }
-        console.warn(`Synchronisation de ${path} impossible :`, e);
+        reportSyncError(path, e);
+      }
+    }
+  } finally {
+    setRunning(false);
+    syncedListeners.forEach((l) => l());
+  }
+}
+
+/** Échec silencieux d'une synchronisation automatique, sauf la clé SSH verrouillée, signalée une fois par dépôt. */
+function reportSyncError(path: string, e: unknown) {
+  if (isDeviceKeyLocked(e)) {
+    // Android : aucune confirmation en arrière-plan. Signalé une seule fois par dépôt, sans erreur répétée.
+    if (!lockedNotified.has(path)) {
+      lockedNotified.add(path);
+      useUiStore.getState().notify("info", tr("Synchronisation de {repo} en pause : la clé SSH de l'appareil est verrouillée. Un fetch lancé à la main demandera la confirmation.", { repo: repoName(path) }));
+    }
+    return;
+  }
+  console.warn(`Synchronisation de ${path} impossible :`, e);
+}
+
+/** Message d'un pull automatique, null quand il n'y a rien à signaler (déjà à jour, rien à tirer). */
+export function describePull(repo: string, result: FastForwardPull): string | null {
+  switch (result.kind) {
+    case "updated":
+      return trn(result.commits, "{repo} : {n} nouveau commit récupéré sur {branch}", "{repo} : {n} nouveaux commits récupérés sur {branch}", { repo, branch: result.branch });
+    case "diverged":
+      return tr("{repo} : pull non fait, {branch} a des commits locaux absents du serveur (merge ou rebase à faire)", { repo, branch: result.branch });
+    case "localChanges":
+      return tr("{repo} : pull non fait, des modifications locales sur {branch} seraient écrasées", { repo, branch: result.branch });
+    default:
+      return null;
+  }
+}
+
+/**
+ * Lancement de l'application (Android) : pull de chaque dépôt ouvert, en fast-forward seulement. Une branche
+ * divergente ou des modifications locales en conflit sont laissées telles quelles et signalées.
+ */
+export async function pullOpenRepos() {
+  if (running) return;
+  setRunning(true);
+  try {
+    for (const path of openRepos()) {
+      if (useUiStore.getState().busy) return;
+      try {
+        const result = await pullFastForward(path);
+        const message = describePull(repoName(path), result);
+        if (message) useUiStore.getState().notify(result.kind === "updated" ? "success" : "info", message);
+        const repo = useRepoStore.getState();
+        if (result.kind === "updated" && repo.repoPath === path && !useUiStore.getState().busy) await repo.refresh();
+      } catch (e) {
+        reportSyncError(path, e);
       }
     }
   } finally {

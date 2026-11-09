@@ -23,7 +23,7 @@ import { openContextMenuFromKeyboard } from "./lib/keyboardContextMenu";
 import { useRepoStore } from "./store/useRepoStore";
 import { useAccountsStore } from "./store/useAccountsStore";
 import { defaultSideWidths, fitSideWidths, SIDE_LIMITS, useUiStore, type Side } from "./store/useUiStore";
-import { persistTabSession, useTabsStore } from "./store/useTabsStore";
+import { persistTabSession, useTabsStore, whenSessionRestored } from "./store/useTabsStore";
 import { stepZoom, useDisplayStore } from "./store/useDisplayStore";
 import { loadEmojiData } from "./components/EmojiAssist";
 import { InteractiveRebaseDialog } from "./components/InteractiveRebaseDialog";
@@ -36,7 +36,7 @@ import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActi
 import { checkForUpdatesOnStartup } from "./lib/updater";
 import { hasDesktopFeatures, isAndroid, isMobile, isPhone } from "./lib/platform";
 import { backAction, closeOverlay, overlayOpen, paneAfterCenterChange } from "./lib/androidBack";
-import { startAutoSync } from "./lib/autoSync";
+import { pullOpenRepos, startAutoSync } from "./lib/autoSync";
 import { startDebugLogging } from "./lib/debugLog";
 import { useIconBadge } from "./lib/iconBadge";
 import { usePrWatch } from "./lib/prWatch";
@@ -144,6 +144,14 @@ export default function App() {
 
   // Fetch et PR de chaque dépôt ouvert à intervalle régulier (Préférences) : les changements sont notifiés.
   useEffect(() => startAutoSync(syncInterval), [syncInterval]);
+
+  // Android : au lancement, pull (fast-forward seulement) des dépôts rouverts, une fois les onglets restaurés.
+  const launchPulled = useRef(false);
+  useEffect(() => {
+    if (launchPulled.current || !isAndroid() || getCurrentWindow().label !== "main" || !useDisplayStore.getState().pullOnLaunch) return;
+    launchPulled.current = true;
+    void whenSessionRestored().then(pullOpenRepos);
+  }, []);
 
   // Mode débug (Préférences > À propos) : logs de l'interface et du backend, jusque dans l'onglet « Logs ».
   useEffect(() => (debugMode ? startDebugLogging() : undefined), [debugMode]);

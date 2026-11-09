@@ -171,6 +171,7 @@ pub fn run() {
             commands::lfs_track,
             commands::fetch_remote,
             commands::pull,
+            commands::pull_fast_forward,
             commands::push,
             commands::delete_remote_branch,
             commands::push_tag,
