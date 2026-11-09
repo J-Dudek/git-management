@@ -28,7 +28,8 @@ import { stepZoom, useDisplayStore } from "./store/useDisplayStore";
 import { loadEmojiData } from "./components/EmojiAssist";
 import { InteractiveRebaseDialog } from "./components/InteractiveRebaseDialog";
 import { CloneDialog, ConflictViewer, FileEditorDialog, GitMemoDialog, PreferencesDialog } from "./components/lazy";
-import { openNewWindow } from "./ipc/commands";
+import { openNewWindow, workdirUnwatch, workdirWatch } from "./ipc/commands";
+import { debugLog } from "./store/useDebugLogStore";
 import { chooseAndOpenRepo as openRepoDialog } from "./lib/repoActions";
 import { errorMessage } from "./lib/actions";
 import { chooseAndInitRepo, chooseAndOpenRepo, openRepoAt } from "./lib/repoActions";
@@ -196,6 +197,24 @@ export default function App() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [repoPath, refresh]);
+
+  // Modification faite sans quitter la fenêtre (terminal intégré, éditeur sur un autre écran) : le dépôt est surveillé,
+  // le statut et le diff ouvert sont relus sans attendre le retour sur la fenêtre.
+  useEffect(() => {
+    if (!repoPath) {
+      workdirUnwatch().catch(() => {});
+      return;
+    }
+    let active = true;
+    workdirWatch(repoPath, (change) => {
+      if (!active) return; // signal de l'ancien dépôt, arrivé après le changement d'onglet
+      const { refresh, refreshStatus } = useRepoStore.getState();
+      (change.refs ? refresh() : refreshStatus()).catch(() => {});
+    }).catch((e) => debugLog("error", `workdir_watch: ${errorMessage(e)}`));
+    return () => {
+      active = false;
+    };
+  }, [repoPath]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {

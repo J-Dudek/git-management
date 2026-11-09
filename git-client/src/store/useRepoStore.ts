@@ -67,6 +67,8 @@ interface RepoStore {
   identity: IdentityStatus | null;
   lfs: LfsStatus | null;
   status: FileStatus[];
+  /** Incrémenté à chaque relecture du statut : un fichier déjà modifié a pu changer encore sans que le statut bouge. */
+  workdirVersion: number;
   selectedCommit: CommitInfo | null;
   comparison: Comparison | null;
   searchQuery: string;
@@ -115,6 +117,7 @@ export const emptyRepo: RepoState = {
   identity: null,
   lfs: null,
   status: [],
+  workdirVersion: 0,
   selectedCommit: null,
   comparison: null,
   searchQuery: "",
@@ -167,6 +170,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
     const selected = get().selectedCommit;
     set({
       loaded: true, info, commits, branches, tags, stashes, remotes, submodules, worktrees, identity, lfs, status,
+      workdirVersion: get().workdirVersion + 1,
       selectedCommit: selected ? commits.find((c) => c.hash === selected.hash) ?? null : null,
     });
   },
@@ -175,7 +179,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
     const path = get().repoPath;
     if (!path) return;
     const [info, status] = await Promise.all([getRepoInfo(path), getStatus(path)]);
-    if (get().repoPath === path) set({ info, status });
+    if (get().repoPath === path) set({ info, status, workdirVersion: get().workdirVersion + 1 });
   },
 
   // Sélectionner un commit referme la comparaison en cours.
@@ -195,7 +199,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
     const s = get();
     return {
       repoPath: s.repoPath, loaded: s.loaded, info: s.info, commits: s.commits, branches: s.branches, tags: s.tags, stashes: s.stashes,
-      remotes: s.remotes, submodules: s.submodules, worktrees: s.worktrees, identity: s.identity, lfs: s.lfs, status: s.status, selectedCommit: s.selectedCommit,
+      remotes: s.remotes, submodules: s.submodules, worktrees: s.worktrees, identity: s.identity, lfs: s.lfs, status: s.status, workdirVersion: s.workdirVersion, selectedCommit: s.selectedCommit,
       comparison: s.comparison, searchQuery: s.searchQuery, center: s.center, commitDraft: s.commitDraft,
     };
   },

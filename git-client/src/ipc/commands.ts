@@ -349,6 +349,19 @@ export const setDebugLogging = (enabled: boolean) => tauriInvoke<void>("set_debu
 /** Outils de développement (sans effet dans les builds de release). */
 export const openDevtools = () => invoke<void>("open_devtools");
 
+// ---------------------------------------------------------------- Surveillance du dépôt
+
+/** Modification externe du dépôt surveillé : `status` pour les fichiers et l'index, `refs` pour HEAD et les références. */
+export type WorkdirChange = { status: boolean; refs: boolean };
+
+/** Surveille le dépôt `path` pour cette fenêtre (remplace la surveillance précédente). */
+export const workdirWatch = (path: string, onChange: (change: WorkdirChange) => void) => {
+  const channel = new Channel<WorkdirChange>();
+  channel.onmessage = onChange;
+  return invoke<void>("workdir_watch", { path, onChange: channel });
+};
+export const workdirUnwatch = () => invoke<void>("workdir_unwatch");
+
 // ---------------------------------------------------------------- Terminal intégré
 
 export type TerminalEvent = { kind: "output"; data: string } | { kind: "exit"; code: number | null };
