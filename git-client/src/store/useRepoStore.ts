@@ -102,6 +102,11 @@ let generation = 0;
 
 /** Numéro de la dernière lecture lancée : le résultat d'une lecture plus ancienne, devenu périmé, est ignoré. */
 let lastRefresh = 0;
+/**
+ * Numéro de la dernière lecture du statut, complète ou non : une relecture du statut (surveillance du dépôt) lancée
+ * avant une indexation et terminée après ne remet pas l'ancien statut par-dessus le nouveau.
+ */
+let lastStatusRead = 0;
 
 export const emptyRepo: RepoState = {
   repoPath: null,
@@ -148,6 +153,7 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
     const path = get().repoPath;
     if (!path) return;
     const current = ++lastRefresh;
+    const statusRead = ++lastStatusRead;
     const [info, commits, branches, tags, stashes, remotes, submodules, worktrees, identity, lfs, status] = await Promise.all([
       getRepoInfo(path),
       getCommits(path),
@@ -169,7 +175,8 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
     if (current !== lastRefresh) return; // une lecture plus récente (ex. à la fin d'un pull) fait foi
     const selected = get().selectedCommit;
     set({
-      loaded: true, info, commits, branches, tags, stashes, remotes, submodules, worktrees, identity, lfs, status,
+      loaded: true, info, commits, branches, tags, stashes, remotes, submodules, worktrees, identity, lfs,
+      ...(statusRead === lastStatusRead ? { status } : {}),
       workdirVersion: get().workdirVersion + 1,
       selectedCommit: selected ? commits.find((c) => c.hash === selected.hash) ?? null : null,
     });
@@ -178,8 +185,9 @@ export const useRepoStore = create<RepoStore>((set, get) => ({
   refreshStatus: async () => {
     const path = get().repoPath;
     if (!path) return;
+    const current = ++lastStatusRead;
     const [info, status] = await Promise.all([getRepoInfo(path), getStatus(path)]);
-    if (get().repoPath === path) set({ info, status, workdirVersion: get().workdirVersion + 1 });
+    if (get().repoPath === path && current === lastStatusRead) set({ info, status, workdirVersion: get().workdirVersion + 1 });
   },
 
   // Sélectionner un commit referme la comparaison en cours.
